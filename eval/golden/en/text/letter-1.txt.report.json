@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 39,
+        "end": 43,
+        "line": 3,
+        "column": 10
+      },
+      "confidence": 0.85,
+      "detector": "pattern:en.name-title"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 50,
+        "end": 62,
+        "line": 5,
+        "column": 5
+      },
+      "confidence": 0.85,
+      "detector": "pattern:en.name-title"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "start": 69,
+        "end": 79,
+        "line": 5,
+        "column": 24
+      },
+      "confidence": 0.9,
+      "detector": "pattern:en.birth-date"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "start": 106,
+        "end": 120,
+        "line": 5,
+        "column": 61
+      },
+      "confidence": 0.9,
+      "detector": "pattern:en.phone"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 127,
+        "end": 151,
+        "line": 5,
+        "column": 82
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 225,
+        "end": 235,
+        "line": 9,
+        "column": 1
+      },
+      "confidence": 0.8,
+      "detector": "pattern:en.name-signature"
+    }
+  ],
+  "review_required": false
+}

@@ -1,0 +1,10 @@
+Subject: Case 2026-1231-1999
+
+Dear Mr. <PERSON>,
+
+Ms. <PERSON> (born <DATE_OF_BIRTH>) asked for a call back on <PHONE_NUMBER> or at <EMAIL_ADDRESS>.
+Her SSN is <SOCIAL_SECURITY_NUMBER>.
+Not personal: invoice 2026-1231-1999, version 9.3.23.4.
+
+Best regards,
+<PERSON>

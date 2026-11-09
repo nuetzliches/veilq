@@ -61,7 +61,7 @@ cloud services (the data leaves to be redacted), or handle text only.
 
 | Kind | Where | Notes |
 |---|---|---|
-| Pattern | `veilq-core`, Rust `regex` | Checksums where the format has one (IBAN, tax ID, credit card); context words to raise or lower confidence. |
+| Pattern | `veilq-core/locales/<locale>/patterns.toml`, Rust `regex` | Locale packs in the policy's pattern format (ADR-0010): checksums where the format has one, context words and column or key names to raise confidence (ADR-0011, ADR-0012). `intl` always runs; `de` and `en` by default. |
 | Policy pattern | the project's policy file | A project's own identifiers (file numbers, customer numbers). |
 | NER | optional, ONNX via `ort` | A multilingual NER model for persons, organisations, locations. Downloaded on first use, pinned by SHA-256, cached; CI caches the model directory. |
 | OCR | optional, ONNX via `ort` | Text detection and recognition for images and frames, returning boxes. |
@@ -142,7 +142,7 @@ patterns, which detectors are required.
 | Phase | Content | Done when |
 |---|---|---|
 | M0 | Repository, review card for the contracts (schema, policy, placeholder, CLI), CI | **done 2026-11-09**: card approved, ADR-0001 to ADR-0007 |
-| M1 | Text, NDJSON, JSON, CSV streamed; pattern detectors for German; `scan`, `redact`, `policy check`; SARIF; evaluation corpus | a log export redacted end to end, recall gate in CI |
+| M1 | Text, NDJSON, JSON, CSV streamed; pattern detectors for German; `scan`, `redact`, `policy check`; SARIF; evaluation corpus | **done 2026-11-09**: card approved, ADR-0009 to ADR-0014 (ADR-0015 proposed); recall gate in CI on the corpus and five held-out seeds |
 | M2 | MCP (stdio + HTTP); mapping file for reversible pseudonyms | an agent redacts an attachment through MCP |
 | M3 | DOCX, XLSX, PPTX, EML; metadata stripping; NER | an Office attachment redacted with formatting intact |
 | M4 | Images and GIF with OCR; PDF by rasterising | a screen-recording GIF redacted without a leaking frame |

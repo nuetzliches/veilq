@@ -52,6 +52,8 @@ export interface Redaction {
   name?: string;
   input: string;
   output: string;
+  /** Per finding, its byte range in `input`. */
+  input_spans: [number, number][];
   /** Per finding, the byte range of its replacement in `output`. */
   output_spans: [number, number][];
   report: Report;

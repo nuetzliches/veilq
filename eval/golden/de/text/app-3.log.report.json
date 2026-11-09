@@ -1,0 +1,150 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 49,
+        "end": 61,
+        "line": 1,
+        "column": 50
+      },
+      "confidence": 0.8,
+      "detector": "pattern:intl.name-key"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "start": 72,
+        "end": 82,
+        "line": 1,
+        "column": 73
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 133,
+        "end": 146,
+        "line": 2,
+        "column": 49
+      },
+      "confidence": 0.8,
+      "detector": "pattern:intl.name-key"
+    },
+    {
+      "entity": "IP_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 154,
+        "end": 162,
+        "line": 2,
+        "column": 70
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.ipv4"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 212,
+        "end": 222,
+        "line": 3,
+        "column": 50
+      },
+      "confidence": 0.8,
+      "detector": "pattern:intl.name-key"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "start": 233,
+        "end": 243,
+        "line": 3,
+        "column": 71
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 295,
+        "end": 306,
+        "line": 4,
+        "column": 50
+      },
+      "confidence": 0.8,
+      "detector": "pattern:intl.name-key"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "start": 317,
+        "end": 327,
+        "line": 4,
+        "column": 71
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 378,
+        "end": 389,
+        "line": 5,
+        "column": 49
+      },
+      "confidence": 0.8,
+      "detector": "pattern:intl.name-key"
+    },
+    {
+      "entity": "IP_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 397,
+        "end": 405,
+        "line": 5,
+        "column": 68
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.ipv4"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 447,
+        "end": 472,
+        "line": 6,
+        "column": 42
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "IP_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 476,
+        "end": 489,
+        "line": 6,
+        "column": 71
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.ipv4"
+    }
+  ],
+  "review_required": false
+}

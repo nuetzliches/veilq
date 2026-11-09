@@ -1,0 +1,6 @@
+{"amount":120.5,"event":"payment","iban":"DE82495829713623937328"}
+{"amount":120.5,"event":"payment","iban":"DE05311798274233128257"}
+{"amount":120.5,"event":"payment","iban":"DE74052866559660572279"}
+{"amount":120.5,"event":"payment","iban":"DE66497690017012597995"}
+{"event":"login","user":{"email":"jan.vogt@example.net","ip":"203.0.113.228"}}
+{"event":"note","text":"Kfz B-ER 274, Kennzeichen geprüft"}

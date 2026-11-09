@@ -14,7 +14,7 @@ only, that two places are the same value, a realistic stand-in, or nothing.
 
 `mask` writes `<TYPE>`. `pseudonymize` writes `[TYPE:hex8]` (ADR-0001) and
 needs a key. `fake` writes a plausible value of the same type and shape
-(built in M1; until then it fails, ADR-0003). `remove` drops the span. The
+(built in M1: `crates/veilq-core/src/fake.rs`). `remove` drops the span. The
 default, per policy and per entity type, is `mask`.
 
 ## Alternatives considered

@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 41,
+        "end": 61,
+        "line": 1,
+        "column": 42
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "IP_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 65,
+        "end": 76,
+        "line": 1,
+        "column": 66
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.ipv4"
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "span",
+        "start": 124,
+        "end": 146,
+        "line": 2,
+        "column": 48
+      },
+      "confidence": 1.0,
+      "detector": "pattern:intl.iban"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 209,
+        "end": 219,
+        "line": 3,
+        "column": 50
+      },
+      "confidence": 0.8,
+      "detector": "pattern:intl.name-key"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "start": 230,
+        "end": 240,
+        "line": 3,
+        "column": 71
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 292,
+        "end": 302,
+        "line": 4,
+        "column": 50
+      },
+      "confidence": 0.8,
+      "detector": "pattern:intl.name-key"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "start": 313,
+        "end": 323,
+        "line": 4,
+        "column": 71
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "span",
+        "start": 373,
+        "end": 395,
+        "line": 5,
+        "column": 48
+      },
+      "confidence": 1.0,
+      "detector": "pattern:intl.iban"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 457,
+        "end": 468,
+        "line": 6,
+        "column": 49
+      },
+      "confidence": 0.8,
+      "detector": "pattern:intl.name-key"
+    },
+    {
+      "entity": "IP_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 476,
+        "end": 485,
+        "line": 6,
+        "column": 68
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.ipv4"
+    }
+  ],
+  "review_required": false
+}

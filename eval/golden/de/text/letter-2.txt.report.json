@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 54,
+        "end": 66,
+        "line": 3,
+        "column": 7
+      },
+      "confidence": 0.8,
+      "detector": "pattern:de.name-role"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 74,
+        "end": 84,
+        "line": 5,
+        "column": 6
+      },
+      "confidence": 0.85,
+      "detector": "pattern:de.name-salutation"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "start": 91,
+        "end": 109,
+        "line": 5,
+        "column": 23
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "start": 154,
+        "end": 169,
+        "line": 5,
+        "column": 85
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.phone-international"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 187,
+        "end": 204,
+        "line": 5,
+        "column": 118
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 217,
+        "end": 246,
+        "line": 6,
+        "column": 12
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.address"
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "span",
+        "start": 290,
+        "end": 317,
+        "line": 7,
+        "column": 42
+      },
+      "confidence": 1.0,
+      "detector": "pattern:intl.iban"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 332,
+        "end": 342,
+        "line": 7,
+        "column": 84
+      },
+      "confidence": 0.8,
+      "detector": "pattern:de.name-role"
+    },
+    {
+      "entity": "TAX_ID",
+      "location": {
+        "kind": "span",
+        "start": 355,
+        "end": 369,
+        "line": 8,
+        "column": 12
+      },
+      "confidence": 1.0,
+      "detector": "pattern:de.tax-id"
+    },
+    {
+      "entity": "LICENSE_PLATE",
+      "location": {
+        "kind": "span",
+        "start": 404,
+        "end": 413,
+        "line": 9,
+        "column": 34
+      },
+      "confidence": 1.0,
+      "detector": "pattern:de.licence-plate"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 578,
+        "end": 590,
+        "line": 14,
+        "column": 1
+      },
+      "confidence": 0.8,
+      "detector": "pattern:de.name-signature"
+    }
+  ],
+  "review_required": false
+}

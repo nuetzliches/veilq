@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 49,
+        "end": 61,
+        "line": 1,
+        "column": 50
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "start": 72,
+        "end": 82,
+        "line": 1,
+        "column": 73
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 133,
+        "end": 146,
+        "line": 2,
+        "column": 49
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 212,
+        "end": 222,
+        "line": 3,
+        "column": 50
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "start": 233,
+        "end": 243,
+        "line": 3,
+        "column": 71
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 295,
+        "end": 306,
+        "line": 4,
+        "column": 50
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "start": 317,
+        "end": 327,
+        "line": 4,
+        "column": 71
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 378,
+        "end": 389,
+        "line": 5,
+        "column": 49
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 447,
+        "end": 472,
+        "line": 6,
+        "column": 42
+      }
+    },
+    {
+      "entity": "IP_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 476,
+        "end": 489,
+        "line": 6,
+        "column": 71
+      }
+    }
+  ]
+}

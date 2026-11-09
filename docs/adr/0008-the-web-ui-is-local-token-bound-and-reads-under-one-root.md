@@ -1,6 +1,6 @@
 # ADR-0008: The web UI is local, token-bound, and reads under one root
 
-- **Status:** Accepted (card UI, points 1-7, approved 2026-11-09)
+- **Status:** Accepted (card UI, points 1-7, approved 2026-11-09); since M1 the UI redacts for real
 - **Date:** 2026-11-09
 - **Deciders:** project owner
 - **Related:** [plan.md §4.1](../plan.md#41-cli), [ADR-0002](0002-a-finding-never-carries-the-value.md), [ADR-0003](0003-exit-codes-0-1-2-and-veilq-fails-closed.md), [ADR-0007](0007-the-mcp-server-reads-under-one-root-and-http-needs-a-token.md)
@@ -62,8 +62,9 @@ with synthetic data.
 
 - `crates/veilq/src/ui.rs`: `require_host`, `require_token`, `parse_origin`,
   `redact_source`, with tests (another Host, another Origin, no or a wrong
-  token, a path out of the root, binary input, the failure until M1).
-- `crates/veilq-core/src/redact.rs`: `redact_text` fails closed until M1.
+  token, a path out of the root, binary input, a text and a CSV file
+  redacted, a format veilq does not read).
+- `crates/veilq-core/src/engine.rs` (`Engine::redact_str`): what the UI shows; a file is read in the format its extension names, and the spans of every finding come from the engine, so cells and JSON values are marked too.
 - `ui/src/api/client.ts` (`takeToken`), `ui/src/lib/segments.ts`, with
   tests in `ui/src/lib/segments.test.ts`; CI job `ui`.
 

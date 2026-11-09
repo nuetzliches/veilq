@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { createApi, type Info, type Redaction, type Source } from '@/api';
-import { inputSpans } from '@/lib/segments';
 import ComparePane from '@/components/ComparePane.vue';
 import FileBrowser from '@/components/FileBrowser.vue';
 import FindingsTable from '@/components/FindingsTable.vue';
@@ -27,7 +26,6 @@ const hovered = ref<number | null>(null);
 const copied = ref(false);
 
 const findings = computed(() => result.value?.report.findings ?? []);
-const spansIn = computed(() => inputSpans(findings.value));
 
 const tabs: { kind: Kind; label: string }[] = [
   { kind: 'text', label: 'Text' },
@@ -214,7 +212,7 @@ onMounted(async () => {
             v-else-if="result"
             side="input"
             :text="result.input"
-            :spans="spansIn"
+            :spans="result.input_spans"
             :findings="findings"
             :hovered="hovered"
             @hover="hovered = $event"

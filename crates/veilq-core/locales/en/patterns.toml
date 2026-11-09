@@ -16,7 +16,7 @@ confidence = 0.75
 [[patterns]]
 name = "name-signature"
 entity = "PERSON"
-regex = '(?m)(?:Regards|Best|Sincerely|Cheers|Thanks|Thank you|Yours)[,!.]?[ \t]*\r?\n(?:[ \t]*\r?\n)?[ \t]*(?P<pii>\p{Lu}\p{Ll}+(?:[- ]\p{Lu}\p{Ll}+){1,2})[ \t]*\r?$'
+regex = '(?m)(?i:regards|best|sincerely|cheers|thanks|thank you|yours(?: truly| sincerely)?)[,!.]?[ \t]*\r?\n(?:[ \t]*\r?\n)?[ \t]*(?P<pii>\p{Lu}\p{Ll}+(?:[- ]\p{Lu}\p{Ll}+){1,2})[ \t]*\r?$'
 confidence = 0.8
 
 [[patterns]]

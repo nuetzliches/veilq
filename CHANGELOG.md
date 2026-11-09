@@ -22,3 +22,18 @@ Notable changes per release. The format follows
   redaction is not built yet instead of an output; `npm run dev` in `ui/`
   runs it against a mock with synthetic data.
 - `devstack.toml`: the UI's dev server and `veilq ui` under devstack.
+- M1: `veilq scan` (text, `--json`, `--sarif`) and `veilq redact` (`-o`
+  written only on success, `--action`, `--report`) for text, logs, NDJSON,
+  JSON and CSV, streamed; output keeps the input's layout, quoting and
+  escapes, and is verified before it is written.
+- Pattern detection from locale packs (`intl`, `de`, `en`; ADR-0009,
+  ADR-0010): names after a salutation, role, key or signature, addresses,
+  birth dates, phone numbers, e-mail, IP, IBAN, cards, tax ID, social
+  security and ID card numbers, licence plates, court file numbers.
+- Policy: `locales`, and per pattern `context` and `validate` (ADR-0011); a
+  failed checksum lowers the confidence instead of dropping the finding
+  (ADR-0012).
+- The action `fake`: stand-ins of the same type and shape.
+- `crates/veilq-eval` and `eval/`: a synthetic corpus with ground truth,
+  golden outputs, and a recall gate in CI (ADR-0013); the skill
+  `veilq-tune` for tuning against it (ADR-0014).

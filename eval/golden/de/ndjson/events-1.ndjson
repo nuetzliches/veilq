@@ -1,0 +1,6 @@
+{"amount":120.5,"event":"payment","iban":"<IBAN_CODE>"}
+{"amount":120.5,"event":"payment","iban":"<IBAN_CODE>"}
+{"amount":120.5,"event":"payment","iban":"<IBAN_CODE>"}
+{"amount":120.5,"event":"payment","iban":"<IBAN_CODE>"}
+{"event":"login","user":{"email":"<EMAIL_ADDRESS>","ip":"<IP_ADDRESS>"}}
+{"event":"note","text":"Kfz <LICENSE_PLATE>, Kennzeichen geprüft"}

@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 41,
+        "end": 61,
+        "line": 1,
+        "column": 42
+      }
+    },
+    {
+      "entity": "IP_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 65,
+        "end": 76,
+        "line": 1,
+        "column": 66
+      }
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "span",
+        "start": 124,
+        "end": 146,
+        "line": 2,
+        "column": 48
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 209,
+        "end": 219,
+        "line": 3,
+        "column": 50
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "start": 230,
+        "end": 240,
+        "line": 3,
+        "column": 71
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 292,
+        "end": 302,
+        "line": 4,
+        "column": 50
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "start": 313,
+        "end": 323,
+        "line": 4,
+        "column": 71
+      }
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "span",
+        "start": 373,
+        "end": 395,
+        "line": 5,
+        "column": 48
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 457,
+        "end": 468,
+        "line": 6,
+        "column": 49
+      }
+    }
+  ]
+}

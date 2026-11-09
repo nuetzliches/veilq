@@ -1,0 +1,256 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 2,
+        "start": 0,
+        "end": 11
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 3,
+        "start": 0,
+        "end": 25
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 4,
+        "start": 0,
+        "end": 14
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 5,
+        "start": 0,
+        "end": 17
+      }
+    },
+    {
+      "entity": "SOCIAL_SECURITY_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 6,
+        "start": 0,
+        "end": 11
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 2,
+        "start": 0,
+        "end": 12
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 3,
+        "start": 0,
+        "end": 26
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 4,
+        "start": 0,
+        "end": 14
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 5,
+        "start": 0,
+        "end": 14
+      }
+    },
+    {
+      "entity": "SOCIAL_SECURITY_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 6,
+        "start": 0,
+        "end": 11
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 2,
+        "start": 0,
+        "end": 12
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 3,
+        "start": 0,
+        "end": 26
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 4,
+        "start": 0,
+        "end": 14
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 5,
+        "start": 0,
+        "end": 12
+      }
+    },
+    {
+      "entity": "SOCIAL_SECURITY_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 6,
+        "start": 0,
+        "end": 11
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 2,
+        "start": 0,
+        "end": 12
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 3,
+        "start": 0,
+        "end": 24
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 4,
+        "start": 0,
+        "end": 14
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 5,
+        "start": 0,
+        "end": 17
+      }
+    },
+    {
+      "entity": "SOCIAL_SECURITY_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 6,
+        "start": 0,
+        "end": 11
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 2,
+        "start": 0,
+        "end": 13
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 3,
+        "start": 0,
+        "end": 20
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 4,
+        "start": 0,
+        "end": 14
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 5,
+        "start": 0,
+        "end": 15
+      }
+    },
+    {
+      "entity": "SOCIAL_SECURITY_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 6,
+        "start": 0,
+        "end": 11
+      }
+    }
+  ]
+}

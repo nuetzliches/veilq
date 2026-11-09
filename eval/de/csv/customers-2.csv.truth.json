@@ -1,0 +1,286 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 2,
+        "start": 0,
+        "end": 13
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 3,
+        "start": 0,
+        "end": 27
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 4,
+        "start": 0,
+        "end": 12
+      }
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 5,
+        "start": 0,
+        "end": 27
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 6,
+        "start": 0,
+        "end": 10
+      }
+    },
+    {
+      "entity": "LICENSE_PLATE",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 7,
+        "start": 4,
+        "end": 11
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 2,
+        "start": 0,
+        "end": 10
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 3,
+        "start": 0,
+        "end": 24
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 4,
+        "start": 0,
+        "end": 11
+      }
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 5,
+        "start": 0,
+        "end": 27
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 6,
+        "start": 0,
+        "end": 9
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 7,
+        "start": 23,
+        "end": 34
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 2,
+        "start": 0,
+        "end": 12
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 3,
+        "start": 0,
+        "end": 24
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 4,
+        "start": 0,
+        "end": 11
+      }
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 5,
+        "start": 0,
+        "end": 27
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 6,
+        "start": 0,
+        "end": 10
+      }
+    },
+    {
+      "entity": "LICENSE_PLATE",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 7,
+        "start": 4,
+        "end": 12
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 2,
+        "start": 0,
+        "end": 11
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 3,
+        "start": 0,
+        "end": 19
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 4,
+        "start": 0,
+        "end": 19
+      }
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 5,
+        "start": 0,
+        "end": 27
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 6,
+        "start": 0,
+        "end": 14
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 2,
+        "start": 0,
+        "end": 11
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 3,
+        "start": 0,
+        "end": 19
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 4,
+        "start": 0,
+        "end": 12
+      }
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 5,
+        "start": 0,
+        "end": 27
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 6,
+        "start": 0,
+        "end": 10
+      }
+    }
+  ]
+}

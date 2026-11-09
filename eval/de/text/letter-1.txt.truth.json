@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 66,
+        "end": 72,
+        "line": 3,
+        "column": 19
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 80,
+        "end": 93,
+        "line": 5,
+        "column": 6
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "start": 100,
+        "end": 108,
+        "line": 5,
+        "column": 26
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "start": 153,
+        "end": 165,
+        "line": 5,
+        "column": 78
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 183,
+        "end": 208,
+        "line": 5,
+        "column": 108
+      }
+    },
+    {
+      "entity": "ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 221,
+        "end": 252,
+        "line": 6,
+        "column": 12
+      }
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "span",
+        "start": 296,
+        "end": 323,
+        "line": 7,
+        "column": 42
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 338,
+        "end": 351,
+        "line": 7,
+        "column": 84
+      }
+    },
+    {
+      "entity": "COURT_FILE_NUMBER",
+      "location": {
+        "kind": "span",
+        "start": 366,
+        "end": 376,
+        "line": 8,
+        "column": 14
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 552,
+        "end": 564,
+        "line": 13,
+        "column": 1
+      }
+    }
+  ]
+}

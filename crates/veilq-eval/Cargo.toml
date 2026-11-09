@@ -1,0 +1,20 @@
+[package]
+name = "veilq-eval"
+description = "The synthetic evaluation corpus of veilq: generator, ground truth, recall gate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+toml = "1.2.1"
+veilq-core.workspace = true
+
+[lints]
+workspace = true

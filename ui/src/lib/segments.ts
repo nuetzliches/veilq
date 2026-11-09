@@ -1,4 +1,4 @@
-import type { Finding, Location } from '@/api';
+import type { Location } from '@/api';
 
 /** A piece of a text: plain, or the span of finding `finding`. */
 export interface Segment {
@@ -28,11 +28,6 @@ export function segments(text: string, spans: ([number, number] | null)[]): Segm
   }
   if (at < data.length || out.length === 0) out.push({ text: decoder.decode(data.subarray(at)) });
   return out;
-}
-
-/** The input spans of `findings`: a plain text's spans and cells. */
-export function inputSpans(findings: Finding[]): ([number, number] | null)[] {
-  return findings.map((f) => (f.location.kind === 'span' && !f.location.part ? [f.location.start, f.location.end] : null));
 }
 
 export function describeLocation(location: Location): string {

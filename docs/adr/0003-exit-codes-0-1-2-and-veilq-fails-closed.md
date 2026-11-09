@@ -32,4 +32,4 @@ output that could be mistaken for a redacted one.
 ## Enforced by
 
 - `crates/veilq-core/src/outcome.rs` (`Outcome`), `crates/veilq/src/main.rs` (every error ends as `Outcome::Error`; clap exits 2 on argument errors).
-- `crates/veilq-core/src/action.rs`: `fake` fails until it is built (M1).
+- `crates/veilq-core/src/engine.rs`: an unknown format, broken JSON or CSV, input that is not UTF-8, and personal data left in an output (verify) are errors.

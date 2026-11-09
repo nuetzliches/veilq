@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "span",
+        "part": "/iban",
+        "start": 0,
+        "end": 22,
+        "line": 1,
+        "column": 43
+      },
+      "confidence": 1.0,
+      "detector": "pattern:intl.iban"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "part": "/by",
+        "start": 0,
+        "end": 11,
+        "line": 3,
+        "column": 8
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "part": "/by",
+        "start": 0,
+        "end": 12,
+        "line": 4,
+        "column": 8
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "span",
+        "part": "/iban",
+        "start": 0,
+        "end": 22,
+        "line": 5,
+        "column": 43
+      },
+      "confidence": 1.0,
+      "detector": "pattern:intl.iban"
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "span",
+        "part": "/iban",
+        "start": 0,
+        "end": 22,
+        "line": 6,
+        "column": 43
+      },
+      "confidence": 1.0,
+      "detector": "pattern:intl.iban"
+    }
+  ],
+  "review_required": false
+}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mockRedact } from '@/api/mock';
 import { takeToken } from '@/api/client';
-import { inputSpans, segments } from './segments';
+import { segments } from './segments';
 
 describe('segments', () => {
   it('cuts at byte offsets, not UTF-16 offsets', () => {
@@ -22,7 +22,7 @@ describe('segments', () => {
 
   it('marks input and output of a redaction at the same findings', () => {
     const r = mockRedact('Mail an lena.vogt@example.org, Grüße Jonas Brandt');
-    const input = segments(r.input, inputSpans(r.report.findings)).filter((x) => x.finding !== undefined);
+    const input = segments(r.input, r.input_spans).filter((x) => x.finding !== undefined);
     const output = segments(r.output, r.output_spans).filter((x) => x.finding !== undefined);
     expect(input.map((x) => x.text)).toEqual(['lena.vogt@example.org', 'Jonas Brandt']);
     expect(output.map((x) => x.text)).toEqual(['<EMAIL_ADDRESS>', '<PERSON>']);

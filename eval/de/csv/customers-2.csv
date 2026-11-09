@@ -1,0 +1,6 @@
+id;name;email;telefon;iban;geburtsdatum;notiz
+1;Greta Krüger;greta.krueger75@example.net;0341 5554740;DE06 5818 5501 4684 4438 73;17.09.1989;Kfz K-W 355, Kennzeichen geprüft
+2;Greta Kern;greta.kern93@example.com;089 5559454;DE02 4370 9589 1284 3247 80;12.4.1974;Rückruf erbeten unter 089 5559454
+3;Jonas Peters;jonas.peters@example.org;040-5550155;DE30 8492 4943 3635 9143 58;1965-12-08;Kfz B-AF 335, Kennzeichen geprüft
+4;Mira Seidel;mseidel@example.com;+49 (0)421 555 9009;DE02 8902 4025 6356 6562 91;1. August 1988;keine Besonderheiten
+5;Paul Brandt;pbrandt@example.net;0221-5559280;DE58 2961 1376 1738 0861 54;1966-12-08;keine Besonderheiten

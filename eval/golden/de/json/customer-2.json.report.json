@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "entity": "ADDRESS",
+      "location": {
+        "kind": "span",
+        "part": "/anschrift/strasse",
+        "start": 0,
+        "end": 14,
+        "line": 5,
+        "column": 17
+      },
+      "confidence": 0.85,
+      "detector": "pattern:de.street"
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "span",
+        "part": "/bank/iban",
+        "start": 0,
+        "end": 27,
+        "line": 8,
+        "column": 14
+      },
+      "confidence": 1.0,
+      "detector": "pattern:intl.iban"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "part": "/geburtsdatum",
+        "start": 0,
+        "end": 10,
+        "line": 11,
+        "column": 20
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "span",
+        "part": "/kontakt/0/wert",
+        "start": 0,
+        "end": 22,
+        "line": 16,
+        "column": 16
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "part": "/kontakt/1/wert",
+        "start": 0,
+        "end": 12,
+        "line": 20,
+        "column": 16
+      },
+      "confidence": 0.75,
+      "detector": "pattern:de.phone"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "part": "/name",
+        "start": 0,
+        "end": 10,
+        "line": 23,
+        "column": 12
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "part": "/notiz",
+        "start": 33,
+        "end": 45,
+        "line": 24,
+        "column": 45
+      },
+      "confidence": 0.75,
+      "detector": "pattern:de.phone"
+    },
+    {
+      "entity": "TAX_ID",
+      "location": {
+        "kind": "span",
+        "part": "/steuer_id",
+        "start": 0,
+        "end": 11,
+        "line": 25,
+        "column": 17
+      },
+      "confidence": 1.0,
+      "detector": "pattern:de.tax-id"
+    }
+  ],
+  "review_required": false
+}

@@ -65,6 +65,7 @@ export function mockRedact(input: string, name?: string): Redaction {
   for (const h of hits) if (!kept.length || h.start >= kept[kept.length - 1].end) kept.push(h);
 
   const findings: Finding[] = [];
+  const inputSpans: [number, number][] = [];
   const outputSpans: [number, number][] = [];
   let output = '';
   let at = 0;
@@ -73,6 +74,7 @@ export function mockRedact(input: string, name?: string): Redaction {
     const before = input.slice(0, h.start);
     const lines = before.split('\n');
     const start = bytes(before);
+    inputSpans.push([start, start + bytes(input.slice(h.start, h.end))]);
     findings.push({
       entity: h.entity,
       location: {
@@ -96,6 +98,7 @@ export function mockRedact(input: string, name?: string): Redaction {
     name,
     input,
     output,
+    input_spans: inputSpans,
     output_spans: outputSpans,
     report: {
       version: 1,
