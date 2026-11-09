@@ -54,4 +54,4 @@ keep it to about a page.
 | [0012](0012-a-failed-check-lowers-the-confidence-it-does-not-drop-the-finding.md) | A failed check lowers the confidence; it does not drop the finding | Accepted |
 | [0013](0013-a-synthetic-corpus-with-truth-and-golden-outputs-gates-recall.md) | A synthetic corpus with truth and golden outputs gates recall | Accepted |
 | [0014](0014-tuning-by-an-agent-reads-the-synthetic-corpus-only.md) | Tuning by an agent reads the synthetic corpus only | Accepted |
-| [0015](0015-scan-and-redact-output-and-exit-codes.md) | `scan` and `redact`: what they print and how they end | Proposed |
+| [0015](0015-scan-and-redact-output-and-exit-codes.md) | `scan` and `redact`: what they print and how they end | Accepted |

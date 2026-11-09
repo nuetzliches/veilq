@@ -1,8 +1,8 @@
 # ADR-0015: `scan` and `redact`: what they print and how they end
 
-- **Status:** Proposed
+- **Status:** Accepted (approved by the owner 2026-11-09, after the build)
 - **Date:** 2026-11-09
-- **Deciders:** agent, for the owner's review
+- **Deciders:** project owner
 - **Related:** [ADR-0003](0003-exit-codes-0-1-2-and-veilq-fails-closed.md), [plan.md §4.1](../plan.md#41-cli)
 
 ## Context
