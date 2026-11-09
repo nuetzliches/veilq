@@ -138,7 +138,7 @@ patterns, which detectors are required.
 
 | Phase | Content | Done when |
 |---|---|---|
-| M0 | Repository, review card for the contracts (schema, policy, placeholder, CLI), CI | card approved, CI green |
+| M0 | Repository, review card for the contracts (schema, policy, placeholder, CLI), CI | **done 2026-11-09**: card approved, ADR-0001 to ADR-0007 |
 | M1 | Text, NDJSON, JSON, CSV streamed; pattern detectors for German; `scan`, `redact`, `policy check`; SARIF; evaluation corpus | a log export redacted end to end, recall gate in CI |
 | M2 | MCP (stdio + HTTP); mapping file for reversible pseudonyms | an agent redacts an attachment through MCP |
 | M3 | DOCX, XLSX, PPTX, EML; metadata stripping; NER | an Office attachment redacted with formatting intact |

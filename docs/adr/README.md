@@ -40,3 +40,10 @@ keep it to about a page.
 
 | ADR | Title | Status |
 |---|---|---|
+| [0001](0001-pseudonyms-are-a-keyed-hash-in-the-shape-type-hex8.md) | Pseudonyms are a keyed hash in the shape `[TYPE:hex8]` | Accepted |
+| [0002](0002-a-finding-never-carries-the-value.md) | A finding never carries the value it found | Accepted |
+| [0003](0003-exit-codes-0-1-2-and-veilq-fails-closed.md) | Exit codes 0, 1, 2, and veilq fails closed | Accepted |
+| [0004](0004-the-policy-is-veilq-toml-in-the-current-directory-or-the-git-root.md) | The policy is `veilq.toml`, in the current directory or the git root | Accepted |
+| [0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md) | Models are fetched explicitly and pinned in the binary | Accepted |
+| [0006](0006-four-actions-mask-by-default.md) | Four actions, `mask` by default | Accepted |
+| [0007](0007-the-mcp-server-reads-under-one-root-and-http-needs-a-token.md) | The MCP server reads under one root, and HTTP needs a token | Accepted |

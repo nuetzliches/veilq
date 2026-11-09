@@ -1,0 +1,220 @@
+{
+  "$defs": {
+    "EntityType": {
+      "pattern": "^[A-Z][A-Z0-9_]*$",
+      "type": "string"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "description": "One piece of personal data found.",
+      "properties": {
+        "confidence": {
+          "description": "From 0 to 1.",
+          "format": "float",
+          "type": "number"
+        },
+        "detector": {
+          "description": "The detector that found it (`pattern`, `ner`, `ocr`, `policy:<name>`).",
+          "type": "string"
+        },
+        "entity": {
+          "$ref": "#/$defs/EntityType"
+        },
+        "location": {
+          "$ref": "#/$defs/Location"
+        },
+        "pseudonym": {
+          "description": "The keyed pseudonym (ADR-0001), only when the action is `pseudonymize`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "entity",
+        "location",
+        "confidence",
+        "detector"
+      ],
+      "type": "object"
+    },
+    "Location": {
+      "description": "Where a finding is. Offsets are byte offsets into the segment's UTF-8\ntext; lines and columns count from 1, columns in characters.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "A span of text: a plain file, a stream, a text node of a document.",
+          "properties": {
+            "column": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "end": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "span",
+              "type": "string"
+            },
+            "line": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "part": {
+              "description": "The part of a container (`word/document.xml`, an attachment's\nname); absent for plain text.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "start": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "start",
+            "end",
+            "line",
+            "column"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A cell of a table (CSV, a spreadsheet), with the span inside it.",
+          "properties": {
+            "column": {
+              "description": "Column from 1.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "end": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "cell",
+              "type": "string"
+            },
+            "row": {
+              "description": "Row from 1, the header row included.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sheet": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "start": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "row",
+            "column",
+            "start",
+            "end"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A region of an image, a page or a frame, in pixels from the top left.",
+          "properties": {
+            "frame": {
+              "description": "Page or frame, from 1; absent for a single image.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "height": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "region",
+              "type": "string"
+            },
+            "width": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "x": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "y": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "x",
+            "y",
+            "width",
+            "height"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "What a run found and how far its result can be trusted.",
+  "properties": {
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/Finding"
+      },
+      "type": "array"
+    },
+    "review_reasons": {
+      "description": "Why `review_required` is set, one sentence each.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "review_required": {
+      "description": "True when the run had a known gap: a detector the policy names was\noff, or a format was handled with a loss (a PDF's text layer). A\nperson should look at the output.",
+      "type": "boolean"
+    },
+    "version": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version",
+    "findings",
+    "review_required"
+  ],
+  "title": "Report",
+  "type": "object"
+}

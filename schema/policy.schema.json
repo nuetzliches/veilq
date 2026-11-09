@@ -1,0 +1,213 @@
+{
+  "$defs": {
+    "Action": {
+      "oneOf": [
+        {
+          "const": "mask",
+          "description": "`<PERSON>`.",
+          "type": "string"
+        },
+        {
+          "const": "pseudonymize",
+          "description": "`[PERSON:ab12cd34]` (ADR-0001); needs a key.",
+          "type": "string"
+        },
+        {
+          "const": "fake",
+          "description": "A plausible value of the same type and shape (M1).",
+          "type": "string"
+        },
+        {
+          "const": "remove",
+          "description": "Nothing: the span is dropped.",
+          "type": "string"
+        }
+      ]
+    },
+    "Allow": {
+      "additionalProperties": false,
+      "description": "What is never personal data here: the firm's own name, court names.",
+      "properties": {
+        "patterns": {
+          "default": [],
+          "description": "Rust `regex` patterns a whole finding must match.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "values": {
+          "default": [],
+          "description": "Exact values, compared after the same normalisation as pseudonyms.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "Defaults": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/Action",
+          "default": "mask"
+        },
+        "min_confidence": {
+          "default": 0.699999988079071,
+          "description": "Findings below this confidence are dropped; from 0 to 1.",
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "Detectors": {
+      "additionalProperties": false,
+      "properties": {
+        "require": {
+          "default": [],
+          "description": "Detectors without which a run fails (`ner`, `ocr`, ...); `pattern`\nalways runs.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "EntityRule": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Action"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "min_confidence": {
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "EntityType": {
+      "pattern": "^[A-Z][A-Z0-9_]*$",
+      "type": "string"
+    },
+    "PatternRule": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "default": 0.8999999761581421,
+          "format": "float",
+          "type": "number"
+        },
+        "entity": {
+          "$ref": "#/$defs/EntityType"
+        },
+        "name": {
+          "description": "Lower case letters, digits and `-`; the detector is `policy:<name>`.",
+          "type": "string"
+        },
+        "regex": {
+          "description": "A Rust `regex` pattern.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "entity",
+        "regex"
+      ],
+      "type": "object"
+    },
+    "Pseudonymize": {
+      "additionalProperties": false,
+      "properties": {
+        "key_env": {
+          "description": "The environment variable that holds the key (at least 16 bytes). The\nkey itself never goes into the policy.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key_env"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "allow": {
+      "$ref": "#/$defs/Allow",
+      "default": {
+        "patterns": [],
+        "values": []
+      }
+    },
+    "defaults": {
+      "$ref": "#/$defs/Defaults",
+      "default": {
+        "action": "mask",
+        "min_confidence": 0.699999988079071
+      }
+    },
+    "detectors": {
+      "$ref": "#/$defs/Detectors",
+      "default": {
+        "require": []
+      }
+    },
+    "entities": {
+      "additionalProperties": false,
+      "default": {},
+      "description": "Per entity type: what differs from `defaults`.",
+      "patternProperties": {
+        "^[A-Z][A-Z0-9_]*$": {
+          "$ref": "#/$defs/EntityRule"
+        }
+      },
+      "type": "object"
+    },
+    "patterns": {
+      "default": [],
+      "description": "The project's own patterns.",
+      "items": {
+        "$ref": "#/$defs/PatternRule"
+      },
+      "type": "array"
+    },
+    "pseudonymize": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Pseudonymize"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Required when any action is `pseudonymize`."
+    },
+    "version": {
+      "description": "The format's version; `1`.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version"
+  ],
+  "title": "Policy",
+  "type": "object"
+}

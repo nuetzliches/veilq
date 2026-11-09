@@ -3,7 +3,9 @@
 Find and redact personal data in text, documents, images and screen
 recordings: on your machine, in CI and as an MCP tool for any agent.
 
-> **Status:** planning (M0). Nothing works yet; see [docs/plan.md](docs/plan.md).
+> **Status:** M0 done: the contracts stand (`docs/adr/`, `schema/`), only
+> `veilq policy check` runs. Detection and redaction come in M1; see
+> [docs/plan.md](docs/plan.md).
 
 ## What it will do
 
