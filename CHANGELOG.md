@@ -37,3 +37,11 @@ Notable changes per release. The format follows
 - `crates/veilq-eval` and `eval/`: a synthetic corpus with ground truth,
   golden outputs, and a recall gate in CI (ADR-0013); the skill
   `veilq-tune` for tuning against it (ADR-0014).
+- M2: `veilq mcp`, the MCP server over stdio or Streamable HTTP (`--http`),
+  with the tools `scan`, `redact_text`, `redact_file` and `list_detectors`;
+  redacted content and reports only, nothing written, no way back
+  (ADR-0016). Over HTTP a bearer token from `VEILQ_MCP_TOKEN` or printed at
+  start, loopback hosts, no browser origins (ADR-0017).
+- `veilq redact --mapping` writes what `pseudonymize` and `fake` replaced,
+  age-encrypted to the policy's `[mapping] recipients`; `veilq reveal` puts
+  the originals back (ADR-0018).

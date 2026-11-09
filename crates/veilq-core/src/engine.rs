@@ -22,6 +22,7 @@ use std::path::Path;
 use crate::detect::{Candidate, Detector};
 use crate::fake::Faker;
 use crate::finding::{Finding, Location, Report};
+use crate::mapping::Entry;
 use crate::{Action, Error, Policy, PseudonymKey};
 
 /// The size a chunk grows to before it is processed.
@@ -240,6 +241,7 @@ impl Engine {
             report: Report::new(state.findings),
             input_spans: state.input_spans,
             output_spans: state.output_spans,
+            mapping: state.mapping,
         })
     }
 
@@ -325,7 +327,7 @@ impl Engine {
                 continue;
             }
             let (raw, ranges, pseudonyms) = match output {
-                Some(_) => self.apply(&seg, &found)?,
+                Some(_) => self.apply(&seg, &found, &mut state.mapping)?,
                 None => (String::new(), Vec::new(), vec![None; found.len()]),
             };
             out.push_str(&chunk[at..seg.raw.start]);
@@ -364,12 +366,14 @@ impl Engine {
     }
 
     /// The segment with `found` replaced, encoded as it was; the
-    /// replacements' ranges in it; the pseudonym of each finding.
+    /// replacements' ranges in it; the pseudonym of each finding. What a
+    /// `pseudonymize` or `fake` replacement stood for goes to `mapping`.
     #[allow(clippy::type_complexity)]
     fn apply(
         &self,
         seg: &Segment,
         found: &[Candidate],
+        mapping: &mut Vec<Entry>,
     ) -> Result<(String, Vec<Range<usize>>, Vec<Option<String>>), Error> {
         let mut pieces: Vec<(String, bool)> = Vec::new();
         let mut pseudonyms = Vec::new();
@@ -381,6 +385,13 @@ impl Engine {
             let replacement =
                 action.replacement(&c.entity, value, self.key.as_ref(), &self.faker)?;
             pseudonyms.push((action == Action::Pseudonymize).then(|| replacement.clone()));
+            if matches!(action, Action::Pseudonymize | Action::Fake) {
+                mapping.push(Entry {
+                    replacement: replacement.clone(),
+                    entity: c.entity.as_str().to_owned(),
+                    value: value.to_owned(),
+                });
+            }
             pieces.push((replacement, true));
             at = c.end;
         }
@@ -433,6 +444,9 @@ pub struct Run {
     pub report: Report,
     pub input_spans: Vec<Range<usize>>,
     pub output_spans: Vec<Range<usize>>,
+    /// What each `pseudonymize` and `fake` replacement stood for: for a
+    /// mapping file only (ADR-0018), never for a report.
+    pub mapping: Vec<Entry>,
 }
 
 #[derive(Default)]
@@ -444,6 +458,7 @@ struct State {
     findings: Vec<Finding>,
     input_spans: Vec<Range<usize>>,
     output_spans: Vec<Range<usize>>,
+    mapping: Vec<Entry>,
     csv: CsvState,
 }
 

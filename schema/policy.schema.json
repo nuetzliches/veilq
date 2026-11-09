@@ -134,6 +134,23 @@
       "pattern": "^[A-Z][A-Z0-9_]*$",
       "type": "string"
     },
+    "Mapping": {
+      "additionalProperties": false,
+      "description": "The mapping file: what `pseudonymize` and `fake` replacements stood for.",
+      "properties": {
+        "recipients": {
+          "description": "age X25519 recipients (`age1...`) the mapping is encrypted to. Only\npublic keys: whoever holds a matching identity can read it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "recipients"
+      ],
+      "type": "object"
+    },
     "PatternRule": {
       "additionalProperties": false,
       "properties": {
@@ -236,6 +253,17 @@
         "type": "string"
       },
       "type": "array"
+    },
+    "mapping": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Mapping"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Who can read a mapping file (ADR-0018)."
     },
     "patterns": {
       "default": [],

@@ -1,4 +1,4 @@
-use std::io::{BufReader, Write};
+use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -6,6 +6,8 @@ use anyhow::Context as _;
 use clap::{Parser, Subcommand, ValueEnum};
 use veilq_core::{Action, Engine, Format, Outcome, Policy, PseudonymKey, Report, models};
 
+#[cfg(feature = "mcp")]
+mod mcp;
 mod sarif;
 #[cfg(feature = "ui")]
 mod ui;
@@ -56,6 +58,45 @@ enum Command {
         /// Also write the report (JSON) to this file.
         #[arg(long)]
         report: Option<PathBuf>,
+        /// Also write what each `pseudonymize` and `fake` replacement stood
+        /// for, encrypted to the policy's `[mapping] recipients` (age).
+        #[arg(long)]
+        mapping: Option<PathBuf>,
+    },
+    /// Put the original values back into a redacted file, from its mapping.
+    Reveal {
+        /// A redacted file, or `-` for standard input.
+        path: PathBuf,
+        /// Where the output goes; `-` (the default) for standard output.
+        #[arg(short, long, default_value = "-")]
+        output: PathBuf,
+        /// The mapping `veilq redact --mapping` wrote.
+        #[arg(long)]
+        mapping: PathBuf,
+        /// An age identity file (`AGE-SECRET-KEY-...`) of one of the
+        /// mapping's recipients.
+        #[arg(long)]
+        identity: PathBuf,
+    },
+    /// Run the MCP server: over stdio, or over Streamable HTTP with --http.
+    ///
+    /// Tools: scan, redact_text, redact_file, list_detectors. Over HTTP every
+    /// request needs `Authorization: Bearer <token>`, the token from
+    /// VEILQ_MCP_TOKEN or printed once at start.
+    #[cfg(feature = "mcp")]
+    Mcp {
+        /// The directory files may be read from; by default the current
+        /// directory.
+        #[arg(long)]
+        root: Option<PathBuf>,
+        /// Serve Streamable HTTP at this address (`127.0.0.1:4770`) at
+        /// `/mcp`, instead of stdio. Another address than loopback is
+        /// reachable from the network: the token still guards it.
+        #[arg(long)]
+        http: Option<std::net::SocketAddr>,
+        /// The policy file, found as for `policy check`.
+        #[arg(long)]
+        policy: Option<PathBuf>,
     },
     /// Work with the policy file (veilq.toml).
     Policy {
@@ -158,13 +199,33 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
             input,
             action,
             report,
+            mapping,
         } => redact(
             &path,
             &output,
             &input,
             action.map(Action::from),
             report.as_deref(),
+            mapping.as_deref(),
         ),
+        Command::Reveal {
+            path,
+            output,
+            mapping,
+            identity,
+        } => reveal(&path, &output, &mapping, &identity),
+        #[cfg(feature = "mcp")]
+        Command::Mcp { root, http, policy } => {
+            let (policy, _) = load_policy(policy.as_deref())?;
+            let engine = engine(&policy, None)?;
+            mcp::run(mcp::Options {
+                root: root.unwrap_or(std::env::current_dir()?),
+                http,
+                policy,
+                engine,
+            })?;
+            Ok(Outcome::Clean)
+        }
         Command::Policy {
             command: PolicyCommand::Check { policy },
         } => {
@@ -332,6 +393,25 @@ fn scan(path: &Path, input: &InputArgs, json: bool, sarif: bool) -> anyhow::Resu
     })
 }
 
+fn reveal(path: &Path, output: &Path, mapping: &Path, identity: &Path) -> anyhow::Result<Outcome> {
+    let data = std::fs::read(mapping).with_context(|| mapping.display().to_string())?;
+    let identity_text =
+        std::fs::read_to_string(identity).with_context(|| identity.display().to_string())?;
+    let entries = veilq_core::mapping::decrypt(&data, &identity_text)?;
+    let mut text = String::new();
+    open(path)?
+        .read_to_string(&mut text)
+        .with_context(|| path.display().to_string())?;
+    let (revealed, n) = veilq_core::mapping::reveal(&text, &entries)?;
+    if is_stdin(output) {
+        std::io::stdout().lock().write_all(revealed.as_bytes())?;
+    } else {
+        write_atomically(output, |w| Ok(w.write_all(revealed.as_bytes())?))?;
+    }
+    eprintln!("{n} replacement(s) put back");
+    Ok(Outcome::Clean)
+}
+
 fn display_relative(root: &Path, file: &Path) -> String {
     file.strip_prefix(root)
         .unwrap_or(file)
@@ -341,17 +421,66 @@ fn display_relative(root: &Path, file: &Path) -> String {
         .join("/")
 }
 
+/// Writes a file through a temporary one beside it, renamed once `write`
+/// succeeded: on an error nothing is left that could be mistaken for a result.
+fn write_atomically<T>(
+    target: &Path,
+    write: impl FnOnce(&mut dyn Write) -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
+    let tmp = target.with_file_name(format!(
+        ".{}.veilq-tmp",
+        target
+            .file_name()
+            .map(|n| n.to_string_lossy())
+            .unwrap_or_default()
+    ));
+    let result = (|| {
+        let mut file = std::io::BufWriter::new(
+            std::fs::File::create(&tmp).with_context(|| tmp.display().to_string())?,
+        );
+        let value = write(&mut file)?;
+        file.into_inner().map_err(|e| e.into_error())?.sync_all()?;
+        Ok::<_, anyhow::Error>(value)
+    })();
+    match result {
+        Ok(value) => {
+            std::fs::rename(&tmp, target).with_context(|| target.display().to_string())?;
+            Ok(value)
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
 fn redact(
     path: &Path,
     output: &Path,
     input: &InputArgs,
     action: Option<Action>,
     report_path: Option<&Path>,
+    mapping_path: Option<&Path>,
 ) -> anyhow::Result<Outcome> {
     if !is_stdin(path) && path.is_dir() {
         anyhow::bail!("{}: redact takes one file", path.display());
     }
     let (policy, _) = load_policy(input.policy.as_deref())?;
+    // Before anything runs: a mapping needs someone to encrypt it to.
+    let recipients = match mapping_path {
+        Some(_) => Some(
+            policy
+                .mapping
+                .as_ref()
+                .map(|m| m.recipients.clone())
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "--mapping needs `[mapping] recipients` in the policy: a mapping is never written unencrypted"
+                    )
+                })?,
+        ),
+        None => None,
+    };
     let engine = engine(&policy, action)?;
     let format = format_of(path, input.format.as_deref())?;
     let reader = open(path)?;
@@ -359,34 +488,23 @@ fn redact(
         let mut stdout = std::io::stdout().lock();
         engine.run(reader, Some(&mut stdout), format)?
     } else {
-        // A temporary file beside the target, renamed once the run succeeded:
-        // on exit code 2 there is no output to mistake for a redacted one.
-        let tmp = output.with_file_name(format!(
-            ".{}.veilq-tmp",
-            output
-                .file_name()
-                .map(|n| n.to_string_lossy())
-                .unwrap_or_default()
-        ));
-        let result = (|| {
-            let mut file = std::io::BufWriter::new(
-                std::fs::File::create(&tmp).with_context(|| tmp.display().to_string())?,
-            );
-            let run = engine.run(reader, Some(&mut file), format)?;
-            file.into_inner().map_err(|e| e.into_error())?.sync_all()?;
-            Ok::<_, anyhow::Error>(run)
-        })();
-        match result {
-            Ok(run) => {
-                std::fs::rename(&tmp, output).with_context(|| output.display().to_string())?;
-                run
+        // The mapping is encrypted before the output appears, so that a
+        // pseudonymized output never exists without its way back.
+        write_atomically(output, |w| {
+            let run = engine.run(reader, Some(w), format)?;
+            if let (Some(p), Some(r)) = (mapping_path, &recipients) {
+                let data = veilq_core::mapping::encrypt(&run.mapping, r)?;
+                write_atomically(p, |m| Ok(m.write_all(&data)?))?;
             }
-            Err(e) => {
-                let _ = std::fs::remove_file(&tmp);
-                return Err(e);
-            }
-        }
+            Ok(run)
+        })?
     };
+    if is_stdin(output)
+        && let (Some(p), Some(r)) = (mapping_path, &recipients)
+    {
+        let data = veilq_core::mapping::encrypt(&run.mapping, r)?;
+        write_atomically(p, |m| Ok(m.write_all(&data)?))?;
+    }
     if let Some(p) = report_path {
         let text = serde_json::to_string_pretty(&run.report)? + "\n";
         std::fs::write(p, text).with_context(|| p.display().to_string())?;

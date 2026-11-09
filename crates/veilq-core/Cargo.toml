@@ -12,6 +12,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+age = "0.12"
 hmac = "0.13.0"
 regex = "1.13.1"
 schemars = "1.2.3"

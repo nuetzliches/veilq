@@ -3,10 +3,11 @@
 Find and redact personal data in text, documents, images and screen
 recordings: on your machine, in CI and as an MCP tool for any agent.
 
-> **Status:** M1 done: text, logs, NDJSON, JSON and CSV are scanned and
-> redacted with German and English patterns; names are found by the words
-> around them until NER comes (M3). Office, mail, images and PDF follow; see
-> [docs/plan.md](docs/plan.md).
+> **Status:** M2 done: text, logs, NDJSON, JSON and CSV are scanned and
+> redacted with German and English patterns, from the CLI, a local web UI and
+> an MCP server; pseudonyms can be put back with an encrypted mapping. Names
+> are found by the words around them until NER comes (M3). Office, mail,
+> images and PDF follow; see [docs/plan.md](docs/plan.md).
 
 ## What it will do
 
@@ -22,6 +23,10 @@ veilq redact bug.gif -o bug.redacted.gif
 
 # give an agent the same through MCP
 veilq mcp
+
+# put the originals back, with the key the mapping was encrypted to
+veilq redact export.csv -o export.redacted.csv --mapping export.map.age
+veilq reveal export.redacted.csv --mapping export.map.age --identity key.txt
 
 # set the input beside the redacted output in a local web UI
 veilq ui

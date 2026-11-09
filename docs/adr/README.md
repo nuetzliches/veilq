@@ -55,3 +55,6 @@ keep it to about a page.
 | [0013](0013-a-synthetic-corpus-with-truth-and-golden-outputs-gates-recall.md) | A synthetic corpus with truth and golden outputs gates recall | Accepted |
 | [0014](0014-tuning-by-an-agent-reads-the-synthetic-corpus-only.md) | Tuning by an agent reads the synthetic corpus only | Accepted |
 | [0015](0015-scan-and-redact-output-and-exit-codes.md) | `scan` and `redact`: what they print and how they end | Accepted |
+| [0016](0016-the-mcp-server-returns-redacted-content-and-reports-only.md) | The MCP server returns redacted content and reports only | Accepted |
+| [0017](0017-mcp-over-http-a-token-from-the-environment-loopback-no-browser.md) | MCP over HTTP: a token from the environment, loopback, no browser | Accepted |
+| [0018](0018-the-mapping-file-is-age-encrypted-and-revealed-by-the-cli-only.md) | The mapping file is age-encrypted, and revealed by the CLI only | Accepted |

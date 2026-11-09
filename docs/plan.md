@@ -111,7 +111,9 @@ whole output at the end; it verifies each chunk.
 - `veilq redact <in|-> -o <out|-> [--policy] [--action]`: the redacted output
   and a report.
 - `veilq policy check [<file>]`: validate a policy file.
-- `veilq mcp [--http <addr>]`: the MCP server.
+- `veilq mcp [--http <addr>] [--root]`: the MCP server (ADR-0016, ADR-0017).
+- `veilq reveal <in> --mapping <file> --identity <file>`: the originals put
+  back from a mapping `veilq redact --mapping` wrote (ADR-0018).
 - `veilq ui [--root] [--port]`: a local web UI that sets the input (pasted
   text, an upload, a file under the root) beside the redacted output, with
   the findings marked on both sides (ADR-0008).
@@ -143,7 +145,7 @@ patterns, which detectors are required.
 |---|---|---|
 | M0 | Repository, review card for the contracts (schema, policy, placeholder, CLI), CI | **done 2026-11-09**: card approved, ADR-0001 to ADR-0007 |
 | M1 | Text, NDJSON, JSON, CSV streamed; pattern detectors for German; `scan`, `redact`, `policy check`; SARIF; evaluation corpus | **done 2026-11-09**: card approved, ADR-0009 to ADR-0015; recall gate in CI on the corpus and five held-out seeds |
-| M2 | MCP (stdio + HTTP); mapping file for reversible pseudonyms | an agent redacts an attachment through MCP |
+| M2 | MCP (stdio + HTTP); mapping file for reversible pseudonyms | **done 2026-11-09**: card approved, ADR-0016 to ADR-0018; an agent redacts a file through MCP (stdio test), mapping and reveal round-trip |
 | M3 | DOCX, XLSX, PPTX, EML; metadata stripping; NER | an Office attachment redacted with formatting intact |
 | M4 | Images and GIF with OCR; PDF by rasterising | a screen-recording GIF redacted without a leaking frame |
 | M5 | Video through ffmpeg | an MP4 screen recording redacted |
@@ -167,7 +169,8 @@ for CI. Models are release-independent downloads, pinned in the binary.
 - O-1: which NER model (licence, German quality, size).
 - O-2: which OCR model family (PaddleOCR in ONNX vs. others), and whether its
   quality on UI screenshots is enough.
-- O-3: the key for `pseudonymize`: per run, per project (from the policy's
+- O-3 (decided, ADR-0018: per project, from the policy's environment
+  variable): the key for `pseudonymize`: per run, per project (from the policy's
   environment variable) or per mapping file.
 - O-4: whether `veilq` also ships rules for an OpenTelemetry collector's
   redaction processor, so the same patterns guard telemetry at ingest.

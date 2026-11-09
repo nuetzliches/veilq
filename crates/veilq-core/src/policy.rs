@@ -51,6 +51,9 @@ pub struct Policy {
     /// Required when any action is `pseudonymize`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pseudonymize: Option<Pseudonymize>,
+    /// Who can read a mapping file (ADR-0018).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mapping: Option<Mapping>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -207,6 +210,15 @@ pub struct Pseudonymize {
     pub key_env: String,
 }
 
+/// The mapping file: what `pseudonymize` and `fake` replacements stood for.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Mapping {
+    /// age X25519 recipients (`age1...`) the mapping is encrypted to. Only
+    /// public keys: whoever holds a matching identity can read it.
+    pub recipients: Vec<String>,
+}
+
 impl Default for Policy {
     fn default() -> Self {
         Self {
@@ -218,6 +230,7 @@ impl Default for Policy {
             allow: Allow::default(),
             detectors: Detectors::default(),
             pseudonymize: None,
+            mapping: None,
         }
     }
 }
@@ -297,6 +310,14 @@ impl Policy {
                     "unknown locale `{l}` (known: {})",
                     LOCALES.join(", ")
                 ));
+            }
+        }
+        if let Some(m) = &self.mapping {
+            if m.recipients.is_empty() {
+                return Err("`mapping.recipients` is empty".into());
+            }
+            for r in &m.recipients {
+                crate::mapping::check_recipient(r)?;
             }
         }
         let mut names = std::collections::BTreeSet::new();

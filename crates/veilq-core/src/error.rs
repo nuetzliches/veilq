@@ -35,6 +35,10 @@ pub enum Error {
     #[error("the output still contains {entity} (found by {detector}); nothing was written")]
     Leftover { entity: String, detector: String },
 
+    /// Writing or reading a mapping file (ADR-0018).
+    #[error("mapping: {0}")]
+    Mapping(String),
+
     #[error("reading or writing: {0}")]
     Stream(#[source] std::io::Error),
 
