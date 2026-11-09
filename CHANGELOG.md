@@ -54,3 +54,5 @@ Notable changes per release. The format follows
 - EML: headers (encoded words), plain and HTML bodies, attachments
   recursively, written back as MIME (ADR-0020).
 - The corpus has DOCX, XLSX and EML documents with their truth.
+- `veilq ui --token-file`: the token kept across starts (ADR-0021); under
+  devstack an open tab survives a change going live. The UI explains a 401.

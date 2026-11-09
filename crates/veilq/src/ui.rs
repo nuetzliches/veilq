@@ -39,6 +39,9 @@ pub struct Options {
     /// The port of a reverse proxy on loopback that serves this server
     /// under its own address (devstack), from `--origin`.
     pub proxy_port: Option<u16>,
+    /// Where the token is kept across starts (ADR-0021); `None`: a new one
+    /// per start.
+    pub token_file: Option<PathBuf>,
     pub open: bool,
     pub policy: Policy,
     pub policy_source: String,
@@ -74,7 +77,7 @@ async fn serve(options: Options) -> anyhow::Result<()> {
     let port = listener.local_addr()?.port();
     let ports: Vec<u16> = std::iter::once(port).chain(options.proxy_port).collect();
     let state = Arc::new(AppState::new(
-        new_token()?,
+        token(options.token_file.as_deref())?,
         &ports,
         root,
         options.policy,
@@ -160,6 +163,30 @@ fn router(state: Arc<AppState>) -> Router {
 }
 
 /// 32 random bytes as hex.
+/// The token of `file` if it holds one, else a new one, written there
+/// (ADR-0021); without a file, a new one.
+fn token(file: Option<&Path>) -> anyhow::Result<String> {
+    let Some(file) = file else {
+        return new_token();
+    };
+    if file.is_file() {
+        let t = std::fs::read_to_string(file)?.trim().to_owned();
+        if t.len() < 32 || !t.bytes().all(|b| b.is_ascii_hexdigit()) {
+            anyhow::bail!(
+                "{}: not a token (64 hex characters); delete it for a new one",
+                file.display()
+            );
+        }
+        return Ok(t);
+    }
+    let t = new_token()?;
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(file, format!("{t}\n"))?;
+    Ok(t)
+}
+
 fn new_token() -> anyhow::Result<String> {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes).map_err(|e| anyhow::anyhow!("no randomness for the token: {e}"))?;
@@ -856,6 +883,18 @@ Mira Albers,14.03.1987
         ] {
             assert!(parse_origin(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_token_file_keeps_the_token() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("sub/ui-token");
+        let first = token(Some(&file)).unwrap();
+        assert_eq!(first.len(), 64);
+        assert_eq!(token(Some(&file)).unwrap(), first);
+        std::fs::write(&file, "short").unwrap();
+        assert!(token(Some(&file)).is_err());
+        assert_ne!(token(None).unwrap(), first);
     }
 
     #[test]

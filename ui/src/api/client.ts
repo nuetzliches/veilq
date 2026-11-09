@@ -23,6 +23,9 @@ export function httpApi(token: string): Api {
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     });
     const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    if (response.status === 401) {
+      throw new ApiError(401, 'This page has no valid token: open veilq ui with the link it printed (under devstack, the dashboard\'s link).');
+    }
     if (!response.ok) {
       throw new ApiError(response.status, body?.error ?? `${response.status} ${response.statusText}`);
     }

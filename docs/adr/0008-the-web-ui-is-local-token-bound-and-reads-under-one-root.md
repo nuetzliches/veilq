@@ -1,6 +1,6 @@
 # ADR-0008: The web UI is local, token-bound, and reads under one root
 
-- **Status:** Accepted (card UI, points 1-7, approved 2026-11-09); since M1 the UI redacts for real
+- **Status:** Accepted (card UI, points 1-7, approved 2026-11-09); since M1 the UI redacts for real; the token can be kept across starts (ADR-0021)
 - **Date:** 2026-11-09
 - **Deciders:** project owner
 - **Related:** [plan.md §4.1](../plan.md#41-cli), [ADR-0002](0002-a-finding-never-carries-the-value.md), [ADR-0003](0003-exit-codes-0-1-2-and-veilq-fails-closed.md), [ADR-0007](0007-the-mcp-server-reads-under-one-root-and-http-needs-a-token.md)

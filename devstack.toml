@@ -33,8 +33,10 @@ tunnel     = false
 prepare    = { run = "npm ci", inputs = ["ui/package-lock.json"], outputs = ["ui/node_modules"], link = ["ui/node_modules"] }
 
 # `veilq ui` with the UI embedded (build.rs takes ui/dist). It prints its URL
-# with a token that is new at every start (ADR-0008); `link` makes that URL
-# the dashboard's link, so the button opens the UI logged in. `--origin` lets
+# with its token; `link` makes that URL the dashboard's link, so the button
+# opens the UI logged in. `--token-file` keeps the token across builds
+# (ADR-0021): an open tab goes on working after a change went live. The file
+# is under target/, never committed; delete it for a new token. `--origin` lets
 # the server accept requests through devstack's proxy on the fixed port, and
 # makes the printed URL name that port.
 #
@@ -44,7 +46,7 @@ prepare    = { run = "npm ci", inputs = ["ui/package-lock.json"], outputs = ["ui
 [services.veilq]
 build   = "npm --prefix ui run build && cargo install --path crates/veilq --bin veilq --debug --locked --force --target-dir target --root target/devstack/veilq"
 output  = "target/devstack/veilq/bin"
-run     = "{artifact}/veilq ui --root {repo} --port {port} --origin {service.veilq.url} --no-open"
+run     = "{artifact}/veilq ui --root {repo} --port {port} --origin {service.veilq.url} --token-file {repo}/target/devstack/ui-token --no-open"
 port    = 4760
 # Answers once the server listens; there is nothing else it waits for.
 health  = { http = "/healthz", timeout = "60s" }

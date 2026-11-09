@@ -121,6 +121,11 @@ enum Command {
         /// it are accepted too, and the printed URL uses it.
         #[arg(long, value_parser = ui::parse_origin)]
         origin: Option<u16>,
+        /// Keep the token in this file, so that it survives a restart: read
+        /// it if the file exists, else write a new one there. Without it, a
+        /// new token per start.
+        #[arg(long)]
+        token_file: Option<PathBuf>,
         /// Print the URL only, do not open a browser.
         #[arg(long)]
         no_open: bool,
@@ -245,6 +250,7 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
             root,
             port,
             origin,
+            token_file,
             no_open,
             policy,
         } => {
@@ -254,6 +260,7 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
                 root: root.unwrap_or(std::env::current_dir()?),
                 port,
                 proxy_port: origin,
+                token_file,
                 open: !no_open,
                 policy,
                 policy_source: source.to_string(),
