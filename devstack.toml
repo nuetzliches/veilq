@@ -1,0 +1,61 @@
+# devstack stack file. Reference: https://github.com/nuetzliches/devstack/blob/v0.42.0/docs/stack-file.md
+# Validate after every edit: `devstack check --compose`.
+#
+# Two services, both native: the web UI's dev server against the in-browser
+# mock (hot reload, synthetic data), and `veilq ui` itself with the UI built
+# and embedded, against the real engine. veilq has no infrastructure (no
+# database, no queue), so there is no `[compose.*]` group, no seed or reset
+# command, and no background workers.
+#
+# Windows: the first build of `veilq` compiles the workspace in the lane's
+# snapshot from scratch. If it dies with os error 1455 (paging file), start the
+# daemon with CARGO_BUILD_JOBS=2 in the environment.
+
+version = 1
+
+[stack]
+name     = "veilq"
+requires = "0.37.0"   # tunnel = false
+reviewed = "0.42.0"   # the devstack this file was last brought up to date with
+
+# The UI against src/api/mock.ts: for working on the UI, no Rust build.
+[services.ui]
+kind       = "devserver"
+cwd        = "ui"
+run        = "npx vite --mode mock --host 127.0.0.1 --port {port} --strictPort"
+port       = 4761
+health     = { http = "/", timeout = "90s" }
+restart_on = ["ui/vite.config.ts", "ui/package.json", "ui/tsconfig*.json", "ui/env.d.ts"]
+tunnel     = false
+# A lane's copy has no node_modules (ignored files are not copied); `link`
+# makes the copy's available in the lane's worktree too (stop the lane before
+# `git worktree remove`).
+prepare    = { run = "npm ci", inputs = ["ui/package-lock.json"], outputs = ["ui/node_modules"], link = ["ui/node_modules"] }
+
+# `veilq ui` with the UI embedded (build.rs takes ui/dist). Its URL with the
+# token is in the log (`devstack logs veilq`); the token is new with every
+# build, so open the URL again after a change goes live. `--origin` lets the
+# server accept requests through devstack's proxy on the fixed port.
+#
+# `cargo install --root` rather than `cargo build`: it puts just the binary in
+# a directory of its own, so `output` copies one file instead of target/debug.
+# `--target-dir target` keeps the snapshot's incremental state warm.
+[services.veilq]
+build   = "npm --prefix ui run build && cargo install --path crates/veilq --bin veilq --debug --locked --force --target-dir target --root target/devstack/veilq"
+output  = "target/devstack/veilq/bin"
+run     = "{artifact}/veilq ui --root {repo} --port {port} --origin {service.veilq.url} --no-open"
+port    = 4760
+# Answers once the server listens; there is nothing else it waits for.
+health  = { http = "/healthz", timeout = "60s" }
+# Never public: the UI reads files under the repository.
+tunnel  = false
+watch   = [
+  "crates/**", "Cargo.toml", "Cargo.lock",
+  "ui/src/**", "ui/public/**", "ui/index.html", "ui/vite.config.ts", "ui/tsconfig*.json", "ui/env.d.ts",
+]
+prepare = { run = "npm ci", cwd = "ui", inputs = ["ui/package-lock.json"], outputs = ["ui/node_modules"] }
+
+# Where `devstack skills install` writes the agent skills. The repository is
+# worked on with Claude Code (CLAUDE.md, .mcp.json).
+[agents]
+skills = [".claude/skills"]

@@ -21,6 +21,9 @@ veilq redact bug.gif -o bug.redacted.gif
 
 # give an agent the same through MCP
 veilq mcp
+
+# set the input beside the redacted output in a local web UI
+veilq ui
 ```
 
 - **German first:** names, addresses, IBAN (checked), tax ID, social security
@@ -31,6 +34,14 @@ veilq mcp
 - **Fail closed:** what veilq cannot read is an error, never passed through.
 - **Serialisable:** one JSON schema for CLI output and MCP tools; findings
   never contain the original value.
+
+## Development
+
+`devstack up` runs the web UI against an in-browser mock (`ui`, :4761) and
+`veilq ui` with the UI embedded (`veilq`, :4760; its URL with the token is in
+`devstack logs veilq`). Without devstack: `npm ci && npm run dev` in `ui/` for
+the mock, `npm run build` there and then `cargo run -- ui` for the real thing.
+A build of veilq without `ui/dist` serves a page that says how to get one.
 
 ## Licence
 

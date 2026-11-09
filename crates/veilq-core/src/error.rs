@@ -16,6 +16,10 @@ pub enum Error {
     #[error("action `{0}` is not built yet")]
     ActionNotBuilt(&'static str),
 
+    /// A part of the pipeline that a later milestone builds.
+    #[error("{0} is not built yet")]
+    NotBuilt(&'static str),
+
     #[error("action `pseudonymize` needs a key")]
     KeyMissing,
 

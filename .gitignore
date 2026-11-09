@@ -13,3 +13,10 @@
 # Agent session state.
 /.claude/*
 !/.claude/skills/
+
+# The web UI (ui/): dependencies and build, embedded by `veilq ui`.
+/ui/node_modules
+/ui/dist/
+
+# devstack: lane snapshots, build artifacts, daemon state (devstack.toml).
+.devstack/

@@ -13,6 +13,7 @@ pub mod models;
 pub mod outcome;
 pub mod policy;
 pub mod pseudonym;
+pub mod redact;
 pub mod root;
 
 pub use action::Action;
@@ -21,3 +22,4 @@ pub use finding::{EntityType, Finding, Location, Report};
 pub use outcome::Outcome;
 pub use policy::Policy;
 pub use pseudonym::PseudonymKey;
+pub use redact::{Redacted, redact_text};

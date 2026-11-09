@@ -4,6 +4,9 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use veilq_core::{Outcome, Policy, models};
 
+#[cfg(feature = "ui")]
+mod ui;
+
 /// Find and redact personal data in text, documents, images and screen
 /// recordings.
 ///
@@ -21,6 +24,31 @@ enum Command {
     Policy {
         #[command(subcommand)]
         command: PolicyCommand,
+    },
+    /// Open a local web UI that sets the input beside the redacted output.
+    ///
+    /// It listens on 127.0.0.1 only and prints a URL with a token; reads
+    /// files under --root only.
+    #[cfg(feature = "ui")]
+    Ui {
+        /// The directory the UI may read files from; by default the current
+        /// directory.
+        #[arg(long)]
+        root: Option<PathBuf>,
+        /// The port; by default a free one.
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// The address a reverse proxy on loopback serves this server under
+        /// (`http://127.0.0.1:<port>`), as devstack does: requests that name
+        /// it are accepted too, and the printed URL uses it.
+        #[arg(long, value_parser = ui::parse_origin)]
+        origin: Option<u16>,
+        /// Print the URL only, do not open a browser.
+        #[arg(long)]
+        no_open: bool,
+        /// The policy file, found as for `policy check`.
+        #[arg(long)]
+        policy: Option<PathBuf>,
     },
 }
 
@@ -62,6 +90,27 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
                 policy.patterns.len(),
                 policy.defaults.action.name()
             );
+            Ok(Outcome::Clean)
+        }
+        #[cfg(feature = "ui")]
+        Command::Ui {
+            root,
+            port,
+            origin,
+            no_open,
+            policy,
+        } => {
+            let cwd = std::env::current_dir()?;
+            let (policy, source) = Policy::discover(policy.as_deref(), &cwd)?;
+            models::check_required(&policy.detectors.require, &models::model_dir())?;
+            ui::run(ui::Options {
+                root: root.unwrap_or(cwd),
+                port,
+                proxy_port: origin,
+                open: !no_open,
+                policy,
+                policy_source: source.to_string(),
+            })?;
             Ok(Outcome::Clean)
         }
     }

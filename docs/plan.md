@@ -112,6 +112,9 @@ whole output at the end; it verifies each chunk.
   and a report.
 - `veilq policy check [<file>]`: validate a policy file.
 - `veilq mcp [--http <addr>]`: the MCP server.
+- `veilq ui [--root] [--port]`: a local web UI that sets the input (pasted
+  text, an upload, a file under the root) beside the redacted output, with
+  the findings marked on both sides (ADR-0008).
 
 ### 4.2 MCP
 

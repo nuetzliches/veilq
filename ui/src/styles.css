@@ -1,0 +1,153 @@
+/* Design tokens as in the devstack dashboard. Light is the default; dark
+   follows the system. */
+:root {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --topbar-h: 52px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  color-scheme: light;
+  --bg: #f4f5f8;
+  --bg-elev: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f6f7fa;
+  --surface-3: #eceef3;
+  --surface-hover: #f0f2f7;
+  --border: #e1e4ea;
+  --border-strong: #cfd4dd;
+  --text: #171a21;
+  --text-2: #4a5161;
+  --text-muted: #6d7586;
+  --text-faint: #9aa1af;
+  --accent: #3a6df0;
+  --accent-hover: #2f5ed6;
+  --accent-soft: #e8eefe;
+  --accent-text: #2350c7;
+  --on-accent: #ffffff;
+  --ok-soft: #e3f5ec;
+  --ok-text: #10764a;
+  --warn-soft: #fdf3dd;
+  --warn-text: #94600a;
+  --danger-soft: #fce8eb;
+  --danger-text: #b02a3b;
+  --focus: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #0f1115;
+    --bg-elev: #151820;
+    --surface: #161a22;
+    --surface-2: #1b2029;
+    --surface-3: #232a35;
+    --surface-hover: #1f2530;
+    --border: #272e3a;
+    --border-strong: #354050;
+    --text: #e7eaf0;
+    --text-2: #b8bfcc;
+    --text-muted: #8b94a5;
+    --text-faint: #646d7e;
+    --accent: #5b87f5;
+    --accent-hover: #7099f7;
+    --accent-soft: #1d2a4a;
+    --accent-text: #9db8fa;
+    --ok-soft: #12301f;
+    --ok-text: #5fd39a;
+    --warn-soft: #34280f;
+    --warn-text: #e8b85a;
+    --danger-soft: #3a1820;
+    --danger-text: #f2879a;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-variant-ligatures: none;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+}
+
+p {
+  margin: 0;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  padding: 6px var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 500;
+}
+button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+button.small {
+  padding: 2px var(--space-2);
+  font-size: 12px;
+}
+button.link {
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  color: var(--accent-text);
+}
+button.link:hover {
+  background: none;
+  text-decoration: underline;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}

@@ -47,3 +47,4 @@ keep it to about a page.
 | [0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md) | Models are fetched explicitly and pinned in the binary | Accepted |
 | [0006](0006-four-actions-mask-by-default.md) | Four actions, `mask` by default | Accepted |
 | [0007](0007-the-mcp-server-reads-under-one-root-and-http-needs-a-token.md) | The MCP server reads under one root, and HTTP needs a token | Accepted |
+| [0008](0008-the-web-ui-is-local-token-bound-and-reads-under-one-root.md) | The web UI is local, token-bound, and reads under one root | Accepted |

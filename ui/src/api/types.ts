@@ -1,0 +1,74 @@
+// The internal API of `veilq ui` (crates/veilq/src/ui.rs). Findings and the
+// report follow schema/report.schema.json.
+
+export type Location =
+  | { kind: 'span'; part?: string; start: number; end: number; line: number; column: number }
+  | { kind: 'cell'; sheet?: string; row: number; column: number; start: number; end: number }
+  | { kind: 'region'; frame?: number; x: number; y: number; width: number; height: number };
+
+export interface Finding {
+  entity: string;
+  location: Location;
+  confidence: number;
+  detector: string;
+  pseudonym?: string;
+}
+
+export interface Report {
+  version: number;
+  findings: Finding[];
+  review_required: boolean;
+  review_reasons?: string[];
+}
+
+export interface Info {
+  version: string;
+  root: string;
+  policy: string;
+  default_action: string;
+  max_input: number;
+}
+
+export interface Entry {
+  name: string;
+  /** Relative to the root, with `/`. */
+  path: string;
+  dir: boolean;
+  size: number;
+}
+
+export interface Listing {
+  dir: string;
+  entries: Entry[];
+  truncated: boolean;
+}
+
+export type Source =
+  | { kind: 'text'; text: string }
+  | { kind: 'upload'; name: string; data: string }
+  | { kind: 'file'; path: string };
+
+export interface Redaction {
+  name?: string;
+  input: string;
+  output: string;
+  /** Per finding, the byte range of its replacement in `output`. */
+  output_spans: [number, number][];
+  report: Report;
+}
+
+export interface Api {
+  readonly mock: boolean;
+  info(): Promise<Info>;
+  files(dir: string): Promise<Listing>;
+  redact(source: Source): Promise<Redaction>;
+}
+
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
