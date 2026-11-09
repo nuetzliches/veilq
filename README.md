@@ -44,8 +44,8 @@ veilq ui
 ## Development
 
 `devstack up` runs the web UI against an in-browser mock (`ui`, :4761) and
-`veilq ui` with the UI embedded (`veilq`, :4760; its URL with the token is in
-`devstack logs veilq`). Without devstack: `npm ci && npm run dev` in `ui/` for
+`veilq ui` with the UI embedded (`veilq`, :4760; the dashboard's link opens it
+with its token, `devstack status` lists the URL). Without devstack: `npm ci && npm run dev` in `ui/` for
 the mock, `npm run build` there and then `cargo run -- ui` for the real thing.
 A build of veilq without `ui/dist` serves a page that says how to get one.
 
