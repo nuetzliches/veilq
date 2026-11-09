@@ -134,7 +134,7 @@ enum Command {
 struct InputArgs {
     /// The input's format; by default from the file's extension, `text` for
     /// standard input.
-    #[arg(long, value_parser = ["text", "ndjson", "json", "csv", "tsv"])]
+    #[arg(long, value_parser = ["text", "ndjson", "json", "csv", "tsv", "docx", "xlsx", "pptx"])]
     format: Option<String>,
     /// The policy file; by default veilq.toml in the current directory, else
     /// in the git repository's root, else the built-in defaults.
@@ -294,6 +294,25 @@ fn format_of(path: &Path, explicit: Option<&str>) -> anyhow::Result<Format> {
     })
 }
 
+/// A run of any format: text formats streamed, containers read whole.
+fn run_any(
+    engine: &Engine,
+    mut reader: Box<dyn std::io::BufRead>,
+    output: Option<&mut dyn Write>,
+    format: Format,
+) -> anyhow::Result<veilq_core::engine::Run> {
+    if !format.is_container() {
+        return Ok(engine.run(reader, output, format)?);
+    }
+    let mut input = Vec::new();
+    reader.read_to_end(&mut input)?;
+    let (bytes, run) = engine.run_bytes(&input, format, output.is_some())?;
+    if let Some(w) = output {
+        w.write_all(&bytes)?;
+    }
+    Ok(run)
+}
+
 fn is_stdin(path: &Path) -> bool {
     path.as_os_str() == "-"
 }
@@ -345,8 +364,7 @@ fn scan(path: &Path, input: &InputArgs, json: bool, sarif: bool) -> anyhow::Resu
         .collect::<anyhow::Result<Vec<_>>>()?;
     let mut results: Vec<(String, Report)> = Vec::new();
     for (file, format) in files.iter().zip(formats) {
-        let run = engine
-            .run(open(file)?, None, format)
+        let run = run_any(&engine, open(file)?, None, format)
             .with_context(|| file.display().to_string())?;
         let name = if dir {
             display_relative(path, file)
@@ -486,12 +504,12 @@ fn redact(
     let reader = open(path)?;
     let run = if is_stdin(output) {
         let mut stdout = std::io::stdout().lock();
-        engine.run(reader, Some(&mut stdout), format)?
+        run_any(&engine, reader, Some(&mut stdout), format)?
     } else {
         // The mapping is encrypted before the output appears, so that a
         // pseudonymized output never exists without its way back.
         write_atomically(output, |w| {
-            let run = engine.run(reader, Some(w), format)?;
+            let run = run_any(&engine, reader, Some(w), format)?;
             if let (Some(p), Some(r)) = (mapping_path, &recipients) {
                 let data = veilq_core::mapping::encrypt(&run.mapping, r)?;
                 write_atomically(p, |m| Ok(m.write_all(&data)?))?;

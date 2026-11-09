@@ -107,6 +107,13 @@
       },
       "type": "object"
     },
+    "Embedded": {
+      "enum": [
+        "error",
+        "remove"
+      ],
+      "type": "string"
+    },
     "EntityRule": {
       "additionalProperties": false,
       "properties": {
@@ -149,6 +156,18 @@
       "required": [
         "recipients"
       ],
+      "type": "object"
+    },
+    "Office": {
+      "additionalProperties": false,
+      "description": "How Office files are read.",
+      "properties": {
+        "embedded": {
+          "$ref": "#/$defs/Embedded",
+          "default": "error",
+          "description": "Images and embedded objects, which veilq does not read until M4:\n`error` (the default) stops the run, `remove` blanks images (the\nreport then asks for a review); other objects stay an error."
+        }
+      },
       "type": "object"
     },
     "PatternRule": {
@@ -264,6 +283,13 @@
         }
       ],
       "description": "Who can read a mapping file (ADR-0018)."
+    },
+    "office": {
+      "$ref": "#/$defs/Office",
+      "default": {
+        "embedded": "error"
+      },
+      "description": "Office files (ADR-0019)."
     },
     "patterns": {
       "default": [],

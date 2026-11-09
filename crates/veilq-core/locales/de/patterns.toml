@@ -11,7 +11,7 @@ confidence = 0.85
 [[patterns]]
 name = "name-role"
 entity = "PERSON"
-regex = '\b(?:Hallo|Liebe[rs]?|Sehr geehrte[rs]?|Kontoinhaber(?:in)?|Ansprechpartner(?:in)?|Mandant(?:in)?|Bruder|Schwester|Ehemann|Ehefrau|Sohn|Tochter|Vater|Mutter|Sachbearbeiter(?:in)?|Kläger(?:in)?|Beklagte[rn]?|Zeugin|Zeuge|Patient(?:in)?|Mieter(?:in)?|Vermieter(?:in)?|Schuldner(?:in)?|Gläubiger(?:in)?|Kunde|Kundin|zu Händen|z\. ?Hd\.?)[:,]?\s+(?:von\s+|vom\s+)?(?P<pii>\p{Lu}\p{Ll}+(?:[- ]\p{Lu}\p{Ll}+){1,2})'
+regex = '\b(?:Hallo|Liebe[rs]?|Sehr geehrte[rs]?|Kontoinhaber(?:in)?|Ansprechpartner(?:in)?|Mandant(?:in)?|Bruder|Schwester|Ehemann|Ehefrau|Sohn|Tochter|Vater|Mutter|Sachbearbeiter(?:in)?|Sachbearbeitung|Bearbeiter(?:in)?|Kläger(?:in)?|Beklagte[rn]?|Zeugin|Zeuge|Patient(?:in)?|Mieter(?:in)?|Vermieter(?:in)?|Schuldner(?:in)?|Gläubiger(?:in)?|Kunde|Kundin|zu Händen|z\. ?Hd\.?)[:,]?\s+(?:von\s+|vom\s+)?(?P<pii>\p{Lu}\p{Ll}+(?:[- ]\p{Lu}\p{Ll}+){1,2})'
 confidence = 0.8
 
 [[patterns]]

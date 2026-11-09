@@ -41,6 +41,10 @@ pub enum Format {
     Csv {
         delimiter: Option<u8>,
     },
+    /// Word, Excel and PowerPoint (ADR-0019), read whole.
+    Docx,
+    Xlsx,
+    Pptx,
 }
 
 impl Format {
@@ -54,6 +58,9 @@ impl Format {
             "tsv" => Self::Csv {
                 delimiter: Some(b'\t'),
             },
+            "docx" => Self::Docx,
+            "xlsx" => Self::Xlsx,
+            "pptx" => Self::Pptx,
             other => return Err(Error::UnsupportedFormat(other.to_owned())),
         })
     }
@@ -85,7 +92,16 @@ impl Format {
                 delimiter: Some(b'\t'),
             } => "tsv",
             Self::Csv { .. } => "csv",
+            Self::Docx => "docx",
+            Self::Xlsx => "xlsx",
+            Self::Pptx => "pptx",
         }
+    }
+
+    /// Whether the format is read whole as bytes ([`Engine::run_bytes`]),
+    /// not streamed as text.
+    pub fn is_container(self) -> bool {
+        matches!(self, Self::Docx | Self::Xlsx | Self::Pptx)
     }
 }
 
@@ -167,6 +183,36 @@ impl Engine {
         })
     }
 
+    /// A container format, read whole: the output (empty for a scan) and
+    /// what the run found. Text formats go through [`Engine::run`].
+    pub fn run_bytes(
+        &self,
+        input: &[u8],
+        format: Format,
+        apply: bool,
+    ) -> Result<(Vec<u8>, Run), Error> {
+        if !format.is_container() {
+            let mut out = Vec::new();
+            let run = self.run(input, apply.then_some(&mut out as &mut dyn Write), format)?;
+            return Ok((out, run));
+        }
+        let o = crate::office::process(self, input, apply)?;
+        let mut report = Report::new(o.findings);
+        if !o.review_reasons.is_empty() {
+            report.review_required = true;
+            report.review_reasons = o.review_reasons;
+        }
+        Ok((
+            o.output,
+            Run {
+                report,
+                input_spans: Vec::new(),
+                output_spans: Vec::new(),
+                mapping: o.mapping,
+            },
+        ))
+    }
+
     /// Reads `input` in chunks; with `output`, writes it redacted (a
     /// redaction), else only finds (a scan). On an error, what was written
     /// so far is redacted, but incomplete; the caller removes it where it
@@ -177,6 +223,12 @@ impl Engine {
         mut output: Option<&mut dyn Write>,
         format: Format,
     ) -> Result<Run, Error> {
+        if format.is_container() {
+            return Err(Error::Format(format!(
+                "{} is read whole, not streamed",
+                format.name()
+            )));
+        }
         let mut state = State::default();
         let mut pending = String::new();
         let mut line = Vec::new();
@@ -227,6 +279,7 @@ impl Engine {
                         self.emit(&pending, pending.len(), segments, &mut state, &mut output)?;
                         pending.len()
                     }
+                    Format::Docx | Format::Xlsx | Format::Pptx => unreachable!("refused above"),
                 };
                 pending.drain(..consumed);
             }
@@ -365,22 +418,30 @@ impl Engine {
         Ok(())
     }
 
-    /// The segment with `found` replaced, encoded as it was; the
-    /// replacements' ranges in it; the pseudonym of each finding. What a
+    /// The findings in `text`, decided (for formats beside this module).
+    pub(crate) fn findings(&self, text: &str, context: &str) -> Vec<Candidate> {
+        self.detector.findings(text, context)
+    }
+
+    /// `text` cut into pieces: what stays (`false`) and each finding's
+    /// replacement (`true`), in order; the pseudonym of each finding. What a
     /// `pseudonymize` or `fake` replacement stood for goes to `mapping`.
+    /// **verify**: the new text holds nothing above the threshold outside the
+    /// replacements, or the run stops (ADR-0003).
     #[allow(clippy::type_complexity)]
-    fn apply(
+    pub(crate) fn replace(
         &self,
-        seg: &Segment,
+        text: &str,
+        context: &str,
         found: &[Candidate],
         mapping: &mut Vec<Entry>,
-    ) -> Result<(String, Vec<Range<usize>>, Vec<Option<String>>), Error> {
+    ) -> Result<(Vec<(String, bool)>, Vec<Option<String>>), Error> {
         let mut pieces: Vec<(String, bool)> = Vec::new();
         let mut pseudonyms = Vec::new();
         let mut at = 0;
         for c in found {
-            pieces.push((seg.text[at..c.start].to_owned(), false));
-            let value = &seg.text[c.start..c.end];
+            pieces.push((text[at..c.start].to_owned(), false));
+            let value = &text[c.start..c.end];
             let action = self.action_for(c);
             let replacement =
                 action.replacement(&c.entity, value, self.key.as_ref(), &self.faker)?;
@@ -395,9 +456,8 @@ impl Engine {
             pieces.push((replacement, true));
             at = c.end;
         }
-        pieces.push((seg.text[at..].to_owned(), false));
+        pieces.push((text[at..].to_owned(), false));
 
-        // verify: nothing above the threshold outside the replacements.
         let new: String = pieces.iter().map(|(p, _)| p.as_str()).collect();
         let mut replaced = Vec::new();
         let mut pos = 0;
@@ -407,7 +467,7 @@ impl Engine {
             }
             pos += p.len();
         }
-        for f in self.detector.findings(&new, &seg.context) {
+        for f in self.detector.findings(&new, context) {
             if replaced
                 .iter()
                 .all(|r| f.end <= r.start || f.start >= r.end)
@@ -418,7 +478,26 @@ impl Engine {
                 });
             }
         }
+        Ok((pieces, pseudonyms))
+    }
 
+    /// The policy this engine decides by.
+    pub fn policy(&self) -> &Policy {
+        self.detector.policy()
+    }
+
+    /// The segment with `found` replaced, encoded as it was; the
+    /// replacements' ranges in it; the pseudonym of each finding. What a
+    /// `pseudonymize` or `fake` replacement stood for goes to `mapping`.
+    #[allow(clippy::type_complexity)]
+    fn apply(
+        &self,
+        seg: &Segment,
+        found: &[Candidate],
+        mapping: &mut Vec<Entry>,
+    ) -> Result<(String, Vec<Range<usize>>, Vec<Option<String>>), Error> {
+        let (pieces, pseudonyms) = self.replace(&seg.text, &seg.context, found, mapping)?;
+        let new: String = pieces.iter().map(|(p, _)| p.as_str()).collect();
         let quote = seg.enc.needs_quotes(&new);
         let mut raw = String::new();
         let mut ranges = Vec::new();
@@ -1055,7 +1134,11 @@ mod tests {
             engine().run(&[0x48, 0xff, 0x0a][..], None, Format::Text),
             Err(Error::NotUtf8 { line: 1 })
         ));
-        assert!(Format::from_path(Path::new("a.docx")).is_err());
+        assert!(Format::from_path(Path::new("a.pdf")).is_err());
+        assert_eq!(
+            Format::from_path(Path::new("a.DOCX")).unwrap(),
+            Format::Docx
+        );
         assert!(Format::from_path(Path::new("Makefile")).is_err());
         assert_eq!(Format::from_path(Path::new("x.LOG")).unwrap(), Format::Text);
     }

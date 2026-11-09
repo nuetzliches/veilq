@@ -14,10 +14,12 @@ pub mod fake;
 pub mod finding;
 pub mod mapping;
 pub mod models;
+pub mod office;
 pub mod outcome;
 pub mod policy;
 pub mod pseudonym;
 pub mod root;
+pub mod xml;
 
 pub use action::Action;
 pub use engine::{Engine, Format, Redacted};

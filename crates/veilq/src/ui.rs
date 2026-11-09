@@ -450,17 +450,26 @@ fn redact_source(state: &AppState, source: Source) -> Result<RedactResponse, Fai
     if bytes.len() > MAX_INPUT {
         return Err(too_large(label));
     }
-    // Fail closed: what veilq cannot read is an error, not a pass-through.
-    let input = String::from_utf8(bytes).map_err(|_| {
-        Failure(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            format!("{label} is not UTF-8 text; documents come in M3, images in M4"),
-        )
-    })?;
     let format = match &name {
         Some(n) => Format::from_path(Path::new(n)).map_err(Failure::from)?,
         None => Format::Text,
     };
+    if format.is_container() {
+        return Err(Failure(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!(
+                "{label}: the UI sets text formats side by side; redact {} files with `veilq redact` or the MCP server",
+                format.name()
+            ),
+        ));
+    }
+    // Fail closed: what veilq cannot read is an error, not a pass-through.
+    let input = String::from_utf8(bytes).map_err(|_| {
+        Failure(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("{label} is not UTF-8 text; images come in M4"),
+        )
+    })?;
     let redacted = state
         .engine
         .redact_str(&input, format)
@@ -797,7 +806,7 @@ Mira Albers,14.03.1987
             body["error"]
                 .as_str()
                 .unwrap()
-                .contains("unsupported format"),
+                .contains("the UI sets text formats"),
             "{body}"
         );
     }
@@ -807,7 +816,7 @@ Mira Albers,14.03.1987
         let dir = tempfile::tempdir().unwrap();
         let data = base64::engine::general_purpose::STANDARD.encode([0xff, 0xfe, 0x00]);
         let body =
-            redact_body(serde_json::json!({ "kind": "upload", "name": "x.bin", "data": data }));
+            redact_body(serde_json::json!({ "kind": "upload", "name": "x.txt", "data": data }));
         let (status, body) = send(
             app(dir.path()),
             authed("POST", "/api/redact")

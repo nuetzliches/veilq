@@ -54,6 +54,28 @@ pub struct Policy {
     /// Who can read a mapping file (ADR-0018).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mapping: Option<Mapping>,
+    /// Office files (ADR-0019).
+    #[serde(default)]
+    pub office: Office,
+}
+
+/// How Office files are read.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Office {
+    /// Images and embedded objects, which veilq does not read until M4:
+    /// `error` (the default) stops the run, `remove` blanks images (the
+    /// report then asks for a review); other objects stay an error.
+    #[serde(default)]
+    pub embedded: Embedded,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Embedded {
+    #[default]
+    Error,
+    Remove,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -231,6 +253,7 @@ impl Default for Policy {
             detectors: Detectors::default(),
             pseudonymize: None,
             mapping: None,
+            office: Office::default(),
         }
     }
 }

@@ -114,7 +114,7 @@ impl Server {
     }
 
     /// The text of a file source and the format to read it in.
-    fn read(&self, p: &FileParams) -> Result<(String, String, Format), String> {
+    fn read(&self, p: &FileParams) -> Result<(String, Vec<u8>, Format), String> {
         let (name, bytes) = match (&p.path, &p.content_base64) {
             (Some(path), None) => {
                 let resolved = root::resolve_under(&self.inner.root, Path::new(path))
@@ -150,10 +150,7 @@ impl Server {
             Some(f) => f,
             None => Format::from_path(Path::new(&name)).map_err(|e| e.to_string())?,
         };
-        // Fail closed: what veilq cannot read is an error, not a pass-through.
-        let text = String::from_utf8(bytes)
-            .map_err(|_| format!("{name} is not UTF-8 text; documents come in M3, images in M4"))?;
-        Ok((name, text, format))
+        Ok((name, bytes, format))
     }
 
     async fn blocking<T: Send + 'static>(
@@ -167,6 +164,40 @@ impl Server {
     }
 }
 
+/// A file scanned or redacted: text formats as text, Office files as base64.
+fn file_result(
+    s: &Inner,
+    name: String,
+    bytes: &[u8],
+    format: Format,
+    apply: bool,
+) -> Result<serde_json::Value, String> {
+    if format.is_container() {
+        let (out, run) = s
+            .engine
+            .run_bytes(bytes, format, apply)
+            .map_err(|e| e.to_string())?;
+        let mut v = serde_json::json!({ "name": name, "report": run.report });
+        if apply {
+            v["output_base64"] = base64::engine::general_purpose::STANDARD.encode(out).into();
+        }
+        return Ok(v);
+    }
+    // Fail closed: what veilq cannot read is an error, not a pass-through.
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| format!("{name} is not UTF-8 text; images come in M4"))?;
+    if apply {
+        let r = s
+            .engine
+            .redact_str(text, format)
+            .map_err(|e| e.to_string())?;
+        Ok(serde_json::json!({ "name": name, "output": r.text, "report": r.report }))
+    } else {
+        let r = s.engine.scan_str(text, format).map_err(|e| e.to_string())?;
+        Ok(serde_json::json!({ "name": name, "report": r.report }))
+    }
+}
+
 fn result(value: Result<serde_json::Value, String>) -> Result<CallToolResult, ErrorData> {
     Ok(match value {
         Ok(v) => CallToolResult::structured(v),
@@ -177,7 +208,7 @@ fn result(value: Result<serde_json::Value, String>) -> Result<CallToolResult, Er
 #[tool_router]
 impl Server {
     #[tool(
-        description = "Find personal data in a text or a file (under the server's root, or base64 content). Returns the report: per finding the type, where, the confidence and the detector; never the value. Formats: text, ndjson, json, csv, tsv."
+        description = "Find personal data in a text or a file (under the server's root, or base64 content). Returns the report: per finding the type, where, the confidence and the detector; never the value. Formats: text, ndjson, json, csv, tsv, docx, xlsx, pptx."
     )]
     async fn scan(
         &self,
@@ -186,10 +217,18 @@ impl Server {
         let source = match p.text {
             Some(text) if p.file.path.is_none() && p.file.content_base64.is_none() => {
                 format_named(p.file.format.as_deref())
-                    .map(|f| (None, text, f.unwrap_or(Format::Text)))
+                    .map(|f| (None::<String>, text, f.unwrap_or(Format::Text)))
             }
             Some(_) => Err("give either `text`, `path` or `content_base64`".into()),
-            None => self.read(&p.file).map(|(n, t, f)| (Some(n), t, f)),
+            None => {
+                return result(match self.read(&p.file) {
+                    Err(e) => Err(e),
+                    Ok((name, bytes, format)) => {
+                        self.blocking(move |s| file_result(s, name, &bytes, format, false))
+                            .await
+                    }
+                });
+            }
         };
         result(match source {
             Err(e) => Err(e),
@@ -231,7 +270,7 @@ impl Server {
     }
 
     #[tool(
-        description = "Redact personal data in a file: a path under the server's root, or base64 `content_base64` with a `name`. Returns `name`, `output` (the redacted content, in the file's format) and the `report`. Writes nothing. Formats by extension: .txt .log .md, .ndjson .jsonl, .json, .csv, .tsv; anything else is an error."
+        description = "Redact personal data in a file: a path under the server's root, or base64 `content_base64` with a `name`. Returns `name`, the redacted content in the file's format (`output` for text, `output_base64` for .docx .xlsx .pptx) and the `report`. Writes nothing. Formats by extension: .txt .log .md, .ndjson .jsonl, .json, .csv, .tsv, .docx, .xlsx, .pptx; anything else is an error."
     )]
     async fn redact_file(
         &self,
@@ -240,15 +279,9 @@ impl Server {
         let source = self.read(&p);
         result(match source {
             Err(e) => Err(e),
-            Ok((name, text, format)) => {
-                self.blocking(move |s| {
-                    let r = s
-                        .engine
-                        .redact_str(&text, format)
-                        .map_err(|e| e.to_string())?;
-                    Ok(serde_json::json!({ "name": name, "output": r.text, "report": r.report }))
-                })
-                .await
+            Ok((name, bytes, format)) => {
+                self.blocking(move |s| file_result(s, name, &bytes, format, true))
+                    .await
             }
         })
     }
@@ -501,7 +534,7 @@ mod tests {
             .await
             .unwrap(),
         );
-        assert!(e.contains("unsupported format"), "{e}");
+        assert!(e.contains("not an Office file"), "{e}");
         let v = structured(s.list_detectors(Parameters(NoParams {})).await.unwrap());
         assert!(
             v["rules"]
