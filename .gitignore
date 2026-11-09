@@ -1,0 +1,15 @@
+/target/
+.env
+.env.*
+!.env.example
+
+# Downloaded models (NER, OCR): pinned by checksum, never committed.
+/models/
+
+# Local notes and scratch input: they may hold real content.
+*.local.md
+/scratch/
+
+# Agent session state.
+/.claude/*
+!/.claude/skills/

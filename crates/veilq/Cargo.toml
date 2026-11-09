@@ -1,0 +1,17 @@
+[package]
+name = "veilq"
+description = "Find and redact personal data in text, documents, images and screen recordings"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+veilq-core.workspace = true
+
+[lints]
+workspace = true

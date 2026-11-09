@@ -1,0 +1,19 @@
+# Updates for the pinned actions and the Rust dependencies: one pull request
+# per ecosystem and week for minor and patch versions (actions: majors too).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        update-types: [major, minor, patch]
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      cargo:
+        update-types: [minor, patch]
