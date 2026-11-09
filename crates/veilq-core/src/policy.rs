@@ -13,14 +13,19 @@ use std::path::{Path, PathBuf};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::detect::{LOCALES, validate::VALIDATORS};
 use crate::finding::EntityType;
 use crate::models::DETECTORS;
 use crate::{Action, Error};
 
 pub const FILE_NAME: &str = "veilq.toml";
+/// The locales whose built-in patterns run when a policy names none.
+pub const DEFAULT_LOCALES: &[&str] = &["de", "en"];
 pub const POLICY_VERSION: u32 = 1;
 const DEFAULT_MIN_CONFIDENCE: f32 = 0.7;
 const DEFAULT_PATTERN_CONFIDENCE: f32 = 0.9;
+const DEFAULT_CONTEXT_BOOST: f32 = 0.3;
+const DEFAULT_CONTEXT_WINDOW: usize = 48;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -29,6 +34,10 @@ pub struct Policy {
     pub version: u32,
     #[serde(default)]
     pub defaults: Defaults,
+    /// The locales whose built-in patterns run (ADR-0010); the
+    /// locale-independent ones (e-mail, IBAN, IP, cards) always run.
+    #[serde(default = "default_locales")]
+    pub locales: Vec<String>,
     /// Per entity type: what differs from `defaults`.
     #[serde(default)]
     pub entities: BTreeMap<EntityType, EntityRule>,
@@ -79,17 +88,94 @@ pub struct EntityRule {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PatternRule {
-    /// Lower case letters, digits and `-`; the detector is `policy:<name>`.
+    /// Lower case letters, digits and `-`; the detector is `policy:<name>`
+    /// (built-in: `pattern:<locale>.<name>`).
     pub name: String,
     pub entity: EntityType,
-    /// A Rust `regex` pattern.
+    /// A Rust `regex` pattern. With a group named `pii`, only that group is
+    /// the finding (the rest is context the match needs).
     pub regex: String,
     #[serde(default = "default_pattern_confidence")]
     pub confidence: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<Context>,
+    /// A check the match must pass (`iban`, `luhn`, `tax_id_de`, ...). A
+    /// match that fails it loses 0.3 of its confidence: below the threshold
+    /// without context, above it with (ADR-0012).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validate: Option<String>,
+}
+
+impl PatternRule {
+    /// Checks what serde cannot: the name, the confidences, the regex, the
+    /// validator. `what` names the rule in a message.
+    pub(crate) fn check(&self, what: &str) -> Result<(), String> {
+        let valid_name = !self.name.is_empty()
+            && self
+                .name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if !valid_name {
+            return Err(format!(
+                "{what} name `{}`: lower case letters, digits and `-` only",
+                self.name
+            ));
+        }
+        check_confidence(
+            &format!("{what} `{}` confidence", self.name),
+            self.confidence,
+        )?;
+        regex::Regex::new(&self.regex).map_err(|e| format!("{what} `{}`: {e}", self.name))?;
+        if let Some(c) = &self.context {
+            check_confidence(&format!("{what} `{}` context.boost", self.name), c.boost)?;
+            if c.words.iter().any(|w| w.trim().is_empty()) {
+                return Err(format!("{what} `{}`: an empty context word", self.name));
+            }
+        }
+        if let Some(v) = &self.validate
+            && !VALIDATORS.contains(&v.as_str())
+        {
+            return Err(format!(
+                "{what} `{}`: unknown validator `{v}` (known: {})",
+                self.name,
+                VALIDATORS.join(", ")
+            ));
+        }
+        Ok(())
+    }
 }
 
 fn default_pattern_confidence() -> f32 {
     DEFAULT_PATTERN_CONFIDENCE
+}
+
+fn default_locales() -> Vec<String> {
+    DEFAULT_LOCALES.iter().map(|l| (*l).to_owned()).collect()
+}
+
+/// Words near a match that make it personal data: `geb.` before a date, the
+/// column `email`, the key `iban` (ADR-0011).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Context {
+    /// Compared case-insensitively; a word that starts with a letter or digit
+    /// must start a word in the text too.
+    pub words: Vec<String>,
+    /// Added to the confidence when a word is found; from 0 to 1.
+    #[serde(default = "default_context_boost")]
+    pub boost: f32,
+    /// How many characters before the match are searched, the column's or
+    /// key's name included.
+    #[serde(default = "default_context_window")]
+    pub window: usize,
+}
+
+fn default_context_boost() -> f32 {
+    DEFAULT_CONTEXT_BOOST
+}
+
+fn default_context_window() -> usize {
+    DEFAULT_CONTEXT_WINDOW
 }
 
 /// What is never personal data here: the firm's own name, court names.
@@ -126,6 +212,7 @@ impl Default for Policy {
         Self {
             version: POLICY_VERSION,
             defaults: Defaults::default(),
+            locales: default_locales(),
             entities: BTreeMap::new(),
             patterns: Vec::new(),
             allow: Allow::default(),
@@ -204,23 +291,20 @@ impl Policy {
                 check_confidence(&format!("entities.{}.min_confidence", entity.as_str()), c)?;
             }
         }
-        let mut names = std::collections::BTreeSet::new();
-        for p in &self.patterns {
-            let valid_name = !p.name.is_empty()
-                && p.name
-                    .chars()
-                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
-            if !valid_name {
+        for l in &self.locales {
+            if !LOCALES.contains(&l.as_str()) {
                 return Err(format!(
-                    "pattern name `{}`: lower case letters, digits and `-` only",
-                    p.name
+                    "unknown locale `{l}` (known: {})",
+                    LOCALES.join(", ")
                 ));
             }
+        }
+        let mut names = std::collections::BTreeSet::new();
+        for p in &self.patterns {
+            p.check("pattern")?;
             if !names.insert(&p.name) {
                 return Err(format!("pattern name `{}` is used twice", p.name));
             }
-            check_confidence(&format!("patterns.{}.confidence", p.name), p.confidence)?;
-            regex::Regex::new(&p.regex).map_err(|e| format!("pattern `{}`: {e}", p.name))?;
         }
         for r in &self.allow.patterns {
             regex::Regex::new(r).map_err(|e| format!("allow pattern `{r}`: {e}"))?;

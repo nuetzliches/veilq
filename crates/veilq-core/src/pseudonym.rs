@@ -50,10 +50,40 @@ impl PseudonymKey {
     }
 }
 
+impl PseudonymKey {
+    /// The key the policy names (`[pseudonymize] key_env`), if the variable
+    /// is set. A policy that pseudonymizes without it fails when the run
+    /// starts ([`crate::Engine::new`]).
+    pub fn from_policy_env(policy: &crate::Policy) -> Result<Option<Self>, Error> {
+        match &policy.pseudonymize {
+            Some(p) => match std::env::var(&p.key_env) {
+                Ok(k) => Self::new(k.into_bytes()).map(Some),
+                Err(_) => Ok(None),
+            },
+            None => Ok(None),
+        }
+    }
+
+    /// The seed of `fake` under this key: stand-ins stable across runs with
+    /// the same key, unrelated to the pseudonyms.
+    pub fn fake_seed(&self) -> Vec<u8> {
+        let mut mac = Hmac::<Sha256>::new_from_slice(&self.0).expect("HMAC takes any key length");
+        mac.update(b"veilq fake seed");
+        mac.finalize().into_bytes().to_vec()
+    }
+}
+
 impl std::fmt::Debug for PseudonymKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("PseudonymKey(..)")
     }
+}
+
+/// Unicode NFC, case folded, whitespace collapsed: how allow-list values are
+/// compared.
+pub(crate) fn normalise_plain(value: &str) -> String {
+    let nfc: String = value.nfc().collect::<String>().to_lowercase();
+    nfc.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Spellings of one value that mean the same thing give the same token:

@@ -4,6 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::fake::Faker;
 use crate::finding::EntityType;
 use crate::{Error, PseudonymKey};
 
@@ -15,7 +16,7 @@ pub enum Action {
     Mask,
     /// `[PERSON:ab12cd34]` (ADR-0001); needs a key.
     Pseudonymize,
-    /// A plausible value of the same type and shape (M1).
+    /// A plausible value of the same type and shape.
     Fake,
     /// Nothing: the span is dropped.
     Remove,
@@ -37,13 +38,12 @@ impl Action {
         entity: &EntityType,
         value: &str,
         key: Option<&PseudonymKey>,
+        faker: &Faker,
     ) -> Result<String, Error> {
         match self {
             Self::Mask => Ok(format!("<{}>", entity.as_str())),
             Self::Pseudonymize => Ok(key.ok_or(Error::KeyMissing)?.pseudonym(entity, value)),
-            // Fail closed: an action that is not built must not leave the
-            // value where it was.
-            Self::Fake => Err(Error::ActionNotBuilt(self.name())),
+            Self::Fake => Ok(faker.fake(entity, value)),
             Self::Remove => Ok(String::new()),
         }
     }
@@ -57,28 +57,33 @@ mod tests {
     fn replacements() {
         let person = EntityType::new("PERSON").unwrap();
         let key = PseudonymKey::new(b"0123456789abcdef".to_vec()).unwrap();
+        let faker = Faker::new(*b"seed");
         assert_eq!(Action::default(), Action::Mask);
         assert_eq!(
-            Action::Mask.replacement(&person, "Erika", None).unwrap(),
+            Action::Mask
+                .replacement(&person, "Erika", None, &faker)
+                .unwrap(),
             "<PERSON>"
         );
         assert_eq!(
-            Action::Remove.replacement(&person, "Erika", None).unwrap(),
+            Action::Remove
+                .replacement(&person, "Erika", None, &faker)
+                .unwrap(),
             ""
         );
         assert!(
             Action::Pseudonymize
-                .replacement(&person, "Erika", Some(&key))
+                .replacement(&person, "Erika", Some(&key), &faker)
                 .unwrap()
                 .starts_with("[PERSON:")
         );
         assert!(matches!(
-            Action::Pseudonymize.replacement(&person, "Erika", None),
+            Action::Pseudonymize.replacement(&person, "Erika", None, &faker),
             Err(Error::KeyMissing)
         ));
-        assert!(matches!(
-            Action::Fake.replacement(&person, "Erika", None),
-            Err(Error::ActionNotBuilt("fake"))
-        ));
+        let fake = Action::Fake
+            .replacement(&person, "Erika", None, &faker)
+            .unwrap();
+        assert!(!fake.is_empty() && fake != "Erika");
     }
 }

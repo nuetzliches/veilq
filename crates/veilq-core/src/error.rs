@@ -20,6 +20,24 @@ pub enum Error {
     #[error("{0} is not built yet")]
     NotBuilt(&'static str),
 
+    #[error("unsupported format {0}")]
+    UnsupportedFormat(String),
+
+    /// The input is not what its format says (broken JSON, an open quote).
+    #[error("{0}")]
+    Format(String),
+
+    #[error("line {line} is not UTF-8 text")]
+    NotUtf8 { line: u64 },
+
+    /// verify found personal data in the output outside the replacements.
+    /// The message names the type and detector, never the value.
+    #[error("the output still contains {entity} (found by {detector}); nothing was written")]
+    Leftover { entity: String, detector: String },
+
+    #[error("reading or writing: {0}")]
+    Stream(#[source] std::io::Error),
+
     #[error("action `pseudonymize` needs a key")]
     KeyMissing,
 

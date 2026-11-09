@@ -13,7 +13,7 @@ anyhow.workspace = true
 axum = { version = "0.8.9", optional = true }
 base64 = { version = "0.23.1", optional = true }
 clap.workspace = true
-getrandom = { version = "0.4.3", optional = true }
+getrandom = "0.4.3"
 include_dir = { version = "0.7.4", optional = true }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
@@ -26,7 +26,7 @@ workspace = true
 [features]
 default = ["ui"]
 # `veilq ui`: the local web UI (ADR-0008). Embeds `ui/dist` when it was built.
-ui = ["dep:axum", "dep:tokio", "dep:include_dir", "dep:getrandom", "dep:base64"]
+ui = ["dep:axum", "dep:tokio", "dep:include_dir", "dep:base64"]
 
 [dev-dependencies]
 tempfile = "3.27.0"

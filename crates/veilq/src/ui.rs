@@ -21,7 +21,7 @@ use axum::routing::{get, post};
 use base64::Engine as _;
 use include_dir::{Dir, include_dir};
 use serde::{Deserialize, Serialize};
-use veilq_core::{Error, Policy, Report, root};
+use veilq_core::{Engine, Error, Format, Policy, Report, root};
 
 static UI: Dir<'_> = include_dir!("$OUT_DIR/ui");
 
@@ -42,6 +42,7 @@ pub struct Options {
     pub open: bool,
     pub policy: Policy,
     pub policy_source: String,
+    pub engine: Engine,
 }
 
 struct AppState {
@@ -52,6 +53,7 @@ struct AppState {
     root: PathBuf,
     policy: Policy,
     policy_source: String,
+    engine: Engine,
 }
 
 pub fn run(options: Options) -> anyhow::Result<()> {
@@ -77,6 +79,7 @@ async fn serve(options: Options) -> anyhow::Result<()> {
         root,
         options.policy,
         options.policy_source,
+        options.engine,
     ));
 
     let shown = options.proxy_port.unwrap_or(port);
@@ -105,6 +108,7 @@ impl AppState {
         root: PathBuf,
         policy: Policy,
         policy_source: String,
+        engine: Engine,
     ) -> Self {
         let hosts: Vec<String> = ports
             .iter()
@@ -117,6 +121,7 @@ impl AppState {
             root,
             policy,
             policy_source,
+            engine,
         }
     }
 }
@@ -389,6 +394,8 @@ struct RedactResponse {
     name: Option<String>,
     input: String,
     output: String,
+    /// Per finding, its byte range in `input`.
+    input_spans: Vec<[usize; 2]>,
     /// Per finding, the byte range of its replacement in `output`.
     output_spans: Vec<[usize; 2]>,
     report: Report,
@@ -447,28 +454,24 @@ fn redact_source(state: &AppState, source: Source) -> Result<RedactResponse, Fai
     let input = String::from_utf8(bytes).map_err(|_| {
         Failure(
             StatusCode::UNPROCESSABLE_ENTITY,
-            format!("{label} is not UTF-8 text; documents and images come in M3 and M4"),
+            format!("{label} is not UTF-8 text; documents come in M3, images in M4"),
         )
     })?;
-    // The key for `pseudonymize` comes from the environment the policy names.
-    let key = match &state.policy.pseudonymize {
-        Some(p) => match std::env::var(&p.key_env) {
-            Ok(k) => Some(veilq_core::PseudonymKey::new(k.into_bytes()).map_err(Failure::from)?),
-            Err(_) => None,
-        },
-        None => None,
+    let format = match &name {
+        Some(n) => Format::from_path(Path::new(n)).map_err(Failure::from)?,
+        None => Format::Text,
     };
-    let redacted =
-        veilq_core::redact_text(&input, &state.policy, key.as_ref()).map_err(Failure::from)?;
+    let redacted = state
+        .engine
+        .redact_str(&input, format)
+        .map_err(Failure::from)?;
+    let pairs = |spans: &[std::ops::Range<usize>]| spans.iter().map(|r| [r.start, r.end]).collect();
     Ok(RedactResponse {
         name,
-        input,
+        input_spans: pairs(&redacted.input_spans),
+        output_spans: pairs(&redacted.output_spans),
         output: redacted.text,
-        output_spans: redacted
-            .output_spans
-            .iter()
-            .map(|r| [r.start, r.end])
-            .collect(),
+        input,
         report: redacted.report,
     })
 }
@@ -580,6 +583,7 @@ mod tests {
             root.canonicalize().unwrap(),
             Policy::default(),
             "built-in defaults".into(),
+            Engine::new(&Policy::default(), None, b"test", None).unwrap(),
         )))
     }
 
@@ -740,9 +744,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn redaction_fails_closed_until_m1() {
+    async fn text_is_redacted() {
         let dir = tempfile::tempdir().unwrap();
-        let body = redact_body(serde_json::json!({ "kind": "text", "text": "Erika Mustermann" }));
+        let body = redact_body(
+            serde_json::json!({ "kind": "text", "text": "Hallo Erika Mustermann, Tel. 0421 5550173" }),
+        );
         let (status, body) = send(
             app(dir.path()),
             authed("POST", "/api/redact")
@@ -751,9 +757,49 @@ mod tests {
                 .unwrap(),
         )
         .await;
-        assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
-        assert!(body["error"].as_str().unwrap().contains("not built yet"));
-        assert!(body.get("output").is_none());
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["output"], "Hallo <PERSON>, Tel. <PHONE_NUMBER>");
+        assert_eq!(body["input_spans"][1], serde_json::json!([29, 41]));
+        assert_eq!(body["output_spans"][0], serde_json::json!([6, 14]));
+        assert_eq!(body["report"]["findings"][0]["entity"], "PERSON");
+    }
+
+    #[tokio::test]
+    async fn a_file_is_read_in_its_format() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("k.csv"),
+            "name,geburtsdatum
+Mira Albers,14.03.1987
+",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("k.docx"), "PK").unwrap();
+        let req = |path: &str| {
+            authed("POST", "/api/redact")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(redact_body(
+                    serde_json::json!({ "kind": "file", "path": path }),
+                ))
+                .unwrap()
+        };
+        let (status, body) = send(app(dir.path()), req("k.csv")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(
+            body["output"],
+            "name,geburtsdatum
+<PERSON>,<DATE_OF_BIRTH>
+"
+        );
+        let (status, body) = send(app(dir.path()), req("k.docx")).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap()
+                .contains("unsupported format"),
+            "{body}"
+        );
     }
 
     #[tokio::test]

@@ -14,7 +14,7 @@
           "type": "number"
         },
         "detector": {
-          "description": "The detector that found it (`pattern`, `ner`, `ocr`, `policy:<name>`).",
+          "description": "The detector that found it: `pattern:<locale>.<rule>` for a built-in\npattern, `policy:<name>` for one of the policy, later `ner`, `ocr`.",
           "type": "string"
         },
         "entity": {

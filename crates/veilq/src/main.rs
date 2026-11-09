@@ -1,9 +1,12 @@
-use std::path::PathBuf;
+use std::io::{BufReader, Write};
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
-use veilq_core::{Outcome, Policy, models};
+use anyhow::Context as _;
+use clap::{Parser, Subcommand, ValueEnum};
+use veilq_core::{Action, Engine, Format, Outcome, Policy, PseudonymKey, Report, models};
 
+mod sarif;
 #[cfg(feature = "ui")]
 mod ui;
 
@@ -20,6 +23,40 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Find personal data; replace nothing. Exit code 1 when something is
+    /// found: a CI gate.
+    Scan {
+        /// A file, a directory (every file in it, `.git` left out) or `-` for
+        /// standard input.
+        path: PathBuf,
+        #[command(flatten)]
+        input: InputArgs,
+        /// The report as JSON (schema/report.schema.json); for a directory,
+        /// one line `{"path", "report"}` per file.
+        #[arg(long, conflicts_with = "sarif")]
+        json: bool,
+        /// SARIF 2.1.0, for code scanning.
+        #[arg(long)]
+        sarif: bool,
+    },
+    /// Write the input with its personal data replaced. Exit code 1 when
+    /// something was replaced.
+    Redact {
+        /// A file, or `-` for standard input.
+        path: PathBuf,
+        /// Where the output goes; `-` (the default) for standard output. A
+        /// file appears only once the run succeeded.
+        #[arg(short, long, default_value = "-")]
+        output: PathBuf,
+        #[command(flatten)]
+        input: InputArgs,
+        /// Overrides the policy's actions for every type.
+        #[arg(long, value_enum)]
+        action: Option<ActionArg>,
+        /// Also write the report (JSON) to this file.
+        #[arg(long)]
+        report: Option<PathBuf>,
+    },
     /// Work with the policy file (veilq.toml).
     Policy {
         #[command(subcommand)]
@@ -52,6 +89,37 @@ enum Command {
     },
 }
 
+#[derive(clap::Args)]
+struct InputArgs {
+    /// The input's format; by default from the file's extension, `text` for
+    /// standard input.
+    #[arg(long, value_parser = ["text", "ndjson", "json", "csv", "tsv"])]
+    format: Option<String>,
+    /// The policy file; by default veilq.toml in the current directory, else
+    /// in the git repository's root, else the built-in defaults.
+    #[arg(long)]
+    policy: Option<PathBuf>,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum ActionArg {
+    Mask,
+    Pseudonymize,
+    Fake,
+    Remove,
+}
+
+impl From<ActionArg> for Action {
+    fn from(a: ActionArg) -> Self {
+        match a {
+            ActionArg::Mask => Action::Mask,
+            ActionArg::Pseudonymize => Action::Pseudonymize,
+            ActionArg::Fake => Action::Fake,
+            ActionArg::Remove => Action::Remove,
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum PolicyCommand {
     /// Check the policy a run here would use, and that the detectors it
@@ -78,16 +146,35 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> anyhow::Result<Outcome> {
     match cli.command {
+        Command::Scan {
+            path,
+            input,
+            json,
+            sarif,
+        } => scan(&path, &input, json, sarif),
+        Command::Redact {
+            path,
+            output,
+            input,
+            action,
+            report,
+        } => redact(
+            &path,
+            &output,
+            &input,
+            action.map(Action::from),
+            report.as_deref(),
+        ),
         Command::Policy {
             command: PolicyCommand::Check { policy },
         } => {
-            let cwd = std::env::current_dir()?;
-            let (policy, source) = Policy::discover(policy.as_deref(), &cwd)?;
-            models::check_required(&policy.detectors.require, &models::model_dir())?;
+            let (policy, source) = load_policy(policy.as_deref())?;
+            veilq_core::detect::Detector::new(&policy)?;
             println!(
-                "ok: {source} ({} entity rules, {} patterns, default action {})",
+                "ok: {source} ({} entity rules, {} patterns, locales {}, default action {})",
                 policy.entities.len(),
                 policy.patterns.len(),
+                policy.locales.join(", "),
                 policy.defaults.action.name()
             );
             Ok(Outcome::Clean)
@@ -100,18 +187,215 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
             no_open,
             policy,
         } => {
-            let cwd = std::env::current_dir()?;
-            let (policy, source) = Policy::discover(policy.as_deref(), &cwd)?;
-            models::check_required(&policy.detectors.require, &models::model_dir())?;
+            let (policy, source) = load_policy(policy.as_deref())?;
+            let engine = engine(&policy, None)?;
             ui::run(ui::Options {
-                root: root.unwrap_or(cwd),
+                root: root.unwrap_or(std::env::current_dir()?),
                 port,
                 proxy_port: origin,
                 open: !no_open,
                 policy,
                 policy_source: source.to_string(),
+                engine,
             })?;
             Ok(Outcome::Clean)
         }
     }
+}
+
+fn load_policy(explicit: Option<&Path>) -> anyhow::Result<(Policy, veilq_core::policy::Source)> {
+    let cwd = std::env::current_dir()?;
+    let (policy, source) = Policy::discover(explicit, &cwd)?;
+    models::check_required(&policy.detectors.require, &models::model_dir())?;
+    Ok((policy, source))
+}
+
+/// The engine of a run: the policy's key, if any, and a seed for `fake`
+/// (from the key, else random for this run).
+fn engine(policy: &Policy, action: Option<Action>) -> anyhow::Result<Engine> {
+    let key = PseudonymKey::from_policy_env(policy)?;
+    let seed = match &key {
+        Some(k) => k.fake_seed(),
+        None => {
+            let mut seed = vec![0u8; 32];
+            getrandom::fill(&mut seed).map_err(|e| anyhow::anyhow!("no randomness: {e}"))?;
+            seed
+        }
+    };
+    Ok(Engine::new(policy, key, &seed, action)?)
+}
+
+fn format_of(path: &Path, explicit: Option<&str>) -> anyhow::Result<Format> {
+    Ok(match explicit {
+        Some(name) => Format::from_name(name)?,
+        None if is_stdin(path) => Format::Text,
+        None => Format::from_path(path)?,
+    })
+}
+
+fn is_stdin(path: &Path) -> bool {
+    path.as_os_str() == "-"
+}
+
+fn open(path: &Path) -> anyhow::Result<Box<dyn std::io::BufRead>> {
+    Ok(if is_stdin(path) {
+        Box::new(BufReader::new(std::io::stdin().lock()))
+    } else {
+        let file = std::fs::File::open(path).with_context(|| path.display().to_string())?;
+        Box::new(BufReader::new(file))
+    })
+}
+
+/// Every file under `dir`, sorted, `.git` left out.
+fn files_under(dir: &Path, out: &mut Vec<PathBuf>) -> anyhow::Result<()> {
+    let mut entries: Vec<_> = std::fs::read_dir(dir)
+        .with_context(|| dir.display().to_string())?
+        .collect::<Result<_, _>>()?;
+    entries.sort_by_key(|e| e.file_name());
+    for e in entries {
+        let path = e.path();
+        if e.file_type()?.is_dir() {
+            if e.file_name() != ".git" {
+                files_under(&path, out)?;
+            }
+        } else {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn scan(path: &Path, input: &InputArgs, json: bool, sarif: bool) -> anyhow::Result<Outcome> {
+    let (policy, _) = load_policy(input.policy.as_deref())?;
+    let engine = engine(&policy, None)?;
+    let dir = !is_stdin(path) && path.is_dir();
+    let files = if dir {
+        let mut files = Vec::new();
+        files_under(path, &mut files)?;
+        files
+    } else {
+        vec![path.to_path_buf()]
+    };
+    // Every format first: a file veilq cannot read fails the run before any
+    // result is printed (ADR-0003).
+    let formats = files
+        .iter()
+        .map(|f| format_of(f, input.format.as_deref()))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let mut results: Vec<(String, Report)> = Vec::new();
+    for (file, format) in files.iter().zip(formats) {
+        let run = engine
+            .run(open(file)?, None, format)
+            .with_context(|| file.display().to_string())?;
+        let name = if dir {
+            display_relative(path, file)
+        } else {
+            file.display().to_string()
+        };
+        results.push((name, run.report));
+    }
+    let total: usize = results.iter().map(|(_, r)| r.findings.len()).sum();
+    let stdout = &mut std::io::stdout().lock();
+    if sarif {
+        serde_json::to_writer_pretty(&mut *stdout, &sarif::sarif(&results))?;
+        writeln!(stdout)?;
+    } else if json && !dir {
+        serde_json::to_writer_pretty(&mut *stdout, &results[0].1)?;
+        writeln!(stdout)?;
+    } else if json {
+        for (path, report) in &results {
+            serde_json::to_writer(
+                &mut *stdout,
+                &serde_json::json!({ "path": path, "report": report }),
+            )?;
+            writeln!(stdout)?;
+        }
+    } else {
+        for (path, report) in &results {
+            for f in &report.findings {
+                writeln!(
+                    stdout,
+                    "{path}:{}: {} ({}, {:.2})",
+                    sarif::describe(&f.location),
+                    f.entity.as_str(),
+                    f.detector,
+                    f.confidence
+                )?;
+            }
+        }
+        eprintln!("{total} finding(s) in {} file(s)", results.len());
+    }
+    Ok(if total > 0 {
+        Outcome::Findings
+    } else {
+        Outcome::Clean
+    })
+}
+
+fn display_relative(root: &Path, file: &Path) -> String {
+    file.strip_prefix(root)
+        .unwrap_or(file)
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn redact(
+    path: &Path,
+    output: &Path,
+    input: &InputArgs,
+    action: Option<Action>,
+    report_path: Option<&Path>,
+) -> anyhow::Result<Outcome> {
+    if !is_stdin(path) && path.is_dir() {
+        anyhow::bail!("{}: redact takes one file", path.display());
+    }
+    let (policy, _) = load_policy(input.policy.as_deref())?;
+    let engine = engine(&policy, action)?;
+    let format = format_of(path, input.format.as_deref())?;
+    let reader = open(path)?;
+    let run = if is_stdin(output) {
+        let mut stdout = std::io::stdout().lock();
+        engine.run(reader, Some(&mut stdout), format)?
+    } else {
+        // A temporary file beside the target, renamed once the run succeeded:
+        // on exit code 2 there is no output to mistake for a redacted one.
+        let tmp = output.with_file_name(format!(
+            ".{}.veilq-tmp",
+            output
+                .file_name()
+                .map(|n| n.to_string_lossy())
+                .unwrap_or_default()
+        ));
+        let result = (|| {
+            let mut file = std::io::BufWriter::new(
+                std::fs::File::create(&tmp).with_context(|| tmp.display().to_string())?,
+            );
+            let run = engine.run(reader, Some(&mut file), format)?;
+            file.into_inner().map_err(|e| e.into_error())?.sync_all()?;
+            Ok::<_, anyhow::Error>(run)
+        })();
+        match result {
+            Ok(run) => {
+                std::fs::rename(&tmp, output).with_context(|| output.display().to_string())?;
+                run
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(e);
+            }
+        }
+    };
+    if let Some(p) = report_path {
+        let text = serde_json::to_string_pretty(&run.report)? + "\n";
+        std::fs::write(p, text).with_context(|| p.display().to_string())?;
+    }
+    let n = run.report.findings.len();
+    eprintln!("{n} finding(s) replaced");
+    Ok(if n > 0 {
+        Outcome::Findings
+    } else {
+        Outcome::Clean
+    })
 }

@@ -14,7 +14,7 @@
         },
         {
           "const": "fake",
-          "description": "A plausible value of the same type and shape (M1).",
+          "description": "A plausible value of the same type and shape.",
           "type": "string"
         },
         {
@@ -45,6 +45,36 @@
           "type": "array"
         }
       },
+      "type": "object"
+    },
+    "Context": {
+      "additionalProperties": false,
+      "description": "Words near a match that make it personal data: `geb.` before a date, the\ncolumn `email`, the key `iban` (ADR-0011).",
+      "properties": {
+        "boost": {
+          "default": 0.30000001192092896,
+          "description": "Added to the confidence when a word is found; from 0 to 1.",
+          "format": "float",
+          "type": "number"
+        },
+        "window": {
+          "default": 48,
+          "description": "How many characters before the match are searched, the column's or\nkey's name included.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "words": {
+          "description": "Compared case-insensitively; a word that starts with a letter or digit\nmust start a word in the text too.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "words"
+      ],
       "type": "object"
     },
     "Defaults": {
@@ -112,16 +142,33 @@
           "format": "float",
           "type": "number"
         },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Context"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "entity": {
           "$ref": "#/$defs/EntityType"
         },
         "name": {
-          "description": "Lower case letters, digits and `-`; the detector is `policy:<name>`.",
+          "description": "Lower case letters, digits and `-`; the detector is `policy:<name>`\n(built-in: `pattern:<locale>.<name>`).",
           "type": "string"
         },
         "regex": {
-          "description": "A Rust `regex` pattern.",
+          "description": "A Rust `regex` pattern. With a group named `pii`, only that group is\nthe finding (the rest is context the match needs).",
           "type": "string"
+        },
+        "validate": {
+          "description": "A check the match must pass (`iban`, `luhn`, `tax_id_de`, ...). A\nmatch that fails it loses 0.3 of its confidence: below the threshold\nwithout context, above it with (ADR-0012).",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -178,6 +225,17 @@
         }
       },
       "type": "object"
+    },
+    "locales": {
+      "default": [
+        "de",
+        "en"
+      ],
+      "description": "The locales whose built-in patterns run (ADR-0010); the\nlocale-independent ones (e-mail, IBAN, IP, cards) always run.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     },
     "patterns": {
       "default": [],

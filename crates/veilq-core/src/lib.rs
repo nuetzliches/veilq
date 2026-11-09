@@ -7,19 +7,21 @@
 //! root a caller's paths must stay under.
 
 pub mod action;
+pub mod detect;
+pub mod engine;
 pub mod error;
+pub mod fake;
 pub mod finding;
 pub mod models;
 pub mod outcome;
 pub mod policy;
 pub mod pseudonym;
-pub mod redact;
 pub mod root;
 
 pub use action::Action;
+pub use engine::{Engine, Format, Redacted};
 pub use error::Error;
 pub use finding::{EntityType, Finding, Location, Report};
 pub use outcome::Outcome;
 pub use policy::Policy;
 pub use pseudonym::PseudonymKey;
-pub use redact::{Redacted, redact_text};
