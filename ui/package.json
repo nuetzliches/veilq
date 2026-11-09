@@ -14,16 +14,16 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "vue": "3.5.44"
+    "vue": "3.5.45"
   },
   "devDependencies": {
-    "@types/node": "26.6.5",
+    "@types/node": "26.6.6",
     "@vitejs/plugin-vue": "6.0.10",
     "@vue/tsconfig": "0.9.1",
     "happy-dom": "21.0.4",
     "typescript": "6.0.3",
-    "vite": "8.3.5",
-    "vitest": "5.0.5",
-    "vue-tsc": "3.3.13"
+    "vite": "8.3.6",
+    "vitest": "5.1.0",
+    "vue-tsc": "3.3.14"
   }
 }
