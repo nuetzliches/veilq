@@ -1,0 +1,27 @@
+From: <PERSON> <<EMAIL_ADDRESS>>
+To: <PERSON> <<EMAIL_ADDRESS>>
+Subject: =?utf-8?B?UsO8Y2tydWY=?= Frau <PERSON>
+Date: Mon, 02 Nov 2026 09:12:00 +0100
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="b1"
+
+--b1
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Hallo,
+
+<PERSON> bittet um R=C3=BCckruf unter <PHONE_NUMBER>.
+Ihre IBAN: <IBAN_CODE>
+
+Viele Gr=C3=BC=C3=9Fe
+<PERSON>
+
+--b1
+Content-Type: text/csv; charset="utf-8"; name="kunden.csv"
+Content-Disposition: attachment; filename="kunden.csv"
+Content-Transfer-Encoding: base64
+
+bmFtZSx0ZWxlZm9uCjxQRVJTT04+LDxQSE9ORV9OVU1CRVI+Cg==
+
+--b1--

@@ -58,3 +58,5 @@ keep it to about a page.
 | [0016](0016-the-mcp-server-returns-redacted-content-and-reports-only.md) | The MCP server returns redacted content and reports only | Accepted |
 | [0017](0017-mcp-over-http-a-token-from-the-environment-loopback-no-browser.md) | MCP over HTTP: a token from the environment, loopback, no browser | Accepted |
 | [0018](0018-the-mapping-file-is-age-encrypted-and-revealed-by-the-cli-only.md) | The mapping file is age-encrypted, and revealed by the CLI only | Accepted |
+| [0019](0019-office-files-are-edited-in-place-every-part-read.md) | Office files are edited in place, every part read | Accepted |
+| [0020](0020-mail-headers-bodies-and-attachments-are-read-and-written-as-mime.md) | Mail headers, bodies and attachments are read and written as MIME | Accepted |

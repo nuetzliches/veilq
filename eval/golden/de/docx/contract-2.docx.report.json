@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "part": "word/document.xml",
+        "start": 36,
+        "end": 46,
+        "line": 2,
+        "column": 37
+      },
+      "confidence": 0.85,
+      "detector": "pattern:de.name-salutation"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "part": "word/document.xml",
+        "start": 53,
+        "end": 67,
+        "line": 2,
+        "column": 54
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    },
+    {
+      "entity": "ADDRESS",
+      "location": {
+        "kind": "span",
+        "part": "word/document.xml",
+        "start": 78,
+        "end": 107,
+        "line": 2,
+        "column": 79
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.address"
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "span",
+        "part": "word/document.xml",
+        "start": 19,
+        "end": 46,
+        "line": 3,
+        "column": 20
+      },
+      "confidence": 1.0,
+      "detector": "pattern:intl.iban"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "part": "word/document.xml",
+        "start": 16,
+        "end": 25,
+        "line": 4,
+        "column": 17
+      },
+      "confidence": 0.8,
+      "detector": "pattern:de.name-role"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "part": "word/document.xml",
+        "start": 35,
+        "end": 46,
+        "line": 4,
+        "column": 36
+      },
+      "confidence": 0.95,
+      "detector": "pattern:de.phone"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "part": "docProps/core.xml",
+        "start": 0,
+        "end": 11,
+        "line": 2,
+        "column": 1
+      },
+      "confidence": 1.0,
+      "detector": "metadata"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "part": "docProps/core.xml",
+        "start": 0,
+        "end": 14,
+        "line": 3,
+        "column": 1
+      },
+      "confidence": 1.0,
+      "detector": "metadata"
+    }
+  ],
+  "review_required": false
+}

@@ -22,22 +22,25 @@ fn the_corpus_redacts_as_recorded() {
     assert!(!docs.is_empty(), "no corpus under {}", root.display());
     for doc in docs {
         let name = check::relative(&root, &doc);
-        let input = std::fs::read_to_string(&doc).unwrap();
-        let r = engine
-            .redact_str(&input, Format::from_path(&doc).unwrap())
+        let input = std::fs::read(&doc).unwrap();
+        let format = Format::from_path(&doc).unwrap();
+        let (output, run) = engine
+            .run_bytes(&input, format, true)
             .unwrap_or_else(|e| panic!("{name}: {e}"));
-        let report = serde_json::to_string_pretty(&r.report).unwrap() + "\n";
-        for (path, text) in [
-            (golden.join(&name), r.text),
-            (golden.join(format!("{name}.report.json")), report),
-        ] {
+        let report = serde_json::to_string_pretty(&run.report).unwrap() + "\n";
+        let mut golden_files = vec![(golden.join(format!("{name}.report.json")), report)];
+        // A container's output is a ZIP; its report says what changed in it.
+        if !format.is_container() || format == Format::Eml {
+            golden_files.push((golden.join(&name), String::from_utf8(output).unwrap()));
+        }
+        for (path, text) in golden_files {
             if update {
                 std::fs::create_dir_all(path.parent().unwrap()).unwrap();
                 std::fs::write(&path, text).unwrap();
             } else if std::fs::read_to_string(&path)
                 .unwrap_or_default()
                 .replace("\r\n", "\n")
-                != text
+                != text.replace("\r\n", "\n")
             {
                 stale.push(check::relative(&root, &path));
             }

@@ -193,13 +193,20 @@ pub fn evaluate(dir: &Path, only: Option<&str>) -> anyhow::Result<(Evaluation, u
     let mut findings_total = 0;
     for doc in documents(dir, only)? {
         let name = relative(dir, &doc);
-        let content = std::fs::read_to_string(&doc)?;
+        let bytes = std::fs::read(&doc)?;
         let truth: TruthFile = serde_json::from_str(&std::fs::read_to_string(truth_path(&doc))?)?;
         let format = Format::from_path(&doc)?;
         let json_document = format == Format::Json;
+        // A container's values are not shown (they are in its parts).
+        let content = if format.is_container() {
+            String::new()
+        } else {
+            String::from_utf8(bytes.clone()).map_err(|_| anyhow::anyhow!("{name}: not UTF-8"))?
+        };
         let found = engine
-            .scan_str(&content, format)
+            .run_bytes(&bytes, format, false)
             .map_err(|e| anyhow::anyhow!("{name}: {e}"))?
+            .1
             .report
             .findings;
         findings_total += found.len();

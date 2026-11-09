@@ -12,6 +12,7 @@ pub mod engine;
 pub mod error;
 pub mod fake;
 pub mod finding;
+pub mod mail;
 pub mod mapping;
 pub mod models;
 pub mod office;

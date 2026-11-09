@@ -176,6 +176,19 @@ pub fn unescape(s: &str, base: usize) -> (String, Vec<(usize, usize)>) {
             "gt" => Some('>'),
             "quot" => Some('"'),
             "apos" => Some('\''),
+            // HTML's, for mail bodies (ADR-0020).
+            "nbsp" => Some(' '),
+            "auml" => Some('ä'),
+            "ouml" => Some('ö'),
+            "uuml" => Some('ü'),
+            "Auml" => Some('Ä'),
+            "Ouml" => Some('Ö'),
+            "Uuml" => Some('Ü'),
+            "szlig" => Some('ß'),
+            "eacute" => Some('é'),
+            "euro" => Some('€'),
+            "ndash" => Some('–'),
+            "mdash" => Some('—'),
             e if e.starts_with("#x") || e.starts_with("#X") => u32::from_str_radix(&e[2..], 16)
                 .ok()
                 .and_then(char::from_u32),

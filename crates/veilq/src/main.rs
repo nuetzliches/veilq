@@ -134,7 +134,7 @@ enum Command {
 struct InputArgs {
     /// The input's format; by default from the file's extension, `text` for
     /// standard input.
-    #[arg(long, value_parser = ["text", "ndjson", "json", "csv", "tsv", "docx", "xlsx", "pptx"])]
+    #[arg(long, value_parser = ["text", "ndjson", "json", "csv", "tsv", "docx", "xlsx", "pptx", "eml"])]
     format: Option<String>,
     /// The policy file; by default veilq.toml in the current directory, else
     /// in the git repository's root, else the built-in defaults.

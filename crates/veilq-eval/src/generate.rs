@@ -466,7 +466,7 @@ fn note_de(r: &mut Rng, p: &Person, other: &Person) -> Text {
 pub struct Doc {
     /// Relative to the corpus root: `de/text/letter-1.txt`.
     pub path: String,
-    pub content: String,
+    pub content: Vec<u8>,
     pub truth: Vec<Truth>,
 }
 
@@ -831,7 +831,7 @@ pub fn corpus(seed: u64) -> Vec<Doc> {
     let mut add = |path: String, (content, truth): (String, Vec<Truth>)| {
         docs.push(Doc {
             path,
-            content,
+            content: content.into_bytes(),
             truth,
         })
     };
@@ -853,7 +853,328 @@ pub fn corpus(seed: u64) -> Vec<Doc> {
             customers_csv(&mut r, false),
         );
     }
+    // Containers from a stream of their own: the text documents above stay
+    // the same when these change.
+    let mut r = Rng::new(seed ^ 0x5EED_0FF1_CE00_0000);
+    for i in 1..=2 {
+        for (path, (content, truth)) in [
+            (format!("de/docx/contract-{i}.docx"), contract_docx(&mut r)),
+            (
+                format!("de/xlsx/customers-{i}.xlsx"),
+                customers_xlsx(&mut r),
+            ),
+            (format!("de/eml/callback-{i}.eml"), callback_eml(&mut r)),
+        ] {
+            docs.push(Doc {
+                path,
+                content,
+                truth,
+            });
+        }
+    }
     docs
+}
+
+// ------------------------------------------------------------------ containers
+
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn zip_of(parts: &[(&str, String)]) -> Vec<u8> {
+    use std::io::Write;
+    let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for (name, data) in parts {
+        w.start_file(*name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        w.write_all(data.as_bytes()).unwrap();
+    }
+    w.finish().unwrap().into_inner()
+}
+
+/// Truth inside a numbered segment of a part (a paragraph, a header line).
+fn segment_truth(part: &str, n: u64, t: &Text) -> Vec<Truth> {
+    t.truth
+        .iter()
+        .map(|(e, r)| Truth {
+            entity: EntityType::new(e).unwrap(),
+            location: Location::Span {
+                part: Some(part.to_owned()),
+                start: r.start as u64,
+                end: r.end as u64,
+                line: n,
+                column: t.s[..r.start].chars().count() as u64 + 1,
+            },
+        })
+        .collect()
+}
+
+/// A paragraph as runs: the text cut at a few places, so that values run
+/// across runs as Word writes them after an edit.
+fn runs(r: &mut Rng, text: &str) -> String {
+    let mut cuts: Vec<usize> = (0..3)
+        .map(|_| r.below(text.len().max(1) as u64) as usize)
+        .filter(|c| text.is_char_boundary(*c))
+        .collect();
+    cuts.sort();
+    cuts.dedup();
+    let mut out = String::new();
+    let mut at = 0;
+    for c in cuts.into_iter().chain([text.len()]) {
+        if c > at {
+            out.push_str(&format!(
+                "<w:r><w:t xml:space=\"preserve\">{}</w:t></w:r>",
+                xml_escape(&text[at..c])
+            ));
+            at = c;
+        }
+    }
+    format!("<w:p>{out}</w:p>")
+}
+
+fn contract_docx(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
+    let p = Person::de(r);
+    let q = Person::de(r);
+    let mut paragraphs: Vec<Text> = Vec::new();
+    let mut t = Text::default();
+    t.lit("Vertrag ").lit(&Lookalikes::new(r).invoice);
+    paragraphs.push(t);
+    let mut t = Text::default();
+    t.lit("Zwischen der Beispiel GmbH und Frau ")
+        .pii("PERSON", &p.name())
+        .lit(", geb. ")
+        .pii("DATE_OF_BIRTH", &p.dob_de(r))
+        .lit(", wohnhaft ")
+        .pii("ADDRESS", &format!("{}, {}", p.street, p.city))
+        .lit(", wird folgender Vertrag geschlossen.");
+    paragraphs.push(t);
+    let mut t = Text::default();
+    t.lit("Zahlungen auf IBAN ")
+        .pii("IBAN_CODE", &p.iban_spaced())
+        .lit(".");
+    paragraphs.push(t);
+    let mut t = Text::default();
+    t.lit("Ansprechpartner ")
+        .pii("PERSON", &q.name())
+        .lit(", Telefon ")
+        .pii("PHONE_NUMBER", &q.phone)
+        .lit(".");
+    paragraphs.push(t);
+    let mut body = String::new();
+    let mut truth = Vec::new();
+    for (i, para) in paragraphs.iter().enumerate() {
+        body.push_str(&runs(r, &para.s));
+        truth.extend(segment_truth("word/document.xml", i as u64 + 1, para));
+    }
+    let doc = format!(
+        "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>{body}</w:body></w:document>"
+    );
+    // docProps/core.xml: title (1), creator (2), last modified by (3), created (4).
+    let author = Person::de(r).name();
+    let editor = Person::de(r).name();
+    let core = format!(
+        "<cp:coreProperties xmlns:cp=\"c\" xmlns:dc=\"d\" xmlns:dcterms=\"t\"><dc:title>Vertrag</dc:title><dc:creator>{author}</dc:creator><cp:lastModifiedBy>{editor}</cp:lastModifiedBy><dcterms:created>2026-11-02T08:00:00Z</dcterms:created></cp:coreProperties>"
+    );
+    for (n, name) in [(2, &author), (3, &editor)] {
+        truth.push(Truth {
+            entity: EntityType::new("PERSON").unwrap(),
+            location: Location::Span {
+                part: Some("docProps/core.xml".into()),
+                start: 0,
+                end: name.len() as u64,
+                line: n,
+                column: 1,
+            },
+        });
+    }
+    let bytes = zip_of(&[
+        (
+            "[Content_Types].xml",
+            "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"/>"
+                .into(),
+        ),
+        ("word/document.xml", doc),
+        ("docProps/core.xml", core),
+    ]);
+    (bytes, truth)
+}
+
+fn customers_xlsx(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
+    let header = ["name", "email", "telefon", "geburtsdatum"];
+    let mut strings: Vec<String> = header.iter().map(|h| (*h).to_owned()).collect();
+    let mut rows = String::new();
+    let cell = |col: usize, row: u64| format!("{}{row}", (b'A' + col as u8) as char);
+    rows.push_str("<row r=\"1\">");
+    for (c, _) in header.iter().enumerate() {
+        rows.push_str(&format!("<c r=\"{}\" t=\"s\"><v>{c}</v></c>", cell(c, 1)));
+    }
+    rows.push_str("</row>");
+    let mut truth = Vec::new();
+    let whole =
+        |sheet: &str, row: u64, col: usize, entity: &str, value: &str, truth: &mut Vec<Truth>| {
+            truth.push(Truth {
+                entity: EntityType::new(entity).unwrap(),
+                location: Location::Cell {
+                    sheet: Some(sheet.into()),
+                    row,
+                    column: col as u64 + 1,
+                    start: 0,
+                    end: value.len() as u64,
+                },
+            });
+        };
+    for row in 2..=5u64 {
+        let p = Person::de(r);
+        let values = [
+            ("PERSON", p.name()),
+            ("EMAIL_ADDRESS", p.email.clone()),
+            ("PHONE_NUMBER", p.phone.clone()),
+            ("DATE_OF_BIRTH", p.dob_de(r)),
+        ];
+        rows.push_str(&format!("<row r=\"{row}\">"));
+        for (c, (entity, v)) in values.iter().enumerate() {
+            let i = strings.len();
+            strings.push(v.clone());
+            rows.push_str(&format!("<c r=\"{}\" t=\"s\"><v>{i}</v></c>", cell(c, row)));
+            whole("Kunden", row, c, entity, v, &mut truth);
+        }
+        rows.push_str("</row>");
+    }
+    // A hidden sheet with a note.
+    let q = Person::de(r);
+    let note = format!("Steuer-ID {} von Herrn {}", q.tax_id, q.name());
+    let note_i = strings.len();
+    strings.push(note.clone());
+    let tax_at = note.find(&q.tax_id).unwrap();
+    let name_at = note.rfind(&q.name()).unwrap();
+    for (entity, at, len) in [
+        ("TAX_ID", tax_at, q.tax_id.len()),
+        ("PERSON", name_at, q.name().len()),
+    ] {
+        truth.push(Truth {
+            entity: EntityType::new(entity).unwrap(),
+            location: Location::Cell {
+                sheet: Some("Intern".into()),
+                row: 1,
+                column: 1,
+                start: at as u64,
+                end: (at + len) as u64,
+            },
+        });
+    }
+    let sst: String = strings
+        .iter()
+        .map(|s| format!("<si><t>{}</t></si>", xml_escape(s)))
+        .collect();
+    let bytes = zip_of(&[
+        ("[Content_Types].xml", "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"/>".into()),
+        ("xl/workbook.xml", "<workbook xmlns:r=\"r\"><sheets><sheet name=\"Kunden\" sheetId=\"1\" r:id=\"rId1\"/><sheet name=\"Intern\" sheetId=\"2\" state=\"hidden\" r:id=\"rId2\"/></sheets></workbook>".into()),
+        ("xl/_rels/workbook.xml.rels", "<Relationships><Relationship Id=\"rId1\" Target=\"worksheets/sheet1.xml\"/><Relationship Id=\"rId2\" Target=\"worksheets/sheet2.xml\"/></Relationships>".into()),
+        ("xl/sharedStrings.xml", format!("<sst>{sst}</sst>")),
+        ("xl/worksheets/sheet1.xml", format!("<worksheet><sheetData>{rows}</sheetData></worksheet>")),
+        ("xl/worksheets/sheet2.xml", format!("<worksheet><sheetData><row r=\"1\"><c r=\"A1\" t=\"s\"><v>{note_i}</v></c></row></sheetData></worksheet>")),
+    ]);
+    (bytes, truth)
+}
+
+fn callback_eml(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
+    use base64::Engine as _;
+    let from = Person::de(r);
+    let to = Person::de(r);
+    let p = Person::de(r);
+    let mut truth = Vec::new();
+    // Headers: each one a numbered line `Name: value`.
+    let mut h1 = Text::default();
+    h1.lit("From: ")
+        .pii("PERSON", &from.name())
+        .lit(" <")
+        .pii("EMAIL_ADDRESS", &from.email)
+        .lit(">");
+    let mut h2 = Text::default();
+    h2.lit("To: ")
+        .pii("PERSON", &to.name())
+        .lit(" <")
+        .pii("EMAIL_ADDRESS", &to.email)
+        .lit(">");
+    let mut h3 = Text::default();
+    h3.lit("Subject: Rückruf Frau ").pii("PERSON", &p.name());
+    for (n, h) in [(1, &h1), (2, &h2), (3, &h3)] {
+        truth.extend(segment_truth("headers", n, h));
+    }
+    let subject_b64 = base64::engine::general_purpose::STANDARD.encode(&h3.s["Subject: ".len()..]);
+    // The body: plain text with a mail's CRLF, quoted-printable; its truth
+    // in the decoded text, by line.
+    let mut body = Text::default();
+    body.lit("Hallo,\r\n\r\nFrau ")
+        .pii("PERSON", &p.name())
+        .lit(" bittet um Rückruf unter ")
+        .pii("PHONE_NUMBER", &p.phone)
+        .lit(".\r\nIhre IBAN: ")
+        .pii("IBAN_CODE", &p.iban_spaced())
+        .lit("\r\n\r\nViele Grüße\r\n")
+        .pii("PERSON", &from.name())
+        .lit("\r\n");
+    let (text, body_truth) = body.finish();
+    for t in body_truth {
+        if let Location::Span {
+            start,
+            end,
+            line,
+            column,
+            ..
+        } = t.location
+        {
+            truth.push(Truth {
+                entity: t.entity,
+                location: Location::Span {
+                    part: Some("part 1 text/plain".into()),
+                    start,
+                    end,
+                    line,
+                    column,
+                },
+            });
+        }
+    }
+    let qp: String = text
+        .bytes()
+        .map(|b| match b {
+            b'\r' | b'\n' => (b as char).to_string(),
+            b'=' => "=3D".to_owned(),
+            32..=126 => (b as char).to_string(),
+            _ => format!("={b:02X}"),
+        })
+        .collect();
+    // A CSV attachment, base64.
+    let mut csv = String::from("name,telefon\n");
+    let q = Person::de(r);
+    csv.push_str(&format!("{},{}\n", q.name(), q.phone));
+    for (col, entity, len) in [
+        (1, "PERSON", q.name().len()),
+        (2, "PHONE_NUMBER", q.phone.len()),
+    ] {
+        truth.push(Truth {
+            entity: EntityType::new(entity).unwrap(),
+            location: Location::Cell {
+                sheet: Some("part 2 kunden.csv".into()),
+                row: 2,
+                column: col,
+                start: 0,
+                end: len as u64,
+            },
+        });
+    }
+    let csv_b64 = base64::engine::general_purpose::STANDARD.encode(csv);
+    let mail = format!(
+        "From: {} <{}>\r\nTo: {} <{}>\r\nSubject: =?utf-8?B?{subject_b64}?=\r\nDate: Mon, 02 Nov 2026 09:12:00 +0100\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"b1\"\r\n\r\n--b1\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n{qp}\r\n--b1\r\nContent-Type: text/csv; name=\"kunden.csv\"\r\nContent-Disposition: attachment; filename=\"kunden.csv\"\r\nContent-Transfer-Encoding: base64\r\n\r\n{csv_b64}\r\n--b1--\r\n",
+        from.name(),
+        from.email,
+        to.name(),
+        to.email
+    );
+    (mail.into_bytes(), truth)
 }
 
 /// Writes the corpus of `seed` under `dir`.
@@ -890,6 +1211,9 @@ mod tests {
     #[test]
     fn the_truth_points_at_what_it_names() {
         for d in corpus(7) {
+            let Ok(content) = String::from_utf8(d.content.clone()) else {
+                continue;
+            };
             for t in &d.truth {
                 if let Location::Span {
                     part: None,
@@ -898,7 +1222,7 @@ mod tests {
                     ..
                 } = t.location
                 {
-                    let v = &d.content[start as usize..end as usize];
+                    let v = &content[start as usize..end as usize];
                     assert!(
                         !v.is_empty() && !v.contains('\n') || t.entity.as_str() == "ADDRESS",
                         "{} {v:?}",
@@ -912,8 +1236,8 @@ mod tests {
 
     #[test]
     fn a_seed_gives_the_same_corpus() {
-        let a: Vec<String> = corpus(3).into_iter().map(|d| d.content).collect();
-        let b: Vec<String> = corpus(3).into_iter().map(|d| d.content).collect();
+        let a: Vec<Vec<u8>> = corpus(3).into_iter().map(|d| d.content).collect();
+        let b: Vec<Vec<u8>> = corpus(3).into_iter().map(|d| d.content).collect();
         assert_eq!(a, b);
         assert_ne!(
             a,

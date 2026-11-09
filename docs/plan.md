@@ -146,7 +146,7 @@ patterns, which detectors are required.
 | M0 | Repository, review card for the contracts (schema, policy, placeholder, CLI), CI | **done 2026-11-09**: card approved, ADR-0001 to ADR-0007 |
 | M1 | Text, NDJSON, JSON, CSV streamed; pattern detectors for German; `scan`, `redact`, `policy check`; SARIF; evaluation corpus | **done 2026-11-09**: card approved, ADR-0009 to ADR-0015; recall gate in CI on the corpus and five held-out seeds |
 | M2 | MCP (stdio + HTTP); mapping file for reversible pseudonyms | **done 2026-11-09**: card approved, ADR-0016 to ADR-0018; an agent redacts a file through MCP (stdio test), mapping and reveal round-trip |
-| M3 | DOCX, XLSX, PPTX, EML; metadata stripping; NER | an Office attachment redacted with formatting intact |
+| M3 | DOCX, XLSX, PPTX, EML; metadata stripping; NER | M3a **done 2026-11-09** (card approved, ADR-0019, ADR-0020): Office files and mails redacted in place, metadata replaced, corpus and gate cover them; M3b (NER, O-1) open |
 | M4 | Images and GIF with OCR; PDF by rasterising | a screen-recording GIF redacted without a leaking frame |
 | M5 | Video through ffmpeg | an MP4 screen recording redacted |
 

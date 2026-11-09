@@ -44,14 +44,14 @@ const PERSON_ELEMENTS: &[&str] = &["creator", "lastModifiedBy", "Manager", "auth
 const PERSON_ATTRS: &[&str] = &["author", "initials", "displayName", "userId"];
 
 /// A 1x1 white image per format, for `embedded = "remove"`.
-const BLANK_PNG: &[u8] = &[
+pub(crate) const BLANK_PNG: &[u8] = &[
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
     0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
     0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8, 0xFF, 0xFF, 0x3F,
     0x00, 0x05, 0xFE, 0x02, 0xFE, 0xA7, 0x35, 0x81, 0x84, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
     0x44, 0xAE, 0x42, 0x60, 0x82,
 ];
-const BLANK_GIF: &[u8] = &[
+pub(crate) const BLANK_GIF: &[u8] = &[
     0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0xFF, 0xFF, 0xFF,
     0x00, 0x00, 0x00, 0x2C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44,
     0x01, 0x00, 0x3B,
@@ -65,27 +65,27 @@ fn error(message: impl std::fmt::Display) -> Error {
 /// One piece of a segment: a text node (`raw`: its range in the part) or a
 /// line break or tab between runs, which is read but never written.
 #[derive(Debug, Clone)]
-struct Piece {
-    raw: Option<Range<usize>>,
-    text: String,
+pub(crate) struct Piece {
+    pub(crate) raw: Option<Range<usize>>,
+    pub(crate) text: String,
     /// The start tag of the text element, when `xml:space` may be missing.
-    space_tag: Option<Range<usize>>,
+    pub(crate) space_tag: Option<Range<usize>>,
 }
 
 #[derive(Debug, Clone)]
-struct Segment {
-    pieces: Vec<Piece>,
-    context: String,
+pub(crate) struct Segment {
+    pub(crate) pieces: Vec<Piece>,
+    pub(crate) context: String,
     /// Replace the whole text as this type, whatever it holds.
-    forced: Option<&'static str>,
-    place: Place,
+    pub(crate) forced: Option<&'static str>,
+    pub(crate) place: Place,
     /// The raw range of the whole thing to rewrite when it is a cell value
     /// that becomes an inline string; `None` for text in place.
-    cell: Option<CellRewrite>,
+    pub(crate) cell: Option<CellRewrite>,
 }
 
 #[derive(Debug, Clone)]
-struct CellRewrite {
+pub(crate) struct CellRewrite {
     /// The `<c ...>` element from its start to its end.
     element: Range<usize>,
     /// The start tag's `t` attribute value range, or where to put one.
@@ -94,7 +94,7 @@ struct CellRewrite {
 }
 
 #[derive(Debug, Clone)]
-enum Place {
+pub(crate) enum Place {
     /// The n-th segment of a part (from 1).
     Part { part: String, n: u64 },
     Cell {
@@ -384,7 +384,7 @@ fn part(
 }
 
 /// Finds in a segment, reports, and (when applying) adds the edits.
-fn edit_segment(
+pub(crate) fn edit_segment(
     engine: &Engine,
     seg: &Segment,
     apply: bool,
@@ -534,7 +534,7 @@ fn distribute(
 }
 
 /// `s` with the edits (sorted, not overlapping) applied; `None` without any.
-fn apply_edits(s: &str, mut edits: Vec<(Range<usize>, String)>) -> Option<String> {
+pub(crate) fn apply_edits(s: &str, mut edits: Vec<(Range<usize>, String)>) -> Option<String> {
     if edits.is_empty() {
         return None;
     }

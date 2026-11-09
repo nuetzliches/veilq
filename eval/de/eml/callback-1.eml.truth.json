@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "part": "headers",
+        "start": 6,
+        "end": 16,
+        "line": 1,
+        "column": 7
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "span",
+        "part": "headers",
+        "start": 18,
+        "end": 35,
+        "line": 1,
+        "column": 19
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "part": "headers",
+        "start": 4,
+        "end": 13,
+        "line": 2,
+        "column": 5
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "span",
+        "part": "headers",
+        "start": 15,
+        "end": 32,
+        "line": 2,
+        "column": 16
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "part": "headers",
+        "start": 23,
+        "end": 37,
+        "line": 3,
+        "column": 23
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "part": "part 1 text/plain",
+        "start": 15,
+        "end": 29,
+        "line": 3,
+        "column": 6
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "part": "part 1 text/plain",
+        "start": 55,
+        "end": 66,
+        "line": 3,
+        "column": 45
+      }
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "span",
+        "part": "part 1 text/plain",
+        "start": 80,
+        "end": 107,
+        "line": 4,
+        "column": 12
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "part": "part 1 text/plain",
+        "start": 126,
+        "end": 136,
+        "line": 7,
+        "column": 1
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "sheet": "part 2 kunden.csv",
+        "row": 2,
+        "column": 1,
+        "start": 0,
+        "end": 13
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "sheet": "part 2 kunden.csv",
+        "row": 2,
+        "column": 2,
+        "start": 0,
+        "end": 14
+      }
+    }
+  ]
+}

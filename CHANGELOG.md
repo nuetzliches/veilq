@@ -45,3 +45,12 @@ Notable changes per release. The format follows
 - `veilq redact --mapping` writes what `pseudonymize` and `fake` replaced,
   age-encrypted to the policy's `[mapping] recipients`; `veilq reveal` puts
   the originals back (ADR-0018).
+- M3a: DOCX, XLSX and PPTX redacted in place, every XML part read (a name
+  split across runs found, formatting kept; comments, tracked deletions,
+  headers, hidden sheets, cached formula values); author, editor, company
+  and custom properties always replaced; images and embedded objects an
+  error until M4, or blanked with `[office] embedded = "remove"`
+  (ADR-0019).
+- EML: headers (encoded words), plain and HTML bodies, attachments
+  recursively, written back as MIME (ADR-0020).
+- The corpus has DOCX, XLSX and EML documents with their truth.

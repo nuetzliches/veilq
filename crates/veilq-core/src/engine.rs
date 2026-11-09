@@ -45,6 +45,8 @@ pub enum Format {
     Docx,
     Xlsx,
     Pptx,
+    /// A mail (ADR-0020), read whole.
+    Eml,
 }
 
 impl Format {
@@ -61,6 +63,7 @@ impl Format {
             "docx" => Self::Docx,
             "xlsx" => Self::Xlsx,
             "pptx" => Self::Pptx,
+            "eml" => Self::Eml,
             other => return Err(Error::UnsupportedFormat(other.to_owned())),
         })
     }
@@ -95,13 +98,14 @@ impl Format {
             Self::Docx => "docx",
             Self::Xlsx => "xlsx",
             Self::Pptx => "pptx",
+            Self::Eml => "eml",
         }
     }
 
     /// Whether the format is read whole as bytes ([`Engine::run_bytes`]),
     /// not streamed as text.
     pub fn is_container(self) -> bool {
-        matches!(self, Self::Docx | Self::Xlsx | Self::Pptx)
+        matches!(self, Self::Docx | Self::Xlsx | Self::Pptx | Self::Eml)
     }
 }
 
@@ -196,7 +200,10 @@ impl Engine {
             let run = self.run(input, apply.then_some(&mut out as &mut dyn Write), format)?;
             return Ok((out, run));
         }
-        let o = crate::office::process(self, input, apply)?;
+        let o = match format {
+            Format::Eml => crate::mail::process(self, input, apply)?,
+            _ => crate::office::process(self, input, apply)?,
+        };
         let mut report = Report::new(o.findings);
         if !o.review_reasons.is_empty() {
             report.review_required = true;
@@ -279,7 +286,9 @@ impl Engine {
                         self.emit(&pending, pending.len(), segments, &mut state, &mut output)?;
                         pending.len()
                     }
-                    Format::Docx | Format::Xlsx | Format::Pptx => unreachable!("refused above"),
+                    Format::Docx | Format::Xlsx | Format::Pptx | Format::Eml => {
+                        unreachable!("refused above")
+                    }
                 };
                 pending.drain(..consumed);
             }

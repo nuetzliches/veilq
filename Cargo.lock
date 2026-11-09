@@ -2483,6 +2483,7 @@ name = "veilq-core"
 version = "0.0.0"
 dependencies = [
  "age",
+ "base64 0.23.1",
  "hmac 0.13.0",
  "regex",
  "schemars",
@@ -2501,11 +2502,13 @@ name = "veilq-eval"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "base64 0.23.1",
  "clap",
  "serde",
  "serde_json",
  "toml 1.2.1+spec-1.1.0",
  "veilq-core",
+ "zip",
 ]
 
 [[package]]

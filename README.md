@@ -3,11 +3,12 @@
 Find and redact personal data in text, documents, images and screen
 recordings: on your machine, in CI and as an MCP tool for any agent.
 
-> **Status:** M2 done: text, logs, NDJSON, JSON and CSV are scanned and
-> redacted with German and English patterns, from the CLI, a local web UI and
-> an MCP server; pseudonyms can be put back with an encrypted mapping. Names
-> are found by the words around them until NER comes (M3). Office, mail,
-> images and PDF follow; see [docs/plan.md](docs/plan.md).
+> **Status:** M3a done: text, logs, NDJSON, JSON, CSV, Word, Excel,
+> PowerPoint and mails are scanned and redacted with German and English
+> patterns, from the CLI, a local web UI and an MCP server; pseudonyms can
+> be put back with an encrypted mapping. Names are found by the words around
+> them until NER comes (M3b). Images, GIF and PDF follow (M4); see
+> [docs/plan.md](docs/plan.md).
 
 ## What it will do
 
