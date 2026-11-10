@@ -7,7 +7,9 @@
 //! their format: plain text, HTML (its text and its `href`, `title` and `alt`
 //! values, one segment over the whole body so that a name across tags is
 //! found), CSV, JSON, a nested mail, an Office attachment. A part veilq cannot
-//! read (a PDF, an archive) is an error; images follow `[office] embedded`.
+//! read (an archive) is an error. Images and PDFs are read with OCR
+//! (ADR-0023); without it a PDF is an error and an image follows
+//! `[office] embedded`.
 //! What changed is encoded again: the same transfer encoding, UTF-8.
 
 use std::collections::HashMap;
@@ -369,7 +371,7 @@ fn leaf(
         let new = part(engine, data, &format!("{label} "), eol, apply, out)?;
         return Ok(apply.then_some((new, false)));
     }
-    if let Some(f) = format {
+    if let Some(f) = format.filter(|f| !f.is_picture()) {
         if f.is_container() {
             let (bytes, run) = engine
                 .run_bytes(data, f, apply)
@@ -388,16 +390,38 @@ fn leaf(
         out.mapping.extend(run.mapping);
         return Ok((apply && changed).then_some((bytes, true)));
     }
-    if mime.starts_with("image/") {
+    let picture = match (format, mime) {
+        (Some(f), _) if f.is_picture() => Some(f),
+        (None, "image/png") => Some(Format::Png),
+        (None, "image/jpeg") => Some(Format::Jpeg),
+        (None, "image/webp") => Some(Format::Webp),
+        (None, "image/gif") => Some(Format::Gif),
+        (None, "application/pdf") => Some(Format::Pdf),
+        _ => None,
+    };
+    if let Some(f) = picture.filter(|f| engine.reads(*f)) {
+        let (bytes, run) = engine
+            .run_bytes(data, f, apply)
+            .map_err(|e| error(format!("{label}: {e}")))?;
+        relabel(run.report.findings, label, out);
+        out.review_reasons.extend(run.report.review_reasons);
+        return Ok(apply.then_some((bytes, false)));
+    }
+    if picture == Some(Format::Pdf) {
+        return Err(error(format!(
+            "{label}: a PDF, and OCR and PDFium are not installed to read it (`veilq models fetch ocr`, `veilq models fetch pdf`)"
+        )));
+    }
+    if picture.is_some() || mime.starts_with("image/") {
         return match engine.policy().office.embedded {
             Embedded::Error => Err(error(format!(
-                "{label}: images are not read until M4 (set [office] embedded = \"remove\" to blank them)"
+                "{label}: an image, and OCR is not installed to read it (`veilq models fetch ocr`, or set [office] embedded = \"remove\" to blank it)"
             ))),
             Embedded::Remove => {
                 out.review_reasons.push(format!(
-                    "{label}: an image was blanked, not read (M4 reads it)"
+                    "{label}: an image was blanked, not read (OCR is not installed)"
                 ));
-                let blank = if mime == "image/gif" {
+                let blank = if mime == "image/gif" || picture == Some(Format::Gif) {
                     office::BLANK_GIF
                 } else {
                     office::BLANK_PNG
@@ -447,7 +471,24 @@ fn relabel(findings: Vec<Finding>, label: &str, out: &mut Outcome) {
                 start,
                 end,
             },
-            other => other,
+            Location::Region {
+                part,
+                frame,
+                x,
+                y,
+                width,
+                height,
+            } => Location::Region {
+                part: Some(match part {
+                    Some(p) => format!("{label} {p}"),
+                    None => label.to_owned(),
+                }),
+                frame,
+                x,
+                y,
+                width,
+                height,
+            },
         };
         out.findings.push(f);
     }

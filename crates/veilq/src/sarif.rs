@@ -22,15 +22,22 @@ pub fn describe(location: &Location) -> String {
             None => format!("row {row}, column {column}"),
         },
         Location::Region {
+            part,
             frame,
             x,
             y,
             width,
             height,
-        } => match frame {
-            Some(f) => format!("frame {f}, {width}x{height} at {x},{y}"),
-            None => format!("{width}x{height} at {x},{y}"),
-        },
+        } => {
+            let at = match frame {
+                Some(f) => format!("frame {f}, {width}x{height} at {x},{y}"),
+                None => format!("{width}x{height} at {x},{y}"),
+            };
+            match part {
+                Some(p) => format!("{at} in {p}"),
+                None => at,
+            }
+        }
     }
 }
 

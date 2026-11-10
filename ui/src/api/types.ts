@@ -4,7 +4,7 @@
 export type Location =
   | { kind: 'span'; part?: string; start: number; end: number; line: number; column: number }
   | { kind: 'cell'; sheet?: string; row: number; column: number; start: number; end: number }
-  | { kind: 'region'; frame?: number; x: number; y: number; width: number; height: number };
+  | { kind: 'region'; part?: string; frame?: number; x: number; y: number; width: number; height: number };
 
 export interface Finding {
   entity: string;

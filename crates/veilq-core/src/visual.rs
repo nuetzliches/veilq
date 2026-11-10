@@ -182,6 +182,7 @@ pub fn redact_picture(
             out.findings.push(Finding {
                 entity: c.entity.clone(),
                 location: Location::Region {
+                    part: None,
                     frame,
                     x: bound.x,
                     y: bound.y,
@@ -311,6 +312,7 @@ pub fn image(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Ou
         out.findings.push(Finding {
             entity: EntityType::new("METADATA").expect("a valid type"),
             location: Location::Region {
+                part: None,
                 frame: None,
                 x: 0,
                 y: 0,

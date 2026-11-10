@@ -120,6 +120,14 @@ impl Format {
         }
     }
 
+    /// Whether the format is an image or a PDF, read with OCR (ADR-0023).
+    pub fn is_picture(self) -> bool {
+        matches!(
+            self,
+            Self::Png | Self::Jpeg | Self::Webp | Self::Gif | Self::Pdf
+        )
+    }
+
     /// Whether the format is read whole as bytes ([`Engine::run_bytes`]),
     /// not streamed as text.
     pub fn is_container(self) -> bool {
@@ -457,6 +465,21 @@ impl Engine {
     pub fn with_ocr(mut self, ocr: std::sync::Arc<crate::ocr::Ocr>) -> Self {
         self.ocr = Some(ocr);
         self
+    }
+
+    /// Whether this engine reads `format`: a picture needs OCR, a PDF also
+    /// PDFium; everything else is always read.
+    pub fn reads(&self, format: Format) -> bool {
+        match format {
+            Format::Pdf => {
+                #[cfg(feature = "pdf")]
+                return self.has_ocr() && self.pdfium.is_some();
+                #[cfg(not(feature = "pdf"))]
+                false
+            }
+            f if f.is_picture() => self.has_ocr(),
+            _ => true,
+        }
     }
 
     /// Whether images can be read.

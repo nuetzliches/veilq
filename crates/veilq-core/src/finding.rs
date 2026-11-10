@@ -93,6 +93,10 @@ pub enum Location {
     },
     /// A region of an image, a page or a frame, in pixels from the top left.
     Region {
+        /// The part of a container the image is (`word/media/image1.png`,
+        /// an attachment's name); absent for an image file.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        part: Option<String>,
         /// Page or frame, from 1; absent for a single image.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         frame: Option<u64>,

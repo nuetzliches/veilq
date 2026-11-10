@@ -10,9 +10,10 @@
 //!
 //! Who wrote and edited the file (author, last modified by, company, manager,
 //! comment authors, custom properties) is replaced whatever its content: the
-//! detector is `metadata`. Images and embedded objects are not read until M4:
-//! a run fails on them, or with `[office] embedded = "remove"` they are
-//! blanked and the report asks for a review. A nested Office file (a chart's
+//! detector is `metadata`. Images (PNG, JPEG, WebP, GIF) are read with OCR
+//! when it is installed (ADR-0023). Other images and embedded objects, and
+//! images without OCR, fail a run, or with `[office] embedded = "remove"`
+//! they are blanked and the report asks for a review. A nested Office file (a chart's
 //! workbook) is redacted like the outer one.
 
 use std::collections::{BTreeMap, HashMap};
@@ -27,7 +28,7 @@ use crate::finding::{EntityType, Finding, Location};
 use crate::mapping::Entry;
 use crate::policy::Embedded;
 use crate::xml::{self, TagKind, Token};
-use crate::{Engine, Error};
+use crate::{Engine, Error, Format};
 
 /// What a container run found, and its output.
 pub struct Outcome {
@@ -42,6 +43,12 @@ const TEXTS: &[&str] = &["t", "delText", "instrText"];
 /// Elements whose whole text is who wrote or owns the file.
 const PERSON_ELEMENTS: &[&str] = &["creator", "lastModifiedBy", "Manager", "author"];
 const PERSON_ATTRS: &[&str] = &["author", "initials", "displayName", "userId"];
+
+/// The picture format of a part, by its name.
+fn picture(lower: &str) -> Option<Format> {
+    let ext = lower.rsplit_once('.')?.1;
+    Format::from_name(ext).ok().filter(|f| f.is_picture())
+}
 
 /// A 1x1 white image per format, for `embedded = "remove"`.
 pub(crate) const BLANK_PNG: &[u8] = &[
@@ -168,11 +175,25 @@ pub fn process(engine: &Engine, input: &[u8], apply: bool) -> Result<Outcome, Er
             && (lower.ends_with(".odttf") || lower.ends_with(".ttf"))
         {
             // Embedded fonts: glyphs, no content.
+        } else if let Some(f) = picture(&lower).filter(|f| engine.reads(*f)) {
+            let (bytes, run) = engine
+                .run_bytes(data, f, apply)
+                .map_err(|e| error(format!("{name}: {e}")))?;
+            for mut finding in run.report.findings {
+                if let Location::Region { part, .. } = &mut finding.location {
+                    *part = Some(name.clone());
+                }
+                out.findings.push(finding);
+            }
+            out.review_reasons.extend(run.report.review_reasons);
+            if apply {
+                new_data.insert(name.clone(), bytes);
+            }
         } else {
             match engine.policy().office.embedded {
                 Embedded::Error => {
                     return Err(error(format!(
-                        "{name}: images and embedded objects are not read until M4 (set [office] embedded = \"remove\" to blank them)"
+                        "{name}: an embedded object or image veilq cannot read (images need OCR: `veilq models fetch ocr`; set [office] embedded = \"remove\" to blank it)"
                     )));
                 }
                 Embedded::Remove => {
@@ -200,7 +221,7 @@ pub fn process(engine: &Engine, input: &[u8], apply: bool) -> Result<Outcome, Er
     }
     if blanked > 0 {
         out.review_reasons.push(format!(
-            "{blanked} embedded image(s) were blanked, not read (M4 reads them)"
+            "{blanked} embedded image(s) were blanked, not read"
         ));
     }
     if apply {
@@ -1132,7 +1153,7 @@ mod tests {
     }
 
     #[test]
-    fn images_fail_unless_the_policy_blanks_them() {
+    fn images_without_ocr_fail_unless_the_policy_blanks_them() {
         let doc = format!(
             r#"<w:document {W}><w:body><w:p><w:r><w:t>Hallo</w:t></w:r></w:p></w:body></w:document>"#
         );
@@ -1141,7 +1162,7 @@ mod tests {
             ("word/media/image1.png", b"\x89PNG..."),
         ]);
         assert!(
-            matches!(process(&default_engine(), &input, true), Err(Error::Format(m)) if m.contains("M4"))
+            matches!(process(&default_engine(), &input, true), Err(Error::Format(m)) if m.contains("veilq models fetch ocr"))
         );
         let e = engine("version = 1\n[office]\nembedded = \"remove\"\n");
         let r = process(&e, &input, true).unwrap();
