@@ -310,6 +310,28 @@ pub(crate) const NOT_NAMES: &[&str] = &[
     "fax",
     "mobil",
     "mobile",
+    // Pronouns and the roles of a call or a message: a sentence starts
+    // with them.
+    "ich",
+    "wir",
+    "du",
+    "er",
+    "sie",
+    "man",
+    "anrufer",
+    "anruferin",
+    "absender",
+    "absenderin",
+    "empfänger",
+    "empfängerin",
+    "nutzer",
+    "nutzerin",
+    "benutzer",
+    "benutzerin",
+    "caller",
+    "sender",
+    "recipient",
+    "user",
     "team",
 ];
 

@@ -323,7 +323,20 @@ mod tests {
         assert!(!can_be_name("IBAN"));
         assert!(!can_be_name("Agent"));
         // Left alone once `remove` took the name and number (`Hallo , Tel. `).
-        for word in ["Hallo", "Hello", "Dear", "Tel", "Telefon", "Fax", "Mobil"] {
+        for word in [
+            "Hallo",
+            "Hello",
+            "Dear",
+            "Tel",
+            "Telefon",
+            "Fax",
+            "Mobil",
+            "Ich",
+            "Wir",
+            "Anrufer",
+            "Anruferin",
+            "Caller",
+        ] {
             assert!(!can_be_name(word), "{word}");
         }
         assert!(can_be_name("Jonas Brandt's"));
