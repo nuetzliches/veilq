@@ -67,7 +67,7 @@ gigabyte, and ONNX Runtime is code veilq loads.
   downloads ONNX Runtime) and `tokenizers` with `http`.
 - **A TLS client in veilq for `fetch`:** the SHA-256 already decides what is
   installed; `curl` is on every supported system.
-- **NER on by default, a required download:** a gigabyte for users who scan
+- **NER on by default, a required download:** 650 MB for users who scan
   logs and exports, where columns and keys already name the person.
 
 ## Consequences
@@ -75,8 +75,11 @@ gigabyte, and ONNX Runtime is code veilq loads.
 - A run with NER loads the model first (about 3 s) and spends about 0.02 s
   per sentence on a CPU; a CSV with many cells costs a model call per cell.
 - CI measures patterns only until it caches the model directory.
-- The training data of the model is synthetic and its licence is not stated
-  on the model card; the model's weights are Apache-2.0.
+- The model and its training data are Apache-2.0; the pretraining texts
+  (the Pile) come from mixed sources, as for most models.
+- If onnx-community removes the revision, `fetch` fails; the model can then
+  be exported again from the original weights and installed with
+  `install --from`, under a new pin.
 
 ## Enforced by
 
