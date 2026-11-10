@@ -7,10 +7,12 @@ entity = "PERSON"
 regex = '\b(?:Mr|Mrs|Ms|Miss|Dr)\.?\s+(?P<pii>\p{Lu}\p{Ll}+(?:[- ]\p{Lu}\p{Ll}+)?)'
 confidence = 0.85
 
+# Not `from`: it names places and companies (`from Hugging Face`) as often
+# as people.
 [[patterns]]
 name = "name-cue"
 entity = "PERSON"
-regex = '\b(?:Dear|Hello|Hi|by|from|signed|attn\.?|attention)[:,]?\s+(?P<pii>\p{Lu}\p{Ll}+(?:[- ]\p{Lu}\p{Ll}+){1,2})'
+regex = '\b(?:Dear|Hello|Hi|by|signed|attn\.?|attention)[:,]?\s+(?P<pii>\p{Lu}\p{Ll}+(?:[- ]\p{Lu}\p{Ll}+){1,2})'
 confidence = 0.75
 
 [[patterns]]

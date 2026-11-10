@@ -304,6 +304,15 @@ mod tests {
     }
 
     #[test]
+    fn from_is_no_name_cue() {
+        // `from` names places and companies as often as people.
+        assert!(findings("in ONNX (fp16, from Hugging Face; veilq ships", "").is_empty());
+        assert!(findings("Data from New York shows", "").is_empty());
+        assert!(found("Approved by Jonas Brandt.", "PERSON", "Jonas Brandt"));
+        assert!(found("Dear Mira Albers,", "PERSON", "Mira Albers"));
+    }
+
+    #[test]
     fn every_pack_compiles() {
         for (locale, _) in PACKS {
             assert!(!pack(locale).unwrap().is_empty(), "{locale}");

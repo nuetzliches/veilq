@@ -72,6 +72,7 @@ const NOT_NAMES: &[&str] = &[
     "customer",
     "colleague",
     "manager",
+    "agent",
     "team",
 ];
 
@@ -362,6 +363,7 @@ mod tests {
         // A lowercase word that is no particle, or capitals only: no name.
         assert!(!can_be_name("customer's IBAN"));
         assert!(!can_be_name("IBAN"));
+        assert!(!can_be_name("Agent"));
         assert!(can_be_name("Jonas Brandt's"));
         assert!(can_be_name("Ursula von der Leyen"));
         assert!(can_be_name("MEIER, Jonas"));
