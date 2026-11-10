@@ -75,5 +75,7 @@ Notable changes per release. The format follows
   `pseudonymize` when a key is set) instead of the policy's, as `--action`
   does; a change runs the last source again.
 - The UI sets an image beside its redacted twin, each finding a frame on
-  both sides; a PDF and a GIF are offered as a download, with their
-  findings by page or frame.
+  both sides, and a PDF page by page (its first 20 pages, rendered by
+  PDFium in the pixels its findings are in); a GIF is offered as a
+  download, with its findings by frame. An image or PDF is shown as soon
+  as it is chosen.

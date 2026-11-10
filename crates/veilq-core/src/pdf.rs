@@ -46,6 +46,36 @@ pub fn pdfium(library: &Path) -> Result<&'static Pdfium, Error> {
         .map_err(|e| Error::Format(e.clone()))
 }
 
+fn render_config() -> PdfRenderConfig {
+    PdfRenderConfig::new()
+        .scale_page_by_factor(DPI / 72.0)
+        .render_form_data(true)
+        .render_annotations(true)
+}
+
+fn render(page: &PdfPage, config: &PdfRenderConfig, n: usize) -> Result<RgbaImage, Error> {
+    let bitmap = page.render_with_config(config).map_err(error)?;
+    let (w, h) = (bitmap.width() as u32, bitmap.height() as u32);
+    RgbaImage::from_raw(w, h, bitmap.as_rgba_bytes())
+        .ok_or_else(|| error(format!("page {n} rendered to no image")))
+}
+
+/// The first `max` pages of a PDF as PNG, in the pixels redaction reads them
+/// in (a finding's region is in these), and the number of pages: what a
+/// viewer sets beside the findings.
+pub fn pages(pdfium: &Pdfium, bytes: &[u8], max: usize) -> Result<(Vec<Vec<u8>>, usize), Error> {
+    let doc = pdfium
+        .load_pdf_from_byte_slice(bytes, None)
+        .map_err(error)?;
+    let config = render_config();
+    let mut out = Vec::new();
+    for (i, page) in doc.pages().iter().enumerate().take(max) {
+        let img = render(&page, &config, i + 1)?;
+        out.push(crate::visual::encode(&img, image::ImageFormat::Png)?);
+    }
+    Ok((out, doc.pages().len() as usize))
+}
+
 /// A PDF, redacted page by page (pages counted from 1).
 pub fn redact(
     engine: &Engine,
@@ -68,15 +98,9 @@ pub fn redact(
     } else {
         None
     };
-    let config = PdfRenderConfig::new()
-        .scale_page_by_factor(DPI / 72.0)
-        .render_form_data(true)
-        .render_annotations(true);
+    let config = render_config();
     for (i, page) in input.pages().iter().enumerate() {
-        let bitmap = page.render_with_config(&config).map_err(error)?;
-        let (w, h) = (bitmap.width() as u32, bitmap.height() as u32);
-        let mut img = RgbaImage::from_raw(w, h, bitmap.as_rgba_bytes())
-            .ok_or_else(|| error(format!("page {} rendered to no image", i + 1)))?;
+        let mut img = render(&page, &config, i + 1)?;
         crate::visual::redact_picture(engine, ocr, &mut img, Some(i as u64 + 1), apply, &mut out)?;
         if let Some(doc) = &mut output {
             let jpeg = crate::visual::encode(&img, image::ImageFormat::Jpeg)?;

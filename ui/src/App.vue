@@ -27,16 +27,21 @@ const hovered = ref<number | null>(null);
 const copied = ref(false);
 /** The action of a run: `''` for the policy's, else one of `info.actions`. */
 const action = ref('');
-/** An image shown as soon as it is chosen, before its redaction is back. */
-const preview = ref<{ data: string; mediaType: string } | null>(null);
+/** An image or a PDF's pages, shown as soon as chosen, before the redaction is back. */
+const preview = ref<{ pages: string[]; mediaType: string; pageCount?: number } | null>(null);
 /** The last run's source, run again when the action changes. */
 const lastRun = ref<{ source: Source; name: string | null } | null>(null);
 
 const findings = computed(() => result.value?.report.findings ?? []);
-/** An image the browser shows: set side by side; a PDF is a download. */
+/** An image the browser shows: set side by side. */
 const image = computed(() => {
   const r = result.value;
   return r?.media_type?.startsWith('image/') && r.input_base64 && r.output_base64 ? r : null;
+});
+/** A PDF: its pages side by side, as the server rendered them. */
+const pdf = computed(() => {
+  const r = result.value;
+  return r?.input_pages && r.output_pages ? r : null;
 });
 
 const tabs: { kind: Kind; label: string }[] = [
@@ -88,15 +93,18 @@ function selectTab(k: Kind) {
 }
 
 const PICTURE = /\.(png|jpe?g|webp|gif)$/i;
+const PDF = /\.pdf$/i;
 
 function selectFile(path: string) {
   selectedFile.value = path;
   preview.value = null;
-  if (PICTURE.test(path)) {
+  if (PICTURE.test(path) || PDF.test(path)) {
     api
       .picture(path)
       .then((p) => {
-        if (selectedFile.value === path) preview.value = { data: p.data, mediaType: p.media_type };
+        if (selectedFile.value === path && !result.value) {
+          preview.value = { pages: p.pages, mediaType: p.media_type, pageCount: p.page_count };
+        }
       })
       .catch(() => {});
   }
@@ -112,7 +120,8 @@ async function upload(file: File | undefined) {
     return;
   }
   const data = await toBase64(file);
-  preview.value = PICTURE.test(file.name) && file.type.startsWith('image/') ? { data, mediaType: file.type } : null;
+  preview.value =
+    PICTURE.test(file.name) && file.type.startsWith('image/') ? { pages: [data], mediaType: file.type } : null;
   void run({ kind: 'upload', name: file.name, data }, file.name);
 }
 
@@ -263,6 +272,22 @@ onMounted(async () => {
             :hovered="hovered"
             @hover="hovered = $event"
           />
+          <div v-else-if="pdf" class="pages">
+            <ImagePane
+              v-for="(p, i) in pdf.input_pages"
+              :key="i"
+              side="input"
+              :data="p"
+              media-type="image/png"
+              :page="i + 1"
+              :findings="findings"
+              :hovered="hovered"
+              @hover="hovered = $event"
+            />
+            <p v-if="(pdf.page_count ?? 0) > pdf.input_pages!.length" class="hint">
+              Pages {{ pdf.input_pages!.length + 1 }} to {{ pdf.page_count }} are in the download.
+            </p>
+          </div>
           <div v-else-if="result?.output_base64" class="binary">
             <strong>{{ result.name }}</strong>
             <p>This file has no text to set side by side here: its findings are listed below, by part and paragraph, sheet and cell, or page and region.</p>
@@ -284,14 +309,18 @@ onMounted(async () => {
             :findings="[]"
             :hovered="null"
           />
-          <ImagePane
-            v-else-if="preview"
-            side="input"
-            :data="preview.data"
-            :media-type="preview.mediaType"
-            :findings="[]"
-            :hovered="null"
-          />
+          <div v-else-if="preview" class="pages">
+            <ImagePane
+              v-for="(p, i) in preview.pages"
+              :key="i"
+              side="input"
+              :data="p"
+              :media-type="preview.mediaType"
+              :page="preview.pageCount ? i + 1 : undefined"
+              :findings="[]"
+              :hovered="null"
+            />
+          </div>
           <p v-else class="placeholder">{{ busy ? 'Reading …' : 'Choose a source on the left.' }}</p>
         </div>
       </section>
@@ -318,6 +347,19 @@ onMounted(async () => {
             :hovered="hovered"
             @hover="hovered = $event"
           />
+          <div v-else-if="pdf" class="pages">
+            <ImagePane
+              v-for="(p, i) in pdf.output_pages"
+              :key="i"
+              side="output"
+              :data="p"
+              media-type="image/png"
+              :page="i + 1"
+              :findings="findings"
+              :hovered="hovered"
+              @hover="hovered = $event"
+            />
+          </div>
           <div v-else-if="result?.output_base64" class="binary">
             <strong>The redacted file is ready.</strong>
             <p v-if="result.media_type === 'application/pdf'">Every page rewritten as an image with its findings blacked out; the text layer, links and metadata are gone.</p>

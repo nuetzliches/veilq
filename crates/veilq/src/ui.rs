@@ -429,28 +429,32 @@ struct PictureQuery {
 
 #[derive(Serialize)]
 struct Picture {
-    data: String,
+    /// An image as it is; a PDF's first pages as PNG.
+    pages: Vec<String>,
     media_type: &'static str,
+    /// A PDF's number of pages.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    page_count: Option<usize>,
 }
 
-/// An image under the root as it is, to show while it is redacted: the
-/// answer of `/redact` holds it too, only later.
+/// The pages a viewer shows of a PDF.
+const MAX_PAGES: usize = 20;
+
+/// An image or PDF under the root as it is, to show while it is redacted:
+/// the answer of `/redact` holds it too, only later.
 async fn picture(
     State(state): State<Arc<AppState>>,
     Query(query): Query<PictureQuery>,
 ) -> Response {
     let result = tokio::task::spawn_blocking(move || -> Result<Picture, Failure> {
         let path = Path::new(&query.path);
-        let media_type = Format::from_path(path)
-            .ok()
-            .filter(|f| *f != Format::Pdf)
-            .and_then(media_type)
-            .ok_or_else(|| {
-                Failure(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    format!("{}: not an image", query.path),
-                )
-            })?;
+        let format = Format::from_path(path).ok().filter(|f| f.is_picture());
+        let media_type = format.and_then(media_type).ok_or_else(|| {
+            Failure(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                format!("{}: not an image or PDF", query.path),
+            )
+        })?;
         let resolved = root::resolve_under(&state.root, path).map_err(Failure::from)?;
         let io = |source| {
             Failure::from(Error::Io {
@@ -462,9 +466,22 @@ async fn picture(
             return Err(too_large(&query.path));
         }
         let bytes = std::fs::read(&resolved).map_err(io)?;
+        let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
+        if format == Some(Format::Pdf) {
+            let (pages, n) = state
+                .engine
+                .pdf_pages(&bytes, MAX_PAGES)
+                .map_err(Failure::from)?;
+            return Ok(Picture {
+                pages: pages.iter().map(|p| b64(p)).collect(),
+                media_type: "image/png",
+                page_count: Some(n),
+            });
+        }
         Ok(Picture {
-            data: base64::engine::general_purpose::STANDARD.encode(bytes),
+            pages: vec![b64(&bytes)],
             media_type,
+            page_count: None,
         })
     })
     .await;
@@ -507,6 +524,14 @@ struct RedactResponse {
     /// An image or PDF: its media type.
     #[serde(skip_serializing_if = "Option::is_none")]
     media_type: Option<&'static str>,
+    /// A PDF: its first pages before and after, as PNG, in the pixels its
+    /// findings' regions are in, and its number of pages.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input_pages: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_pages: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    page_count: Option<usize>,
 }
 
 /// The media type of a picture format.
@@ -597,6 +622,18 @@ fn redact_source(
             .run_bytes(&bytes, format, true)
             .map_err(Failure::from)?;
         let mail = format == Format::Eml;
+        let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
+        let (input_pages, output_pages, page_count) = if format == Format::Pdf {
+            let (before, n) = engine.pdf_pages(&bytes, MAX_PAGES).map_err(Failure::from)?;
+            let (after, _) = engine.pdf_pages(&out, MAX_PAGES).map_err(Failure::from)?;
+            (
+                Some(before.iter().map(|p| b64(p)).collect()),
+                Some(after.iter().map(|p| b64(p)).collect()),
+                Some(n),
+            )
+        } else {
+            (None, None, None)
+        };
         return Ok(RedactResponse {
             name,
             input: if mail {
@@ -617,6 +654,9 @@ fn redact_source(
                 .is_picture()
                 .then(|| base64::engine::general_purpose::STANDARD.encode(&bytes)),
             media_type: media_type(format),
+            input_pages,
+            output_pages,
+            page_count,
         });
     }
     // Fail closed: what veilq cannot read is an error, not a pass-through.
@@ -638,6 +678,9 @@ fn redact_source(
         output_base64: None,
         input_base64: None,
         media_type: None,
+        input_pages: None,
+        output_pages: None,
+        page_count: None,
     })
 }
 
@@ -962,7 +1005,7 @@ mod tests {
         let (status, body) = send(app(&root), get("a.png")).await;
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["media_type"], "image/png");
-        assert_eq!(body["data"], "iVBORw==");
+        assert_eq!(body["pages"], serde_json::json!(["iVBORw=="]));
         // Only images, and only under the root.
         let (status, _) = send(app(&root), get("b.txt")).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);

@@ -3,13 +3,15 @@ import { computed, ref } from 'vue';
 import type { Finding } from '@/api';
 
 // An image beside its redacted twin: each finding of the image itself (a
-// region without a part or frame) is a frame over it, on both sides.
+// region without a part) is a frame over it, on both sides; a PDF's page
+// shows the findings of its `page`.
 const props = defineProps<{
   data: string;
   mediaType: string;
   findings: Finding[];
   hovered: number | null;
   side: 'input' | 'output';
+  page?: number;
 }>();
 const emit = defineEmits<{ hover: [index: number | null] }>();
 
@@ -22,7 +24,7 @@ const boxes = computed(() => {
   if (!s || props.mediaType === 'image/gif') return [];
   return props.findings.flatMap((f, i) => {
     const l = f.location;
-    if (l.kind !== 'region' || l.part !== undefined || l.frame !== undefined) return [];
+    if (l.kind !== 'region' || l.part !== undefined || l.frame !== props.page) return [];
     return [
       {
         i,
@@ -47,6 +49,7 @@ function onLoad(e: Event) {
 
 <template>
   <div class="pane-image" :class="side">
+    <p v-if="page" class="page">Page {{ page }}</p>
     <div class="frame">
       <img :src="src" alt="" @load="onLoad" />
       <span
@@ -66,6 +69,11 @@ function onLoad(e: Event) {
 <style scoped>
 .pane-image {
   padding: var(--space-4);
+}
+.page {
+  margin: 0 0 var(--space-2);
+  font-size: 12px;
+  color: var(--text-muted);
 }
 .frame {
   position: relative;

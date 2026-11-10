@@ -65,11 +65,18 @@ export interface Redaction {
   input_base64?: string;
   /** An image or PDF: its media type. */
   media_type?: string;
+  /** A PDF: its first pages before and after, as PNG, in its findings' pixels. */
+  input_pages?: string[];
+  output_pages?: string[];
+  page_count?: number;
 }
 
 export interface Picture {
-  data: string;
+  /** An image as it is; a PDF's first pages as PNG. */
+  pages: string[];
   media_type: string;
+  /** A PDF's number of pages. */
+  page_count?: number;
 }
 
 export interface Api {

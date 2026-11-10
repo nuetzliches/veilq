@@ -526,6 +526,19 @@ impl Engine {
         ))
     }
 
+    /// The first `max` pages of a PDF as PNG, as redaction reads them, and
+    /// the number of pages; without PDFium an error.
+    pub fn pdf_pages(&self, input: &[u8], max: usize) -> Result<(Vec<Vec<u8>>, usize), Error> {
+        #[cfg(feature = "pdf")]
+        if let Some(pdfium) = self.pdfium {
+            return crate::pdf::pages(pdfium, input, max);
+        }
+        let _ = (input, max);
+        Err(Error::Format(
+            "PDFs need PDFium, which is not installed: `veilq models fetch pdf`".into(),
+        ))
+    }
+
     /// An image, redacted (ADR-0023); without OCR an error (ADR-0003).
     pub(crate) fn image(&self, input: &[u8], apply: bool) -> Result<crate::office::Outcome, Error> {
         #[cfg(feature = "ocr")]
