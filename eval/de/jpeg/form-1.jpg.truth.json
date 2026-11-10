@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "METADATA",
+      "location": {
+        "kind": "region",
+        "x": 0,
+        "y": 0,
+        "width": 820,
+        "height": 460
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "x": 84,
+        "y": 107,
+        "width": 65,
+        "height": 10
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "region",
+        "x": 221,
+        "y": 144,
+        "width": 52,
+        "height": 9
+      }
+    },
+    {
+      "entity": "ADDRESS",
+      "location": {
+        "kind": "region",
+        "x": 220,
+        "y": 177,
+        "width": 167,
+        "height": 12
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "region",
+        "x": 220,
+        "y": 212,
+        "width": 76,
+        "height": 9
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "region",
+        "x": 220,
+        "y": 245,
+        "width": 128,
+        "height": 13
+      }
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "region",
+        "x": 221,
+        "y": 280,
+        "width": 164,
+        "height": 9
+      }
+    },
+    {
+      "entity": "TAX_ID",
+      "location": {
+        "kind": "region",
+        "x": 220,
+        "y": 314,
+        "width": 83,
+        "height": 9
+      }
+    },
+    {
+      "entity": "LICENSE_PLATE",
+      "location": {
+        "kind": "region",
+        "x": 220,
+        "y": 348,
+        "width": 49,
+        "height": 9
+      }
+    }
+  ]
+}

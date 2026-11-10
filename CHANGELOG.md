@@ -6,7 +6,16 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-10
+
 ### Added
+
+- `veilq mark` (ADR-0024): a ticket's body carries veilq's verdict in its
+  first line, `veilq: cleaned|pass <hash>` over the rest's letters and
+  digits; a matching body is handed on, a body whose first line is an exempt
+  prefix (`[markers] exempt` in the policy) too, any other is redacted and
+  marked, its images replaced by a note. The format `markdown` (`.md`)
+  writes `mask` as `\<TYPE\>`.
 
 - The repository: plan, workspace, CI.
 - The contracts of M0 (ADR-0001 to ADR-0007): the report and policy schemas
@@ -22,3 +31,64 @@ Notable changes per release. The format follows
   redaction is not built yet instead of an output; `npm run dev` in `ui/`
   runs it against a mock with synthetic data.
 - `devstack.toml`: the UI's dev server and `veilq ui` under devstack.
+- M1: `veilq scan` (text, `--json`, `--sarif`) and `veilq redact` (`-o`
+  written only on success, `--action`, `--report`) for text, logs, NDJSON,
+  JSON and CSV, streamed; output keeps the input's layout, quoting and
+  escapes, and is verified before it is written.
+- Pattern detection from locale packs (`intl`, `de`, `en`; ADR-0009,
+  ADR-0010): names after a salutation, role, key or signature, addresses,
+  birth dates, phone numbers, e-mail, IP, IBAN, cards, tax ID, social
+  security and ID card numbers, licence plates, court file numbers.
+- Policy: `locales`, and per pattern `context` and `validate` (ADR-0011); a
+  failed checksum lowers the confidence instead of dropping the finding
+  (ADR-0012).
+- The action `fake`: stand-ins of the same type and shape.
+- `crates/veilq-eval` and `eval/`: a synthetic corpus with ground truth,
+  golden outputs, and a recall gate in CI (ADR-0013); the skill
+  `veilq-tune` for tuning against it (ADR-0014).
+- M2: `veilq mcp`, the MCP server over stdio or Streamable HTTP (`--http`),
+  with the tools `scan`, `redact_text`, `redact_file` and `list_detectors`;
+  redacted content and reports only, nothing written, no way back
+  (ADR-0016). Over HTTP a bearer token from `VEILQ_MCP_TOKEN` or printed at
+  start, loopback hosts, no browser origins (ADR-0017).
+- `veilq redact --mapping` writes what `pseudonymize` and `fake` replaced,
+  age-encrypted to the policy's `[mapping] recipients`; `veilq reveal` puts
+  the originals back (ADR-0018).
+- M3a: DOCX, XLSX and PPTX redacted in place, every XML part read (a name
+  split across runs found, formatting kept; comments, tracked deletions,
+  headers, hidden sheets, cached formula values); author, editor, company
+  and custom properties always replaced; images and embedded objects an
+  error until M4, or blanked with `[office] embedded = "remove"`
+  (ADR-0019).
+- EML: headers (encoded words), plain and HTML bodies, attachments
+  recursively, written back as MIME (ADR-0020).
+- The corpus has DOCX, XLSX and EML documents with their truth.
+- M3b: NER (ADR-0022): `urchade/gliner_multi_pii-v1` in ONNX (fp16, from
+  Hugging Face; veilq ships no model) finds names that no word marks;
+  optional, a report without it asks for a review. Verify adds what it finds
+  and replaces it, for up to three rounds.
+  `veilq models fetch|install|list`: the model and ONNX Runtime pinned by
+  SHA-256, nothing downloaded at build or run time. `veilq-eval check --ner`
+  and `eval/gate-ner.toml`.
+- `veilq ui --token-file`: the token kept across starts (ADR-0021); under
+  devstack an open tab survives a change going live. The UI explains a 401.
+- M4 (ADR-0023): images (PNG, JPEG, WebP) read with OCR (PaddleOCR in
+  ONNX, `veilq models fetch ocr`), each finding's characters filled black,
+  metadata removed by encoding anew; GIF frame by frame with boxes that
+  stay while their pixels stand still; PDF rendered with PDFium
+  (`veilq models fetch pdf`) into a new PDF of page images; pictures inside
+  Office files and mails redacted the same way. A region names its `part`.
+  The corpus has a screenshot, a form photo with EXIF, a screen recording
+  and a scanned letter; `veilq-eval check --ocr` measures them.
+- The UI chooses the action of a run (`mask`, `fake`, `remove`, and
+  `pseudonymize` when a key is set) instead of the policy's, as `--action`
+  does; a change runs the last source again.
+- Releases: archives for Windows, Linux (x86_64, arm64) and macOS with
+  `SHA256SUMS` and build provenance; CI measures the corpus with the pinned
+  NER, OCR and PDF models too (`eval-models`). README with install, models
+  and use; CONTRIBUTING, issue and pull request templates.
+- The UI sets an image beside its redacted twin, each finding a frame on
+  both sides, and a PDF page by page (its first 20 pages, rendered by
+  PDFium in the pixels its findings are in); a GIF is offered as a
+  download, with its findings by frame. An image or PDF is shown as soon
+  as it is chosen.

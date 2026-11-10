@@ -14,7 +14,7 @@
         },
         {
           "const": "fake",
-          "description": "A plausible value of the same type and shape (M1).",
+          "description": "A plausible value of the same type and shape.",
           "type": "string"
         },
         {
@@ -47,6 +47,36 @@
       },
       "type": "object"
     },
+    "Context": {
+      "additionalProperties": false,
+      "description": "Words near a match that make it personal data: `geb.` before a date, the\ncolumn `email`, the key `iban` (ADR-0011).",
+      "properties": {
+        "boost": {
+          "default": 0.30000001192092896,
+          "description": "Added to the confidence when a word is found; from 0 to 1.",
+          "format": "float",
+          "type": "number"
+        },
+        "window": {
+          "default": 48,
+          "description": "How many characters before the match are searched, the column's or\nkey's name included.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "words": {
+          "description": "Compared case-insensitively; a word that starts with a letter or digit\nmust start a word in the text too.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "words"
+      ],
+      "type": "object"
+    },
     "Defaults": {
       "additionalProperties": false,
       "properties": {
@@ -77,6 +107,13 @@
       },
       "type": "object"
     },
+    "Embedded": {
+      "enum": [
+        "error",
+        "remove"
+      ],
+      "type": "string"
+    },
     "EntityRule": {
       "additionalProperties": false,
       "properties": {
@@ -104,6 +141,50 @@
       "pattern": "^[A-Z][A-Z0-9_]*$",
       "type": "string"
     },
+    "Mapping": {
+      "additionalProperties": false,
+      "description": "The mapping file: what `pseudonymize` and `fake` replacements stood for.",
+      "properties": {
+        "recipients": {
+          "description": "age X25519 recipients (`age1...`) the mapping is encrypted to. Only\npublic keys: whoever holds a matching identity can read it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "recipients"
+      ],
+      "type": "object"
+    },
+    "Markers": {
+      "additionalProperties": false,
+      "description": "How `veilq mark` reads a body's first line.",
+      "properties": {
+        "exempt": {
+          "default": [],
+          "description": "A body whose first line starts with one of these is handed on as it\nis, unread and unmarked: an agent's technical note, say.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "Office": {
+      "additionalProperties": false,
+      "description": "How Office files are read.",
+      "properties": {
+        "embedded": {
+          "$ref": "#/$defs/Embedded",
+          "default": "error",
+          "description": "Embedded objects, and images when OCR is not installed (with OCR an\nimage is read and redacted, ADR-0023): `error` (the default) stops\nthe run, `remove` blanks images (the report then asks for a review);\nother objects stay an error."
+        }
+      },
+      "type": "object"
+    },
     "PatternRule": {
       "additionalProperties": false,
       "properties": {
@@ -112,16 +193,33 @@
           "format": "float",
           "type": "number"
         },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Context"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "entity": {
           "$ref": "#/$defs/EntityType"
         },
         "name": {
-          "description": "Lower case letters, digits and `-`; the detector is `policy:<name>`.",
+          "description": "Lower case letters, digits and `-`; the detector is `policy:<name>`\n(built-in: `pattern:<locale>.<name>`).",
           "type": "string"
         },
         "regex": {
-          "description": "A Rust `regex` pattern.",
+          "description": "A Rust `regex` pattern. With a group named `pii`, only that group is\nthe finding (the rest is context the match needs).",
           "type": "string"
+        },
+        "validate": {
+          "description": "A check the match must pass (`iban`, `luhn`, `tax_id_de`, ...). A\nmatch that fails it loses 0.3 of its confidence: below the threshold\nwithout context, above it with (ADR-0012).",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -178,6 +276,42 @@
         }
       },
       "type": "object"
+    },
+    "locales": {
+      "default": [
+        "de",
+        "en"
+      ],
+      "description": "The locales whose built-in patterns run (ADR-0010); the\nlocale-independent ones (e-mail, IBAN, IP, cards) always run.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "mapping": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Mapping"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Who can read a mapping file (ADR-0018)."
+    },
+    "markers": {
+      "$ref": "#/$defs/Markers",
+      "default": {
+        "exempt": []
+      },
+      "description": "Bodies that carry their verdict (`veilq mark`, ADR-0024)."
+    },
+    "office": {
+      "$ref": "#/$defs/Office",
+      "default": {
+        "embedded": "error"
+      },
+      "description": "Office files (ADR-0019)."
     },
     "patterns": {
       "default": [],

@@ -1,4 +1,4 @@
-import { ApiError, type Api, type Info, type Listing, type Redaction, type Source } from './types';
+import { ApiError, type Api, type Info, type Listing, type Picture, type Redaction, type Source } from './types';
 
 const TOKEN_KEY = 'veilq-token';
 
@@ -23,6 +23,9 @@ export function httpApi(token: string): Api {
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     });
     const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    if (response.status === 401) {
+      throw new ApiError(401, 'This page has no valid token: open veilq ui with the link it printed (under devstack, the dashboard\'s link).');
+    }
     if (!response.ok) {
       throw new ApiError(response.status, body?.error ?? `${response.status} ${response.statusText}`);
     }
@@ -32,6 +35,8 @@ export function httpApi(token: string): Api {
     mock: false,
     info: () => call<Info>('/info'),
     files: (dir) => call<Listing>(`/files?dir=${encodeURIComponent(dir)}`),
-    redact: (source: Source) => call<Redaction>('/redact', { method: 'POST', body: JSON.stringify({ source }) }),
+    picture: (path) => call<Picture>(`/picture?path=${encodeURIComponent(path)}`),
+    redact: (source: Source, action?: string) =>
+      call<Redaction>('/redact', { method: 'POST', body: JSON.stringify({ source, action }) }),
   };
 }

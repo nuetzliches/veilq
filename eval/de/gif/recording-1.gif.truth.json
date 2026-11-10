@@ -1,0 +1,259 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 673,
+        "y": 17,
+        "width": 45,
+        "height": 11
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 210,
+        "y": 107,
+        "width": 71,
+        "height": 12
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 470,
+        "y": 107,
+        "width": 113,
+        "height": 12
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 211,
+        "y": 143,
+        "width": 60,
+        "height": 12
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 470,
+        "y": 143,
+        "width": 122,
+        "height": 12
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 210,
+        "y": 179,
+        "width": 69,
+        "height": 12
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 470,
+        "y": 179,
+        "width": 112,
+        "height": 12
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "frame": 2,
+        "x": 673,
+        "y": 17,
+        "width": 45,
+        "height": 11
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "frame": 2,
+        "x": 273,
+        "y": 64,
+        "width": 90,
+        "height": 15
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "region",
+        "frame": 2,
+        "x": 360,
+        "y": 107,
+        "width": 94,
+        "height": 9
+      }
+    },
+    {
+      "entity": "ADDRESS",
+      "location": {
+        "kind": "region",
+        "frame": 2,
+        "x": 361,
+        "y": 139,
+        "width": 166,
+        "height": 12
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "region",
+        "frame": 2,
+        "x": 360,
+        "y": 171,
+        "width": 66,
+        "height": 9
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "region",
+        "frame": 2,
+        "x": 360,
+        "y": 203,
+        "width": 113,
+        "height": 12
+      }
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "region",
+        "frame": 2,
+        "x": 361,
+        "y": 235,
+        "width": 153,
+        "height": 9
+      }
+    },
+    {
+      "entity": "TAX_ID",
+      "location": {
+        "kind": "region",
+        "frame": 2,
+        "x": 360,
+        "y": 267,
+        "width": 78,
+        "height": 9
+      }
+    },
+    {
+      "entity": "LICENSE_PLATE",
+      "location": {
+        "kind": "region",
+        "frame": 2,
+        "x": 361,
+        "y": 299,
+        "width": 43,
+        "height": 9
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "frame": 3,
+        "x": 673,
+        "y": 17,
+        "width": 45,
+        "height": 11
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "frame": 3,
+        "x": 210,
+        "y": 107,
+        "width": 71,
+        "height": 12
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "region",
+        "frame": 3,
+        "x": 470,
+        "y": 107,
+        "width": 113,
+        "height": 12
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "frame": 3,
+        "x": 211,
+        "y": 143,
+        "width": 60,
+        "height": 12
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "region",
+        "frame": 3,
+        "x": 470,
+        "y": 143,
+        "width": 122,
+        "height": 12
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "frame": 3,
+        "x": 210,
+        "y": 179,
+        "width": 69,
+        "height": 12
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "region",
+        "frame": 3,
+        "x": 470,
+        "y": 179,
+        "width": 112,
+        "height": 12
+      }
+    }
+  ]
+}

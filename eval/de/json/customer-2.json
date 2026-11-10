@@ -1,0 +1,27 @@
+{
+  "anschrift": {
+    "ort": "Dresden",
+    "plz": "01067",
+    "strasse": "Birkenallee 52"
+  },
+  "bank": {
+    "iban": "DE10 8375 9839 4082 1690 08"
+  },
+  "erstellt": "2026-11-02",
+  "geburtsdatum": "2002-02-15",
+  "id": 1147,
+  "kontakt": [
+    {
+      "typ": "mail",
+      "wert": "ida.albers@example.com"
+    },
+    {
+      "typ": "tel",
+      "wert": "0511/5558485"
+    }
+  ],
+  "name": "Ida Albers",
+  "notiz": "Sophie Wagner ruft zurück unter 0511-5559865",
+  "steuer_id": "81478854493",
+  "version": "20.1.27.1"
+}

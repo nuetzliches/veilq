@@ -1,0 +1,152 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "part": "headers",
+        "start": 6,
+        "end": 16,
+        "line": 1,
+        "column": 7
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-header"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "span",
+        "part": "headers",
+        "start": 18,
+        "end": 35,
+        "line": 1,
+        "column": 19
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "part": "headers",
+        "start": 4,
+        "end": 13,
+        "line": 2,
+        "column": 5
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-header"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "span",
+        "part": "headers",
+        "start": 15,
+        "end": 32,
+        "line": 2,
+        "column": 16
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "part": "headers",
+        "start": 23,
+        "end": 37,
+        "line": 3,
+        "column": 23
+      },
+      "confidence": 0.85,
+      "detector": "pattern:de.name-salutation"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "part": "part 1 text/plain",
+        "start": 10,
+        "end": 29,
+        "line": 3,
+        "column": 1
+      },
+      "confidence": 0.8,
+      "detector": "pattern:de.name-role"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "part": "part 1 text/plain",
+        "start": 55,
+        "end": 66,
+        "line": 3,
+        "column": 45
+      },
+      "confidence": 0.95,
+      "detector": "pattern:de.phone"
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "span",
+        "part": "part 1 text/plain",
+        "start": 80,
+        "end": 107,
+        "line": 4,
+        "column": 12
+      },
+      "confidence": 1.0,
+      "detector": "pattern:intl.iban"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "part": "part 1 text/plain",
+        "start": 126,
+        "end": 136,
+        "line": 7,
+        "column": 1
+      },
+      "confidence": 0.8,
+      "detector": "pattern:de.name-signature"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "sheet": "part 2 kunden.csv",
+        "row": 2,
+        "column": 1,
+        "start": 0,
+        "end": 13
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "sheet": "part 2 kunden.csv",
+        "row": 2,
+        "column": 2,
+        "start": 0,
+        "end": 14
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.phone-international"
+    }
+  ],
+  "review_required": true,
+  "review_reasons": [
+    "NER did not run: names without a word that marks them (`Frau`, `Hallo`, a column `name`) may be left; `veilq models fetch ner`"
+  ]
+}

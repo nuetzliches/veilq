@@ -1,0 +1,6 @@
+id;name;email;telefon;iban;geburtsdatum;notiz
+1;<PERSON>;<EMAIL_ADDRESS>;<PHONE_NUMBER>;<IBAN_CODE>;<DATE_OF_BIRTH>;Rückruf erbeten unter <PHONE_NUMBER>
+2;<PERSON>;<EMAIL_ADDRESS>;<PHONE_NUMBER>;<IBAN_CODE>;<DATE_OF_BIRTH>;keine Besonderheiten
+3;<PERSON>;<EMAIL_ADDRESS>;<PHONE_NUMBER>;<IBAN_CODE>;<DATE_OF_BIRTH>;keine Besonderheiten
+4;<PERSON>;<EMAIL_ADDRESS>;<PHONE_NUMBER>;<IBAN_CODE>;<DATE_OF_BIRTH>;Bruder <PERSON> als Ansprechpartner
+5;<PERSON>;<EMAIL_ADDRESS>;<PHONE_NUMBER>;<IBAN_CODE>;<DATE_OF_BIRTH>;keine Besonderheiten

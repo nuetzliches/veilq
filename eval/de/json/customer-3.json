@@ -1,0 +1,27 @@
+{
+  "anschrift": {
+    "ort": "Dresden",
+    "plz": "01067",
+    "strasse": "Schillerplatz 76"
+  },
+  "bank": {
+    "iban": "DE90 0076 6227 6801 4132 97"
+  },
+  "erstellt": "2026-11-02",
+  "geburtsdatum": "1950-11-03",
+  "id": 5795,
+  "kontakt": [
+    {
+      "typ": "mail",
+      "wert": "ida.albers54@example.org"
+    },
+    {
+      "typ": "tel",
+      "wert": "0351-5557193"
+    }
+  ],
+  "name": "Ida Albers",
+  "notiz": "Lukas Schröder ruft zurück unter +49 (0)40 555 3013",
+  "steuer_id": "53207998077",
+  "version": "4.4.27.0"
+}

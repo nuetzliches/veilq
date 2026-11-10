@@ -21,12 +21,12 @@ use axum::routing::{get, post};
 use base64::Engine as _;
 use include_dir::{Dir, include_dir};
 use serde::{Deserialize, Serialize};
-use veilq_core::{Error, Policy, Report, root};
+use veilq_core::{Action, Engine, Error, Format, Policy, Report, root};
 
 static UI: Dir<'_> = include_dir!("$OUT_DIR/ui");
 
-/// The largest input the UI redacts. Text formats only until M3; a log
-/// export above this belongs to `veilq redact`, which streams.
+/// The largest input the UI redacts; a log export above this belongs to
+/// `veilq redact`, which streams.
 const MAX_INPUT: usize = 32 << 20;
 /// A request carries an upload as base64 (4/3) and some JSON around it.
 const MAX_BODY: usize = MAX_INPUT / 3 * 4 + (64 << 10);
@@ -39,9 +39,13 @@ pub struct Options {
     /// The port of a reverse proxy on loopback that serves this server
     /// under its own address (devstack), from `--origin`.
     pub proxy_port: Option<u16>,
+    /// Where the token is kept across starts (ADR-0021); `None`: a new one
+    /// per start.
+    pub token_file: Option<PathBuf>,
     pub open: bool,
     pub policy: Policy,
     pub policy_source: String,
+    pub engine: Engine,
 }
 
 struct AppState {
@@ -52,6 +56,7 @@ struct AppState {
     root: PathBuf,
     policy: Policy,
     policy_source: String,
+    engine: Engine,
 }
 
 pub fn run(options: Options) -> anyhow::Result<()> {
@@ -72,11 +77,12 @@ async fn serve(options: Options) -> anyhow::Result<()> {
     let port = listener.local_addr()?.port();
     let ports: Vec<u16> = std::iter::once(port).chain(options.proxy_port).collect();
     let state = Arc::new(AppState::new(
-        new_token()?,
+        token(options.token_file.as_deref())?,
         &ports,
         root,
         options.policy,
         options.policy_source,
+        options.engine,
     ));
 
     let shown = options.proxy_port.unwrap_or(port);
@@ -105,6 +111,7 @@ impl AppState {
         root: PathBuf,
         policy: Policy,
         policy_source: String,
+        engine: Engine,
     ) -> Self {
         let hosts: Vec<String> = ports
             .iter()
@@ -117,6 +124,7 @@ impl AppState {
             root,
             policy,
             policy_source,
+            engine,
         }
     }
 }
@@ -144,6 +152,7 @@ fn router(state: Arc<AppState>) -> Router {
         .route("/info", get(info))
         .route("/files", get(files))
         .route("/redact", post(redact))
+        .route("/picture", get(picture))
         .layer(DefaultBodyLimit::max(MAX_BODY))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_token));
     Router::new()
@@ -155,6 +164,30 @@ fn router(state: Arc<AppState>) -> Router {
 }
 
 /// 32 random bytes as hex.
+/// The token of `file` if it holds one, else a new one, written there
+/// (ADR-0021); without a file, a new one.
+fn token(file: Option<&Path>) -> anyhow::Result<String> {
+    let Some(file) = file else {
+        return new_token();
+    };
+    if file.is_file() {
+        let t = std::fs::read_to_string(file)?.trim().to_owned();
+        if t.len() < 32 || !t.bytes().all(|b| b.is_ascii_hexdigit()) {
+            anyhow::bail!(
+                "{}: not a token (64 hex characters); delete it for a new one",
+                file.display()
+            );
+        }
+        return Ok(t);
+    }
+    let t = new_token()?;
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(file, format!("{t}\n"))?;
+    Ok(t)
+}
+
 fn new_token() -> anyhow::Result<String> {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes).map_err(|e| anyhow::anyhow!("no randomness for the token: {e}"))?;
@@ -281,6 +314,9 @@ struct Info {
     root: String,
     policy: String,
     default_action: &'static str,
+    /// The actions a request can choose instead of the policy's;
+    /// `pseudonymize` only with a key.
+    actions: Vec<&'static str>,
     max_input: usize,
 }
 
@@ -290,6 +326,16 @@ async fn info(State(state): State<Arc<AppState>>) -> axum::Json<Info> {
         root: display_path(&state.root),
         policy: state.policy_source.clone(),
         default_action: state.policy.defaults.action.name(),
+        actions: [
+            Action::Mask,
+            Action::Fake,
+            Action::Remove,
+            Action::Pseudonymize,
+        ]
+        .into_iter()
+        .filter(|a| *a != Action::Pseudonymize || state.engine.has_key())
+        .map(Action::name)
+        .collect(),
         max_input: MAX_INPUT,
     })
 }
@@ -377,9 +423,82 @@ enum Source {
 }
 
 #[derive(Deserialize)]
+struct PictureQuery {
+    path: String,
+}
+
+#[derive(Serialize)]
+struct Picture {
+    /// An image as it is; a PDF's first pages as PNG.
+    pages: Vec<String>,
+    media_type: &'static str,
+    /// A PDF's number of pages.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    page_count: Option<usize>,
+}
+
+/// The pages a viewer shows of a PDF.
+const MAX_PAGES: usize = 20;
+
+/// An image or PDF under the root as it is, to show while it is redacted:
+/// the answer of `/redact` holds it too, only later.
+async fn picture(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<PictureQuery>,
+) -> Response {
+    let result = tokio::task::spawn_blocking(move || -> Result<Picture, Failure> {
+        let path = Path::new(&query.path);
+        let format = Format::from_path(path).ok().filter(|f| f.is_picture());
+        let media_type = format.and_then(media_type).ok_or_else(|| {
+            Failure(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                format!("{}: not an image or PDF", query.path),
+            )
+        })?;
+        let resolved = root::resolve_under(&state.root, path).map_err(Failure::from)?;
+        let io = |source| {
+            Failure::from(Error::Io {
+                path: PathBuf::from(&query.path),
+                source,
+            })
+        };
+        if resolved.metadata().map_err(io)?.len() > MAX_INPUT as u64 {
+            return Err(too_large(&query.path));
+        }
+        let bytes = std::fs::read(&resolved).map_err(io)?;
+        let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
+        if format == Some(Format::Pdf) {
+            let (pages, n) = state
+                .engine
+                .pdf_pages(&bytes, MAX_PAGES)
+                .map_err(Failure::from)?;
+            return Ok(Picture {
+                pages: pages.iter().map(|p| b64(p)).collect(),
+                media_type: "image/png",
+                page_count: Some(n),
+            });
+        }
+        Ok(Picture {
+            pages: vec![b64(&bytes)],
+            media_type,
+            page_count: None,
+        })
+    })
+    .await;
+    match result {
+        Ok(Ok(p)) => axum::Json(p).into_response(),
+        Ok(Err(failure)) => failure.into_response(),
+        Err(e) => api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}
+
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RedactRequest {
     source: Source,
+    /// Overrides the policy's actions for this request, as `--action` does.
+    #[serde(default)]
+    action: Option<Action>,
 }
 
 #[derive(Serialize)]
@@ -389,16 +508,60 @@ struct RedactResponse {
     name: Option<String>,
     input: String,
     output: String,
+    /// Per finding, its byte range in `input`.
+    input_spans: Vec<[usize; 2]>,
     /// Per finding, the byte range of its replacement in `output`.
     output_spans: Vec<[usize; 2]>,
     report: Report,
+    /// An Office file, image or PDF: no text to set side by side; the
+    /// redacted file, base64.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_base64: Option<String>,
+    /// An image or PDF: the input as it came, base64, to set beside the
+    /// output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input_base64: Option<String>,
+    /// An image or PDF: its media type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    media_type: Option<&'static str>,
+    /// A PDF: its first pages before and after, as PNG, in the pixels its
+    /// findings' regions are in, and its number of pages.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input_pages: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_pages: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    page_count: Option<usize>,
+}
+
+/// The media type of a picture format.
+fn media_type(format: Format) -> Option<&'static str> {
+    Some(match format {
+        Format::Png => "image/png",
+        Format::Jpeg => "image/jpeg",
+        Format::Webp => "image/webp",
+        Format::Gif => "image/gif",
+        Format::Pdf => "application/pdf",
+        _ => return None,
+    })
 }
 
 async fn redact(
     State(state): State<Arc<AppState>>,
     axum::Json(request): axum::Json<RedactRequest>,
 ) -> Response {
-    let result = tokio::task::spawn_blocking(move || redact_source(&state, request.source)).await;
+    let result = tokio::task::spawn_blocking(move || {
+        let engine = match request.action {
+            None => None,
+            Some(a) => Some(state.engine.with_action(Some(a)).map_err(Failure::from)?),
+        };
+        redact_source(
+            &state,
+            engine.as_ref().unwrap_or(&state.engine),
+            request.source,
+        )
+    })
+    .await;
     match result {
         Ok(Ok(response)) => axum::Json(response).into_response(),
         Ok(Err(failure)) => failure.into_response(),
@@ -406,7 +569,11 @@ async fn redact(
     }
 }
 
-fn redact_source(state: &AppState, source: Source) -> Result<RedactResponse, Failure> {
+fn redact_source(
+    state: &AppState,
+    engine: &Engine,
+    source: Source,
+) -> Result<RedactResponse, Failure> {
     let (name, bytes) = match source {
         Source::Text { text } => (None, text.into_bytes()),
         Source::Upload { name, data } => {
@@ -443,33 +610,77 @@ fn redact_source(state: &AppState, source: Source) -> Result<RedactResponse, Fai
     if bytes.len() > MAX_INPUT {
         return Err(too_large(label));
     }
+    let format = match &name {
+        Some(n) => Format::from_path(Path::new(n)).map_err(Failure::from)?,
+        None => Format::Text,
+    };
+    if format.is_container() {
+        // Read whole (ADR-0019, ADR-0020). A mail is text: both sides are
+        // shown, without marks (its findings name their parts). An Office
+        // file is offered as a download.
+        let (out, run) = engine
+            .run_bytes(&bytes, format, true)
+            .map_err(Failure::from)?;
+        let mail = format == Format::Eml;
+        let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
+        let (input_pages, output_pages, page_count) = if format == Format::Pdf {
+            let (before, n) = engine.pdf_pages(&bytes, MAX_PAGES).map_err(Failure::from)?;
+            let (after, _) = engine.pdf_pages(&out, MAX_PAGES).map_err(Failure::from)?;
+            (
+                Some(before.iter().map(|p| b64(p)).collect()),
+                Some(after.iter().map(|p| b64(p)).collect()),
+                Some(n),
+            )
+        } else {
+            (None, None, None)
+        };
+        return Ok(RedactResponse {
+            name,
+            input: if mail {
+                String::from_utf8_lossy(&bytes).into_owned()
+            } else {
+                String::new()
+            },
+            output: if mail {
+                String::from_utf8_lossy(&out).into_owned()
+            } else {
+                String::new()
+            },
+            input_spans: Vec::new(),
+            output_spans: Vec::new(),
+            report: run.report,
+            output_base64: (!mail).then(|| base64::engine::general_purpose::STANDARD.encode(&out)),
+            input_base64: format
+                .is_picture()
+                .then(|| base64::engine::general_purpose::STANDARD.encode(&bytes)),
+            media_type: media_type(format),
+            input_pages,
+            output_pages,
+            page_count,
+        });
+    }
     // Fail closed: what veilq cannot read is an error, not a pass-through.
     let input = String::from_utf8(bytes).map_err(|_| {
         Failure(
             StatusCode::UNPROCESSABLE_ENTITY,
-            format!("{label} is not UTF-8 text; documents and images come in M3 and M4"),
+            format!("{label} is not UTF-8 text"),
         )
     })?;
-    // The key for `pseudonymize` comes from the environment the policy names.
-    let key = match &state.policy.pseudonymize {
-        Some(p) => match std::env::var(&p.key_env) {
-            Ok(k) => Some(veilq_core::PseudonymKey::new(k.into_bytes()).map_err(Failure::from)?),
-            Err(_) => None,
-        },
-        None => None,
-    };
-    let redacted =
-        veilq_core::redact_text(&input, &state.policy, key.as_ref()).map_err(Failure::from)?;
+    let redacted = engine.redact_str(&input, format).map_err(Failure::from)?;
+    let pairs = |spans: &[std::ops::Range<usize>]| spans.iter().map(|r| [r.start, r.end]).collect();
     Ok(RedactResponse {
         name,
-        input,
+        input_spans: pairs(&redacted.input_spans),
+        output_spans: pairs(&redacted.output_spans),
         output: redacted.text,
-        output_spans: redacted
-            .output_spans
-            .iter()
-            .map(|r| [r.start, r.end])
-            .collect(),
+        input,
         report: redacted.report,
+        output_base64: None,
+        input_base64: None,
+        media_type: None,
+        input_pages: None,
+        output_pages: None,
+        page_count: None,
     })
 }
 
@@ -580,6 +791,7 @@ mod tests {
             root.canonicalize().unwrap(),
             Policy::default(),
             "built-in defaults".into(),
+            Engine::new(&Policy::default(), None, b"test", None).unwrap(),
         )))
     }
 
@@ -740,9 +952,81 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn redaction_fails_closed_until_m1() {
+    async fn a_run_can_choose_its_action() {
         let dir = tempfile::tempdir().unwrap();
-        let body = redact_body(serde_json::json!({ "kind": "text", "text": "Erika Mustermann" }));
+        let text = "Hallo Erika Mustermann, Tel. 0421 5550173";
+        let post = |action: &str| {
+            authed("POST", "/api/redact")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "source": { "kind": "text", "text": text }, "action": action })
+                        .to_string(),
+                ))
+                .unwrap()
+        };
+        let (status, body) = send(app(dir.path()), post("fake")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let out = body["output"].as_str().unwrap();
+        assert!(out.starts_with("Hallo ") && !out.contains('<'), "{out}");
+        assert!(
+            !out.contains("Mustermann") && !out.contains("5550173"),
+            "{out}"
+        );
+        let (status, body) = send(app(dir.path()), post("remove")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["output"], "Hallo , Tel. ");
+        // Without a key there is no pseudonym, and the info does not offer it.
+        let (status, _) = send(app(dir.path()), post("pseudonymize")).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let (_, info) = send(
+            app(dir.path()),
+            authed("GET", "/api/info").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(
+            info["actions"],
+            serde_json::json!(["mask", "fake", "remove"])
+        );
+    }
+
+    #[tokio::test]
+    async fn a_picture_is_shown_before_it_is_redacted() {
+        let outer = tempfile::tempdir().unwrap();
+        let root = outer.path().join("root");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("a.png"), b"\x89PNG").unwrap();
+        std::fs::write(root.join("b.txt"), "Hallo").unwrap();
+        std::fs::write(outer.path().join("c.png"), b"\x89PNG").unwrap();
+        let get = |path: &str| {
+            authed("GET", &format!("/api/picture?path={path}"))
+                .body(Body::empty())
+                .unwrap()
+        };
+        let (status, body) = send(app(&root), get("a.png")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["media_type"], "image/png");
+        assert_eq!(body["pages"], serde_json::json!(["iVBORw=="]));
+        // Only images, and only under the root.
+        let (status, _) = send(app(&root), get("b.txt")).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let (status, _) = send(app(&root), get("../c.png")).await;
+        assert!(status.is_client_error(), "{status}");
+        let (status, _) = send(
+            app(&root),
+            request("GET", "/api/picture?path=a.png")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn text_is_redacted() {
+        let dir = tempfile::tempdir().unwrap();
+        let body = redact_body(
+            serde_json::json!({ "kind": "text", "text": "Hallo Erika Mustermann, Tel. 0421 5550173" }),
+        );
         let (status, body) = send(
             app(dir.path()),
             authed("POST", "/api/redact")
@@ -751,9 +1035,49 @@ mod tests {
                 .unwrap(),
         )
         .await;
-        assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
-        assert!(body["error"].as_str().unwrap().contains("not built yet"));
-        assert!(body.get("output").is_none());
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["output"], "Hallo <PERSON>, Tel. <PHONE_NUMBER>");
+        assert_eq!(body["input_spans"][1], serde_json::json!([29, 41]));
+        assert_eq!(body["output_spans"][0], serde_json::json!([6, 14]));
+        assert_eq!(body["report"]["findings"][0]["entity"], "PERSON");
+    }
+
+    #[tokio::test]
+    async fn a_file_is_read_in_its_format() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("k.csv"),
+            "name,geburtsdatum
+Mira Albers,14.03.1987
+",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("k.docx"), "PK").unwrap();
+        let req = |path: &str| {
+            authed("POST", "/api/redact")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(redact_body(
+                    serde_json::json!({ "kind": "file", "path": path }),
+                ))
+                .unwrap()
+        };
+        let (status, body) = send(app(dir.path()), req("k.csv")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(
+            body["output"],
+            "name,geburtsdatum
+<PERSON>,<DATE_OF_BIRTH>
+"
+        );
+        let (status, body) = send(app(dir.path()), req("k.docx")).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap()
+                .contains("not an Office file"),
+            "{body}"
+        );
     }
 
     #[tokio::test]
@@ -761,7 +1085,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let data = base64::engine::general_purpose::STANDARD.encode([0xff, 0xfe, 0x00]);
         let body =
-            redact_body(serde_json::json!({ "kind": "upload", "name": "x.bin", "data": data }));
+            redact_body(serde_json::json!({ "kind": "upload", "name": "x.txt", "data": data }));
         let (status, body) = send(
             app(dir.path()),
             authed("POST", "/api/redact")
@@ -801,6 +1125,18 @@ mod tests {
         ] {
             assert!(parse_origin(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_token_file_keeps_the_token() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("sub/ui-token");
+        let first = token(Some(&file)).unwrap();
+        assert_eq!(first.len(), 64);
+        assert_eq!(token(Some(&file)).unwrap(), first);
+        std::fs::write(&file, "short").unwrap();
+        assert!(token(Some(&file)).is_err());
+        assert_ne!(token(None).unwrap(), first);
     }
 
     #[test]

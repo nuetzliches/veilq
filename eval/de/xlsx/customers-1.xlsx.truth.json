@@ -1,0 +1,204 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 2,
+        "column": 1,
+        "start": 0,
+        "end": 11
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 2,
+        "column": 2,
+        "start": 0,
+        "end": 23
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 2,
+        "column": 3,
+        "start": 0,
+        "end": 14
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 2,
+        "column": 4,
+        "start": 0,
+        "end": 9
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 3,
+        "column": 1,
+        "start": 0,
+        "end": 14
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 3,
+        "column": 2,
+        "start": 0,
+        "end": 28
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 3,
+        "column": 3,
+        "start": 0,
+        "end": 12
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 3,
+        "column": 4,
+        "start": 0,
+        "end": 12
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 4,
+        "column": 1,
+        "start": 0,
+        "end": 15
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 4,
+        "column": 2,
+        "start": 0,
+        "end": 21
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 4,
+        "column": 3,
+        "start": 0,
+        "end": 11
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 4,
+        "column": 4,
+        "start": 0,
+        "end": 9
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 5,
+        "column": 1,
+        "start": 0,
+        "end": 13
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 5,
+        "column": 2,
+        "start": 0,
+        "end": 25
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 5,
+        "column": 3,
+        "start": 0,
+        "end": 19
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 5,
+        "column": 4,
+        "start": 0,
+        "end": 14
+      }
+    },
+    {
+      "entity": "TAX_ID",
+      "location": {
+        "kind": "cell",
+        "sheet": "Intern",
+        "row": 1,
+        "column": 1,
+        "start": 10,
+        "end": 21
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "sheet": "Intern",
+        "row": 1,
+        "column": 1,
+        "start": 32,
+        "end": 44
+      }
+    }
+  ]
+}

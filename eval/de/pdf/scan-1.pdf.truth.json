@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 81,
+        "y": 155,
+        "width": 106,
+        "height": 16
+      }
+    },
+    {
+      "entity": "ADDRESS",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 81,
+        "y": 197,
+        "width": 289,
+        "height": 20
+      }
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 460,
+        "y": 386,
+        "width": 262,
+        "height": 15
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 194,
+        "y": 435,
+        "width": 86,
+        "height": 20
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 290,
+        "y": 436,
+        "width": 140,
+        "height": 15
+      }
+    },
+    {
+      "entity": "TAX_ID",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 218,
+        "y": 526,
+        "width": 134,
+        "height": 15
+      }
+    },
+    {
+      "entity": "LICENSE_PLATE",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 488,
+        "y": 526,
+        "width": 59,
+        "height": 19
+      }
+    }
+  ]
+}

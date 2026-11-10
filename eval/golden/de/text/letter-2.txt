@@ -1,0 +1,14 @@
+Betreff: Vorgang 2026-0433-5060 vom 09.05.2026
+
+Hallo <PERSON>,
+
+Herr <PERSON> (geb. <DATE_OF_BIRTH>) hat angerufen und bittet um Rückruf unter <PHONE_NUMBER> oder per Mail an <EMAIL_ADDRESS>.
+Anschrift: <ADDRESS>.
+Bitte überweisen Sie 977,48 EUR auf IBAN <IBAN_CODE>, Kontoinhaber <PERSON>.
+Steuer-ID: <TAX_ID>.
+Das Fahrzeug mit dem Kennzeichen <LICENSE_PLATE> ist zugelassen.
+
+Nicht personenbezogen: Rechnung 2026-0433-5060, Version 11.6.27.4, Referenz DE18323200524787235582 (Prüfsumme falsch).
+
+Mit freundlichen Grüßen
+<PERSON>

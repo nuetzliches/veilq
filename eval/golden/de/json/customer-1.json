@@ -1,0 +1,27 @@
+{
+  "anschrift": {
+    "ort": "Köln",
+    "plz": "50667",
+    "strasse": "<ADDRESS>"
+  },
+  "bank": {
+    "iban": "<IBAN_CODE>"
+  },
+  "erstellt": "2026-11-02",
+  "geburtsdatum": "<DATE_OF_BIRTH>",
+  "id": 5636,
+  "kontakt": [
+    {
+      "typ": "mail",
+      "wert": "<EMAIL_ADDRESS>"
+    },
+    {
+      "typ": "tel",
+      "wert": "<PHONE_NUMBER>"
+    }
+  ],
+  "name": "<PERSON>",
+  "notiz": "keine Besonderheiten",
+  "steuer_id": "<TAX_ID>",
+  "version": "14.2.9.2"
+}

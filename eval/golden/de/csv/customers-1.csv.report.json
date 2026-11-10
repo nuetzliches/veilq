@@ -1,0 +1,345 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 2,
+        "start": 0,
+        "end": 12
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 3,
+        "start": 0,
+        "end": 26
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 4,
+        "start": 0,
+        "end": 19
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.phone-international"
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 5,
+        "start": 0,
+        "end": 27
+      },
+      "confidence": 1.0,
+      "detector": "pattern:intl.iban"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 6,
+        "start": 0,
+        "end": 9
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 2,
+        "start": 0,
+        "end": 16
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 3,
+        "start": 0,
+        "end": 28
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 4,
+        "start": 0,
+        "end": 19
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.phone-international"
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 5,
+        "start": 0,
+        "end": 27
+      },
+      "confidence": 1.0,
+      "detector": "pattern:intl.iban"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 6,
+        "start": 0,
+        "end": 10
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 2,
+        "start": 0,
+        "end": 10
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 3,
+        "start": 0,
+        "end": 24
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 4,
+        "start": 0,
+        "end": 12
+      },
+      "confidence": 0.95,
+      "detector": "pattern:de.phone"
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 5,
+        "start": 0,
+        "end": 27
+      },
+      "confidence": 1.0,
+      "detector": "pattern:intl.iban"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 6,
+        "start": 0,
+        "end": 9
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 7,
+        "start": 33,
+        "end": 45
+      },
+      "confidence": 0.75,
+      "detector": "pattern:de.phone"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 2,
+        "start": 0,
+        "end": 15
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 3,
+        "start": 0,
+        "end": 27
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 4,
+        "start": 0,
+        "end": 11
+      },
+      "confidence": 0.95,
+      "detector": "pattern:de.phone"
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 5,
+        "start": 0,
+        "end": 27
+      },
+      "confidence": 1.0,
+      "detector": "pattern:intl.iban"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 6,
+        "start": 0,
+        "end": 10
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    },
+    {
+      "entity": "LICENSE_PLATE",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 7,
+        "start": 4,
+        "end": 11
+      },
+      "confidence": 1.0,
+      "detector": "pattern:de.licence-plate"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 2,
+        "start": 0,
+        "end": 13
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 3,
+        "start": 0,
+        "end": 27
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 4,
+        "start": 0,
+        "end": 18
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.phone-international"
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 5,
+        "start": 0,
+        "end": 27
+      },
+      "confidence": 1.0,
+      "detector": "pattern:intl.iban"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 6,
+        "start": 0,
+        "end": 9
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    },
+    {
+      "entity": "LICENSE_PLATE",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 7,
+        "start": 4,
+        "end": 10
+      },
+      "confidence": 1.0,
+      "detector": "pattern:de.licence-plate"
+    }
+  ],
+  "review_required": true,
+  "review_reasons": [
+    "NER did not run: names without a word that marks them (`Frau`, `Hallo`, a column `name`) may be left; `veilq models fetch ner`"
+  ]
+}

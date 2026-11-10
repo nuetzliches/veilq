@@ -1,0 +1,6 @@
+id,name,email,phone,date_of_birth,ssn
+1,Emily Hughes,ehughes@example.org,(415) 555-0170,"July 10, 1997",157-20-6843
+2,Ava Porter,aporter@example.com,(617) 555-0192,05/06/2002,242-36-6680
+3,Chloe Hayes,chloe.hayes@example.net,(617) 555-0161,02/08/1964,340-54-3997
+4,Ava Porter,ava.porter@example.com,(617) 555-0151,12/23/1953,295-53-5577
+5,Grace Carter,grace.carter91@example.com,(415) 555-0125,"June 1, 1956",486-24-2035

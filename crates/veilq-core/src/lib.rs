@@ -7,19 +7,36 @@
 //! root a caller's paths must stay under.
 
 pub mod action;
+pub mod detect;
+pub mod engine;
 pub mod error;
+pub mod fake;
 pub mod finding;
+pub mod mail;
+pub mod mapping;
+pub mod marker;
 pub mod models;
+#[cfg(feature = "ner")]
+pub mod ner;
+#[cfg(feature = "ocr")]
+pub mod ocr;
+pub mod office;
 pub mod outcome;
+#[cfg(feature = "pdf")]
+pub mod pdf;
 pub mod policy;
 pub mod pseudonym;
-pub mod redact;
 pub mod root;
+#[cfg(feature = "models")]
+pub mod runtime;
+#[cfg(feature = "ocr")]
+pub mod visual;
+pub mod xml;
 
 pub use action::Action;
+pub use engine::{Engine, Format, Redacted};
 pub use error::Error;
 pub use finding::{EntityType, Finding, Location, Report};
 pub use outcome::Outcome;
 pub use policy::Policy;
 pub use pseudonym::PseudonymKey;
-pub use redact::{Redacted, redact_text};

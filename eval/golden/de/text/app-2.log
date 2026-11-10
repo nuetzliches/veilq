@@ -1,0 +1,7 @@
+2026-11-02T08:10:49Z INFO  session started user=<PERSON> client=<IP_ADDRESS>
+2026-11-02T08:11:03Z WARN  callback failed phone=<PHONE_NUMBER>
+2026-11-02T08:12:54Z INFO  payment queued iban=<IBAN_CODE> amount=106.39
+2026-11-02T08:13:47Z INFO  session started user=<PERSON> client=<IP_ADDRESS>
+2026-11-02T08:14:15Z WARN  callback failed phone=<PHONE_NUMBER>
+2026-11-02T08:15:42Z DEBUG request body={"name":"<PERSON>","birth":"<DATE_OF_BIRTH>"}
+2026-11-02T09:00:00Z INFO  healthcheck ok build=18.7.28.0 order=2026-1430-2827

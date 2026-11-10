@@ -61,7 +61,7 @@ cloud services (the data leaves to be redacted), or handle text only.
 
 | Kind | Where | Notes |
 |---|---|---|
-| Pattern | `veilq-core`, Rust `regex` | Checksums where the format has one (IBAN, tax ID, credit card); context words to raise or lower confidence. |
+| Pattern | `veilq-core/locales/<locale>/patterns.toml`, Rust `regex` | Locale packs in the policy's pattern format (ADR-0010): checksums where the format has one, context words and column or key names to raise confidence (ADR-0011, ADR-0012). `intl` always runs; `de` and `en` by default. |
 | Policy pattern | the project's policy file | A project's own identifiers (file numbers, customer numbers). |
 | NER | optional, ONNX via `ort` | A multilingual NER model for persons, organisations, locations. Downloaded on first use, pinned by SHA-256, cached; CI caches the model directory. |
 | OCR | optional, ONNX via `ort` | Text detection and recognition for images and frames, returning boxes. |
@@ -89,9 +89,9 @@ mapping file comes in M2, encrypted (age); it never goes into a report.
 | Text, logs, NDJSON, JSON, CSV | streamed in chunks with an overlap window; CSV and JSON aware of columns and keys | a value split across a chunk boundary |
 | DOCX, XLSX, PPTX | edit the OOXML parts in place, keep formatting | a value split across runs; comments, tracked changes, headers/footers, document properties (author), hidden sheets, cached formula values, embedded images |
 | EML | headers, bodies, attachments recursively | encoded words, nested messages |
-| Images | OCR, boxes, fill or blur | EXIF/XMP metadata including GPS |
-| GIF | decode frames, OCR changed frames only, track boxes across frames, re-encode | one frame without the box shows the value: boxes persist until the region changes |
-| PDF | M4: rasterise pages and redact the images (text layer gone, stated in the report) | incremental updates and metadata keep old content |
+| Images | OCR, character boxes filled black, encoded anew (ADR-0023) | EXIF/XMP metadata including GPS |
+| GIF | decode frames, OCR changed frames only, boxes persist while their pixels stand still, re-encode (ADR-0023) | one frame without the box shows the value |
+| PDF | rasterise pages with PDFium and redact the images; a new PDF of page images (text layer gone, stated in the report; ADR-0023) | incremental updates and metadata keep old content |
 | Video | M5: through an external `ffmpeg` | as GIF, plus audio |
 
 ### 3.5 Streaming
@@ -111,7 +111,9 @@ whole output at the end; it verifies each chunk.
 - `veilq redact <in|-> -o <out|-> [--policy] [--action]`: the redacted output
   and a report.
 - `veilq policy check [<file>]`: validate a policy file.
-- `veilq mcp [--http <addr>]`: the MCP server.
+- `veilq mcp [--http <addr>] [--root]`: the MCP server (ADR-0016, ADR-0017).
+- `veilq reveal <in> --mapping <file> --identity <file>`: the originals put
+  back from a mapping `veilq redact --mapping` wrote (ADR-0018).
 - `veilq ui [--root] [--port]`: a local web UI that sets the input (pasted
   text, an upload, a file under the root) beside the redacted output, with
   the findings marked on both sides (ADR-0008).
@@ -142,11 +144,11 @@ patterns, which detectors are required.
 | Phase | Content | Done when |
 |---|---|---|
 | M0 | Repository, review card for the contracts (schema, policy, placeholder, CLI), CI | **done 2026-11-09**: card approved, ADR-0001 to ADR-0007 |
-| M1 | Text, NDJSON, JSON, CSV streamed; pattern detectors for German; `scan`, `redact`, `policy check`; SARIF; evaluation corpus | a log export redacted end to end, recall gate in CI |
-| M2 | MCP (stdio + HTTP); mapping file for reversible pseudonyms | an agent redacts an attachment through MCP |
-| M3 | DOCX, XLSX, PPTX, EML; metadata stripping; NER | an Office attachment redacted with formatting intact |
-| M4 | Images and GIF with OCR; PDF by rasterising | a screen-recording GIF redacted without a leaking frame |
-| M5 | Video through ffmpeg | an MP4 screen recording redacted |
+| M1 | Text, NDJSON, JSON, CSV streamed; pattern detectors for German; `scan`, `redact`, `policy check`; SARIF; evaluation corpus | **done 2026-11-09**: card approved, ADR-0009 to ADR-0015; recall gate in CI on the corpus and five held-out seeds |
+| M2 | MCP (stdio + HTTP); mapping file for reversible pseudonyms | **done 2026-11-09**: card approved, ADR-0016 to ADR-0018; an agent redacts a file through MCP (stdio test), mapping and reveal round-trip |
+| M3 | DOCX, XLSX, PPTX, EML; metadata stripping; NER | M3a **done 2026-11-09** (card approved, ADR-0019, ADR-0020): Office files and mails redacted in place, metadata replaced, corpus and gate cover them; M3b **done 2026-11-10** (ADR-0022): NER with GLiNER in ONNX, optional, pinned |
+| M4 | Images and GIF with OCR; PDF by rasterising | **done 2026-11-10** (card approved, ADR-0023): a screen-recording GIF redacted without a leaking frame; pictures in the corpus, every value covered with NER and OCR |
+| M5 | Video through ffmpeg; optional `veilq serve`, a stateless server for video and audio (own card) | an MP4 screen recording redacted |
 
 ## 6. Evaluation
 
@@ -164,10 +166,11 @@ for CI. Models are release-independent downloads, pinned in the binary.
 
 ## 8. Open questions
 
-- O-1: which NER model (licence, German quality, size).
+- O-1 (decided, ADR-0022: `urchade/gliner_multi_pii-v1` in ONNX fp32): which NER model (licence, German quality, size).
 - O-2: which OCR model family (PaddleOCR in ONNX vs. others), and whether its
   quality on UI screenshots is enough.
-- O-3: the key for `pseudonymize`: per run, per project (from the policy's
+- O-3 (decided, ADR-0018: per project, from the policy's environment
+  variable): the key for `pseudonymize`: per run, per project (from the policy's
   environment variable) or per mapping file.
 - O-4: whether `veilq` also ships rules for an OpenTelemetry collector's
   redaction processor, so the same patterns guard telemetry at ingest.

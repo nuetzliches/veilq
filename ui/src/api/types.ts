@@ -4,7 +4,7 @@
 export type Location =
   | { kind: 'span'; part?: string; start: number; end: number; line: number; column: number }
   | { kind: 'cell'; sheet?: string; row: number; column: number; start: number; end: number }
-  | { kind: 'region'; frame?: number; x: number; y: number; width: number; height: number };
+  | { kind: 'region'; part?: string; frame?: number; x: number; y: number; width: number; height: number };
 
 export interface Finding {
   entity: string;
@@ -26,6 +26,8 @@ export interface Info {
   root: string;
   policy: string;
   default_action: string;
+  /** What a run can choose instead of the policy's actions. */
+  actions: string[];
   max_input: number;
 }
 
@@ -52,16 +54,39 @@ export interface Redaction {
   name?: string;
   input: string;
   output: string;
+  /** Per finding, its byte range in `input`. */
+  input_spans: [number, number][];
   /** Per finding, the byte range of its replacement in `output`. */
   output_spans: [number, number][];
   report: Report;
+  /** An Office file, image or PDF: the redacted file, base64; `input` and `output` are empty. */
+  output_base64?: string;
+  /** An image or PDF: the input, base64. */
+  input_base64?: string;
+  /** An image or PDF: its media type. */
+  media_type?: string;
+  /** A PDF: its first pages before and after, as PNG, in its findings' pixels. */
+  input_pages?: string[];
+  output_pages?: string[];
+  page_count?: number;
+}
+
+export interface Picture {
+  /** An image as it is; a PDF's first pages as PNG. */
+  pages: string[];
+  media_type: string;
+  /** A PDF's number of pages. */
+  page_count?: number;
 }
 
 export interface Api {
   readonly mock: boolean;
   info(): Promise<Info>;
   files(dir: string): Promise<Listing>;
-  redact(source: Source): Promise<Redaction>;
+  /** An image under the root as it is, shown while it is redacted. */
+  picture(path: string): Promise<Picture>;
+  /** `action`: overrides the policy's actions for this run. */
+  redact(source: Source, action?: string): Promise<Redaction>;
 }
 
 export class ApiError extends Error {

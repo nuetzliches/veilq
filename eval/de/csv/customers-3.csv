@@ -1,0 +1,6 @@
+id;name;email;telefon;iban;geburtsdatum;notiz
+1;Mira Becker;mbecker@example.org;0221/5554326;DE32 1583 3140 4755 5619 27;1962-01-04;Rückruf erbeten unter 0221/5554326
+2;Greta Vogt;gvogt@example.com;+49 421 5552795;DE26 1800 4305 6857 4190 41;1993-03-02;keine Besonderheiten
+3;Paul Kühn;paul.kuehn@example.net;0341 5556683;DE84 2643 0384 0865 0646 24;1970-08-17;keine Besonderheiten
+4;Greta Schröder;gschroeder@example.org;040-5552133;DE47 8055 2478 0128 1717 26;1972-10-12;Bruder Hanna Krüger als Ansprechpartner
+5;Wiebke Lorenz;wlorenz@example.net;+49 351 5555777;DE66 8825 9270 5151 1166 87;15.09.1974;keine Besonderheiten

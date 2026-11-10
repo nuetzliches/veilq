@@ -34,5 +34,20 @@ unknown-registry = "deny"
 unknown-git = "deny"
 
 [advisories]
-# A warning in CI; the release workflow will require a clean check.
+# A warning in CI; the release workflow requires a clean check.
 yanked = "warn"
+# Each ignore says why it does not reach what veilq runs, and when it goes.
+ignore = [
+    # crypto-bigint 0.5 (timing): reached only through age's P-256 code
+    # (p256, hpke). veilq encrypts mappings to X25519 recipients only
+    # (crates/veilq-core/src/mapping.rs parses `age::x25519::Recipient`), so
+    # no secret goes through it. age 0.12.1 is the newest age; drop this
+    # once age moves to crypto-bigint 0.7.
+    { id = "RUSTSEC-2026-0387", reason = "P-256 code of age that veilq never calls; X25519 only" },
+    # Unmaintained, no successor; build time only: proc macros.
+    { id = "RUSTSEC-2026-0374", reason = "basic-toml: build-time dependency of age's i18n macros" },
+    { id = "RUSTSEC-2024-0436", reason = "paste: proc macro of tokenizers, build time only" },
+    # Unmaintained; in veilq-eval only (the corpus generator draws its text
+    # with ab_glyph), not in veilq.
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser: veilq-eval's corpus generator only" },
+]

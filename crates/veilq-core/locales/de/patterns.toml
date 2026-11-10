@@ -1,0 +1,96 @@
+# Built-in patterns for German (ADR-0010), detector `pattern:de.<name>`.
+# Format: a policy's [[patterns]] (ADR-0011). Names are found by the words
+# around them until NER comes (M3): a salutation, a role, a signature.
+
+[[patterns]]
+name = "name-salutation"
+entity = "PERSON"
+regex = '\b(?:Herrn?|Frau|Hr\.|Fr\.)\s+(?:(?:Dr\.|Prof\.)\s+)*(?P<pii>\p{Lu}\p{Ll}+(?:[- ]\p{Lu}\p{Ll}+)?)'
+confidence = 0.85
+
+[[patterns]]
+name = "name-role"
+entity = "PERSON"
+regex = '\b(?:Hallo|Liebe[rs]?|Sehr geehrte[rs]?|Kontoinhaber(?:in)?|Ansprechpartner(?:in)?|Mandant(?:in)?|Bruder|Schwester|Ehemann|Ehefrau|Sohn|Tochter|Vater|Mutter|Sachbearbeiter(?:in)?|Sachbearbeitung|Bearbeiter(?:in)?|Kläger(?:in)?|Beklagte[rn]?|Zeugin|Zeuge|Patient(?:in)?|Mieter(?:in)?|Vermieter(?:in)?|Schuldner(?:in)?|Gläubiger(?:in)?|Kunde|Kundin|zu Händen|z\. ?Hd\.?)[:,]?\s+(?:von\s+|vom\s+)?(?P<pii>\p{Lu}\p{Ll}+(?:[- ]\p{Lu}\p{Ll}+){1,2})'
+confidence = 0.8
+
+[[patterns]]
+name = "name-signature"
+entity = "PERSON"
+regex = '(?m)(?:Grüße|Grüßen|Gruß|Grüsse|Grüssen|Gruss)[,!.]?[ \t]*\r?\n(?:[ \t]*\r?\n)?[ \t]*(?P<pii>\p{Lu}\p{Ll}+(?:[- ]\p{Lu}\p{Ll}+){1,2})[ \t]*\r?$'
+confidence = 0.8
+
+# Street, number, postcode and place: `Lindenweg 12, 28195 Bremen`.
+[[patterns]]
+name = "address"
+entity = "ADDRESS"
+regex = '\b\p{Lu}[\p{L}.\-]*?(?:straße|strasse|str\.|weg|gasse|platz|allee|ring|damm|ufer|steig|pfad|chaussee|markt|graben|wall|hof|berg|feld|garten)\s+\d{1,4}\s?[a-zA-Z]?(?:\s?-\s?\d{1,4})?(?:,\s*|[ \t]*\r?\n[ \t]*|\s+)\d{5}\s+\p{Lu}[\p{L}\-]+(?:\s+(?:an der|am|im|in der)\s+\p{Lu}\p{L}+)?'
+confidence = 0.9
+
+# A street and number alone, when the text says it is an address.
+[[patterns]]
+name = "street"
+entity = "ADDRESS"
+regex = '\b\p{Lu}[\p{L}\-]*?(?:straße|strasse|str\.|weg|gasse|platz|allee|ring|damm|ufer|steig|pfad|chaussee)\s+\d{1,4}\s?[a-zA-Z]?\b'
+confidence = 0.5
+context = { words = ["anschrift", "adresse", "wohnhaft", "wohnt", "straße", "strasse", "lieferadresse", "address", "street"], boost = 0.35, window = 32 }
+
+# National numbers: 0 and an area code. Not after a digit and `-` or `/`,
+# so that `2026-0421-5550` (an invoice number) stays. At least three digits
+# after the area code: a postcode (`01067`) is not a number.
+[[patterns]]
+name = "phone"
+entity = "PHONE_NUMBER"
+regex = '(?:^|[^\w\-/.+])(?P<pii>0\d{2,5}[ \t/-]?\d{3,9}(?:[ \t/-]?\d{1,9}){0,2})(?:$|[^\w\-/.]|\.(?:\D|$))'
+confidence = 0.75
+context = { words = ["tel", "telefon", "phone", "mobil", "handy", "fax", "rückruf", "erreichbar", "anruf"], boost = 0.2 }
+
+# A date is personal data as a birth date: below the threshold unless a word
+# such as `geb.` or the column `geburtsdatum` says so.
+[[patterns]]
+name = "birth-date"
+entity = "DATE_OF_BIRTH"
+regex = '\b(?:(?:0?[1-9]|[12]\d|3[01])\.(?:0?[1-9]|1[0-2])\.(?:19|20)?\d{2}|(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])|(?:0?[1-9]|[12]\d|3[01])\.\s?(?:Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\s(?:19|20)\d{2})\b'
+confidence = 0.3
+validate = "date"
+context = { words = ["geb.", "geboren", "geburtsdatum", "geburtstag", "geburt", "birth", "born", "dob"], boost = 0.6, window = 40 }
+
+[[patterns]]
+name = "tax-id"
+entity = "TAX_ID"
+regex = '\b\d{2}[ ]?\d{3}[ ]?\d{3}[ ]?\d{3}\b'
+confidence = 0.65
+validate = "tax_id_de"
+context = { words = ["steuer", "steuer-id", "steuerid", "steueridentifikationsnummer", "identifikationsnummer", "idnr", "tin", "tax"], boost = 0.35 }
+
+[[patterns]]
+name = "social-security"
+entity = "SOCIAL_SECURITY_NUMBER"
+regex = '\b\d{2}[ ]?\d{6}[ ]?[A-Z][ ]?\d{3}\b'
+confidence = 0.7
+validate = "ssn_de"
+context = { words = ["rentenversicherung", "sozialversicherung", "versicherungsnummer", "sv-nummer", "svnr", "rvnr"], boost = 0.25 }
+
+[[patterns]]
+name = "id-card"
+entity = "ID_CARD_NUMBER"
+regex = '\b[CFGHJKLMNPRTVWXYZ][CFGHJKLMNPRTVWXYZ0-9]{8}\d?\b'
+confidence = 0.35
+validate = "id_card_de"
+context = { words = ["ausweis", "personalausweis", "ausweisnummer", "reisepass", "passnummer", "dokumentennummer"], boost = 0.55 }
+
+[[patterns]]
+name = "licence-plate"
+entity = "LICENSE_PLATE"
+regex = '\b\p{Lu}{1,3}[- ]\p{Lu}{1,2}[ ]?[1-9]\d{0,3}[EH]?\b'
+confidence = 0.7
+validate = "kfz_de"
+context = { words = ["kennzeichen", "kfz", "fahrzeug", "pkw", "lkw", "nummernschild"], boost = 0.3 }
+
+# Court file numbers: `3 O 128/26`, `VI ZR 12/25`.
+[[patterns]]
+name = "court-file"
+entity = "COURT_FILE_NUMBER"
+regex = '\b(?:\d{1,3}|[IVX]{1,5})\s?[A-Z][A-Za-z]{0,3}\s?\d{1,5}/\d{2}\b'
+confidence = 0.6
+context = { words = ["az", "aktenzeichen", "geschäftszeichen", "akte", "verfahren"], boost = 0.35 }

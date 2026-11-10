@@ -1,0 +1,243 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 2,
+        "column": 1,
+        "start": 0,
+        "end": 12
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 2,
+        "column": 2,
+        "start": 0,
+        "end": 26
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 2,
+        "column": 3,
+        "start": 0,
+        "end": 14
+      },
+      "confidence": 0.8,
+      "detector": "pattern:intl.phone-international"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 2,
+        "column": 4,
+        "start": 0,
+        "end": 9
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 3,
+        "column": 1,
+        "start": 0,
+        "end": 11
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 3,
+        "column": 2,
+        "start": 0,
+        "end": 23
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 3,
+        "column": 3,
+        "start": 0,
+        "end": 12
+      },
+      "confidence": 0.75,
+      "detector": "pattern:de.phone"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 3,
+        "column": 4,
+        "start": 0,
+        "end": 9
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 4,
+        "column": 1,
+        "start": 0,
+        "end": 11
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 4,
+        "column": 2,
+        "start": 0,
+        "end": 25
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 4,
+        "column": 3,
+        "start": 0,
+        "end": 12
+      },
+      "confidence": 0.75,
+      "detector": "pattern:de.phone"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 4,
+        "column": 4,
+        "start": 0,
+        "end": 17
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 5,
+        "column": 1,
+        "start": 0,
+        "end": 13
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 5,
+        "column": 2,
+        "start": 0,
+        "end": 25
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 5,
+        "column": 3,
+        "start": 0,
+        "end": 18
+      },
+      "confidence": 0.8,
+      "detector": "pattern:intl.phone-international"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "sheet": "Kunden",
+        "row": 5,
+        "column": 4,
+        "start": 0,
+        "end": 9
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    },
+    {
+      "entity": "TAX_ID",
+      "location": {
+        "kind": "cell",
+        "sheet": "Intern",
+        "row": 1,
+        "column": 1,
+        "start": 10,
+        "end": 21
+      },
+      "confidence": 1.0,
+      "detector": "pattern:de.tax-id"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "sheet": "Intern",
+        "row": 1,
+        "column": 1,
+        "start": 32,
+        "end": 43
+      },
+      "confidence": 0.85,
+      "detector": "pattern:de.name-salutation"
+    }
+  ],
+  "review_required": true,
+  "review_reasons": [
+    "NER did not run: names without a word that marks them (`Frau`, `Hallo`, a column `name`) may be left; `veilq models fetch ner`"
+  ]
+}

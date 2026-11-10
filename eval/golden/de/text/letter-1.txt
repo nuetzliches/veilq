@@ -1,0 +1,13 @@
+Betreff: Vorgang 2026-1256-5422 vom 25.07.2026
+
+Sehr geehrte <PERSON>,
+
+Frau <PERSON> (geb. <DATE_OF_BIRTH>) hat angerufen und bittet um Rückruf unter <PHONE_NUMBER> oder per Mail an <EMAIL_ADDRESS>.
+Anschrift: <ADDRESS>.
+Bitte überweisen Sie 764,91 EUR auf IBAN <IBAN_CODE>, Kontoinhaber <PERSON>.
+Aktenzeichen <COURT_FILE_NUMBER> beim Amtsgericht München.
+
+Nicht personenbezogen: Rechnung 2026-1256-5422, Version 18.8.12.3, Referenz DE53010208905685809282 (Prüfsumme falsch).
+
+Mit freundlichen Grüßen
+<PERSON>

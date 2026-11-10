@@ -48,3 +48,19 @@ keep it to about a page.
 | [0006](0006-four-actions-mask-by-default.md) | Four actions, `mask` by default | Accepted |
 | [0007](0007-the-mcp-server-reads-under-one-root-and-http-needs-a-token.md) | The MCP server reads under one root, and HTTP needs a token | Accepted |
 | [0008](0008-the-web-ui-is-local-token-bound-and-reads-under-one-root.md) | The web UI is local, token-bound, and reads under one root | Accepted |
+| [0009](0009-entity-types-are-locale-neutral-detectors-name-the-locale.md) | Entity types are locale-neutral; detectors name the locale | Accepted |
+| [0010](0010-built-in-patterns-are-locale-packs-in-the-policy-format.md) | Built-in patterns are locale packs in the policy's format | Accepted |
+| [0011](0011-policy-patterns-take-context-and-a-validator-a-policy-names-its-locales.md) | Policy patterns take context and a validator; a policy names its locales | Accepted |
+| [0012](0012-a-failed-check-lowers-the-confidence-it-does-not-drop-the-finding.md) | A failed check lowers the confidence; it does not drop the finding | Accepted |
+| [0013](0013-a-synthetic-corpus-with-truth-and-golden-outputs-gates-recall.md) | A synthetic corpus with truth and golden outputs gates recall | Accepted |
+| [0014](0014-tuning-by-an-agent-reads-the-synthetic-corpus-only.md) | Tuning by an agent reads the synthetic corpus only | Accepted |
+| [0015](0015-scan-and-redact-output-and-exit-codes.md) | `scan` and `redact`: what they print and how they end | Accepted |
+| [0016](0016-the-mcp-server-returns-redacted-content-and-reports-only.md) | The MCP server returns redacted content and reports only | Accepted |
+| [0017](0017-mcp-over-http-a-token-from-the-environment-loopback-no-browser.md) | MCP over HTTP: a token from the environment, loopback, no browser | Accepted |
+| [0018](0018-the-mapping-file-is-age-encrypted-and-revealed-by-the-cli-only.md) | The mapping file is age-encrypted, and revealed by the CLI only | Accepted |
+| [0019](0019-office-files-are-edited-in-place-every-part-read.md) | Office files are edited in place, every part read | Accepted |
+| [0020](0020-mail-headers-bodies-and-attachments-are-read-and-written-as-mime.md) | Mail headers, bodies and attachments are read and written as MIME | Accepted |
+| [0021](0021-the-ui-token-can-be-kept-in-a-file-across-starts.md) | The UI's token can be kept in a file across starts | Accepted |
+| [0022](0022-ner-is-gliner-in-onnx-optional-and-pinned.md) | NER is GLiNER in ONNX, optional and pinned | Accepted |
+| [0023](0023-pictures-are-read-with-ocr-and-redacted-with-black-boxes.md) | Pictures are read with OCR and redacted with black boxes | Accepted |
+| [0024](0024-a-body-carries-its-verdict-in-its-first-line.md) | A body carries its verdict in its first line | Accepted |

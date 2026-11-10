@@ -1,0 +1,26 @@
+From: Hauke Wagner <hauke.wagner71@example.com>
+To: Jonas Meyer <jonas.meyer@example.org>
+Subject: =?utf-8?B?UsO8Y2tydWYgRnJhdSBMdWthcyBIYWFz?=
+Date: Mon, 02 Nov 2026 09:12:00 +0100
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="b1"
+
+--b1
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Hallo,
+
+Frau Lukas Haas bittet um R=C3=BCckruf unter 089-5555204.
+Ihre IBAN: DE28 6809 7072 2786 5860 90
+
+Viele Gr=C3=BC=C3=9Fe
+Hauke Wagner
+
+--b1
+Content-Type: text/csv; name="kunden.csv"
+Content-Disposition: attachment; filename="kunden.csv"
+Content-Transfer-Encoding: base64
+
+bmFtZSx0ZWxlZm9uCkhhbm5hIExhbmdlLDA0MC01NTU5OTExCg==
+--b1--

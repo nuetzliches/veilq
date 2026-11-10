@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 54,
+        "end": 66,
+        "line": 3,
+        "column": 7
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 74,
+        "end": 84,
+        "line": 5,
+        "column": 6
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "start": 91,
+        "end": 109,
+        "line": 5,
+        "column": 23
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "start": 154,
+        "end": 169,
+        "line": 5,
+        "column": 85
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 187,
+        "end": 204,
+        "line": 5,
+        "column": 118
+      }
+    },
+    {
+      "entity": "ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 217,
+        "end": 246,
+        "line": 6,
+        "column": 12
+      }
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "span",
+        "start": 290,
+        "end": 317,
+        "line": 7,
+        "column": 42
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 332,
+        "end": 342,
+        "line": 7,
+        "column": 84
+      }
+    },
+    {
+      "entity": "TAX_ID",
+      "location": {
+        "kind": "span",
+        "start": 355,
+        "end": 369,
+        "line": 8,
+        "column": 12
+      }
+    },
+    {
+      "entity": "LICENSE_PLATE",
+      "location": {
+        "kind": "span",
+        "start": 404,
+        "end": 413,
+        "line": 9,
+        "column": 34
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 578,
+        "end": 590,
+        "line": 14,
+        "column": 1
+      }
+    }
+  ]
+}

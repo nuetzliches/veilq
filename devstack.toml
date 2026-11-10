@@ -15,8 +15,8 @@ version = 1
 
 [stack]
 name     = "veilq"
-requires = "0.37.0"   # tunnel = false
-reviewed = "0.42.0"   # the devstack this file was last brought up to date with
+requires = "0.44.0"   # link = { from_log }
+reviewed = "0.44.0"   # the devstack this file was last brought up to date with
 
 # The UI against src/api/mock.ts: for working on the UI, no Rust build.
 [services.ui]
@@ -32,10 +32,13 @@ tunnel     = false
 # `git worktree remove`).
 prepare    = { run = "npm ci", inputs = ["ui/package-lock.json"], outputs = ["ui/node_modules"], link = ["ui/node_modules"] }
 
-# `veilq ui` with the UI embedded (build.rs takes ui/dist). Its URL with the
-# token is in the log (`devstack logs veilq`); the token is new with every
-# build, so open the URL again after a change goes live. `--origin` lets the
-# server accept requests through devstack's proxy on the fixed port.
+# `veilq ui` with the UI embedded (build.rs takes ui/dist). It prints its URL
+# with its token; `link` makes that URL the dashboard's link, so the button
+# opens the UI logged in. `--token-file` keeps the token across builds
+# (ADR-0021): an open tab goes on working after a change went live. The file
+# is under target/, never committed; delete it for a new token. `--origin` lets
+# the server accept requests through devstack's proxy on the fixed port, and
+# makes the printed URL name that port.
 #
 # `cargo install --root` rather than `cargo build`: it puts just the binary in
 # a directory of its own, so `output` copies one file instead of target/debug.
@@ -43,12 +46,13 @@ prepare    = { run = "npm ci", inputs = ["ui/package-lock.json"], outputs = ["ui
 [services.veilq]
 build   = "npm --prefix ui run build && cargo install --path crates/veilq --bin veilq --debug --locked --force --target-dir target --root target/devstack/veilq"
 output  = "target/devstack/veilq/bin"
-run     = "{artifact}/veilq ui --root {repo} --port {port} --origin {service.veilq.url} --no-open"
+run     = "{artifact}/veilq ui --root {repo} --port {port} --origin {service.veilq.url} --token-file {repo}/target/devstack/ui-token --no-open"
 port    = 4760
 # Answers once the server listens; there is nothing else it waits for.
 health  = { http = "/healthz", timeout = "60s" }
 # Never public: the UI reads files under the repository.
 tunnel  = false
+link    = { from_log = 'veilq ui: (http://\S+)' }
 watch   = [
   "crates/**", "Cargo.toml", "Cargo.lock",
   "ui/src/**", "ui/public/**", "ui/index.html", "ui/vite.config.ts", "ui/tsconfig*.json", "ui/env.d.ts",

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { createApi, type Info, type Redaction, type Source } from '@/api';
-import { inputSpans } from '@/lib/segments';
 import ComparePane from '@/components/ComparePane.vue';
 import FileBrowser from '@/components/FileBrowser.vue';
 import FindingsTable from '@/components/FindingsTable.vue';
+import ImagePane from '@/components/ImagePane.vue';
 
 type Kind = Source['kind'];
 
@@ -25,9 +25,24 @@ const error = ref<string | null>(null);
 const sourceName = ref<string | null>(null);
 const hovered = ref<number | null>(null);
 const copied = ref(false);
+/** The action of a run: `''` for the policy's, else one of `info.actions`. */
+const action = ref('');
+/** An image or a PDF's pages, shown as soon as chosen, before the redaction is back. */
+const preview = ref<{ pages: string[]; mediaType: string; pageCount?: number } | null>(null);
+/** The last run's source, run again when the action changes. */
+const lastRun = ref<{ source: Source; name: string | null } | null>(null);
 
 const findings = computed(() => result.value?.report.findings ?? []);
-const spansIn = computed(() => inputSpans(findings.value));
+/** An image the browser shows: set side by side. */
+const image = computed(() => {
+  const r = result.value;
+  return r?.media_type?.startsWith('image/') && r.input_base64 && r.output_base64 ? r : null;
+});
+/** A PDF: its pages side by side, as the server rendered them. */
+const pdf = computed(() => {
+  const r = result.value;
+  return r?.input_pages && r.output_pages ? r : null;
+});
 
 const tabs: { kind: Kind; label: string }[] = [
   { kind: 'text', label: 'Text' },
@@ -41,14 +56,19 @@ async function run(source: Source, name: string | null) {
   result.value = null;
   hovered.value = null;
   sourceName.value = name;
+  lastRun.value = { source, name };
   try {
-    result.value = await api.redact(source);
+    result.value = await api.redact(source, action.value || undefined);
   } catch (e) {
     // Fail closed: no output at all when veilq could not redact.
     error.value = e instanceof Error ? e.message : String(e);
   } finally {
     busy.value = false;
   }
+}
+
+function changeAction() {
+  if (lastRun.value && !editing.value) void run(lastRun.value.source, lastRun.value.name);
 }
 
 function redactText() {
@@ -65,14 +85,29 @@ function editText() {
 
 function selectTab(k: Kind) {
   kind.value = k;
+  preview.value = null;
   result.value = null;
   error.value = null;
   sourceName.value = null;
   if (k === 'text') editing.value = true;
 }
 
+const PICTURE = /\.(png|jpe?g|webp|gif)$/i;
+const PDF = /\.pdf$/i;
+
 function selectFile(path: string) {
   selectedFile.value = path;
+  preview.value = null;
+  if (PICTURE.test(path) || PDF.test(path)) {
+    api
+      .picture(path)
+      .then((p) => {
+        if (selectedFile.value === path && !result.value) {
+          preview.value = { pages: p.pages, mediaType: p.media_type, pageCount: p.page_count };
+        }
+      })
+      .catch(() => {});
+  }
   void run({ kind: 'file', path }, path);
 }
 
@@ -85,6 +120,8 @@ async function upload(file: File | undefined) {
     return;
   }
   const data = await toBase64(file);
+  preview.value =
+    PICTURE.test(file.name) && file.type.startsWith('image/') ? { pages: [data], mediaType: file.type } : null;
   void run({ kind: 'upload', name: file.name, data }, file.name);
 }
 
@@ -115,12 +152,20 @@ async function copyOutput() {
   setTimeout(() => (copied.value = false), 1200);
 }
 
+function redactedName(): string {
+  const base = (result.value?.name ?? 'text.txt').split('/').pop() ?? 'text.txt';
+  const dot = base.lastIndexOf('.');
+  return dot > 0 ? `${base.slice(0, dot)}.redacted${base.slice(dot)}` : `${base}.redacted`;
+}
+
 function downloadOutput() {
   if (!result.value) return;
-  const base = (result.value.name ?? 'text.txt').split('/').pop() ?? 'text.txt';
-  const dot = base.lastIndexOf('.');
-  const name = dot > 0 ? `${base.slice(0, dot)}.redacted${base.slice(dot)}` : `${base}.redacted`;
-  const url = URL.createObjectURL(new Blob([result.value.output], { type: 'text/plain;charset=utf-8' }));
+  const name = redactedName();
+  const data = result.value.output_base64;
+  const blob = data
+    ? new Blob([Uint8Array.from(atob(data), (c) => c.charCodeAt(0))], { type: 'application/octet-stream' })
+    : new Blob([result.value.output], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
@@ -148,7 +193,15 @@ onMounted(async () => {
       <dl v-if="info" class="meta">
         <div><dt>root</dt><dd class="mono">{{ info.root }}</dd></div>
         <div><dt>policy</dt><dd class="mono">{{ info.policy }}</dd></div>
-        <div><dt>action</dt><dd class="mono">{{ info.default_action }}</dd></div>
+        <div>
+          <dt><label for="action">action</label></dt>
+          <dd>
+            <select id="action" v-model="action" class="mono" :disabled="busy" @change="changeAction">
+              <option value="">policy ({{ info.default_action }})</option>
+              <option v-for="a in info.actions" :key="a" :value="a">{{ a }}</option>
+            </select>
+          </dd>
+        </div>
         <div><dt>version</dt><dd class="mono">{{ info.version }}</dd></div>
       </dl>
       <p v-else-if="infoError" class="meta error">{{ infoError }}</p>
@@ -186,7 +239,7 @@ onMounted(async () => {
           <strong>Drop a file</strong>
           <span>or click to choose one. It is sent to veilq on this machine only.</span>
         </label>
-        <p class="hint">Text files until M3; documents and images are refused, not passed through.</p>
+        <p class="hint">Text, logs, CSV, JSON, Word, Excel, PowerPoint, mails, images (PNG, JPEG, WebP, GIF) and PDF. Images and PDF need OCR (`veilq models fetch ocr`, for PDF also `pdf`); without it they are refused, not passed through.</p>
       </section>
 
       <section v-else class="source browser">
@@ -210,11 +263,40 @@ onMounted(async () => {
             @keydown.ctrl.enter="redactText"
             @keydown.meta.enter="redactText"
           />
+          <ImagePane
+            v-else-if="image"
+            side="input"
+            :data="image.input_base64!"
+            :media-type="image.media_type!"
+            :findings="findings"
+            :hovered="hovered"
+            @hover="hovered = $event"
+          />
+          <div v-else-if="pdf" class="pages">
+            <ImagePane
+              v-for="(p, i) in pdf.input_pages"
+              :key="i"
+              side="input"
+              :data="p"
+              media-type="image/png"
+              :page="i + 1"
+              :findings="findings"
+              :hovered="hovered"
+              @hover="hovered = $event"
+            />
+            <p v-if="(pdf.page_count ?? 0) > pdf.input_pages!.length" class="hint">
+              Pages {{ pdf.input_pages!.length + 1 }} to {{ pdf.page_count }} are in the download.
+            </p>
+          </div>
+          <div v-else-if="result?.output_base64" class="binary">
+            <strong>{{ result.name }}</strong>
+            <p>This file has no text to set side by side here: its findings are listed below, by part and paragraph, sheet and cell, or page and region.</p>
+          </div>
           <ComparePane
             v-else-if="result"
             side="input"
             :text="result.input"
-            :spans="spansIn"
+            :spans="result.input_spans"
             :findings="findings"
             :hovered="hovered"
             @hover="hovered = $event"
@@ -227,6 +309,18 @@ onMounted(async () => {
             :findings="[]"
             :hovered="null"
           />
+          <div v-else-if="preview" class="pages">
+            <ImagePane
+              v-for="(p, i) in preview.pages"
+              :key="i"
+              side="input"
+              :data="p"
+              :media-type="preview.mediaType"
+              :page="preview.pageCount ? i + 1 : undefined"
+              :findings="[]"
+              :hovered="null"
+            />
+          </div>
           <p v-else class="placeholder">{{ busy ? 'Reading …' : 'Choose a source on the left.' }}</p>
         </div>
       </section>
@@ -236,13 +330,41 @@ onMounted(async () => {
           <h2>Output</h2>
           <span v-if="result" class="count">{{ findings.length }} finding{{ findings.length === 1 ? '' : 's' }}</span>
           <span class="spacer" />
-          <button v-if="result" class="small" @click="copyOutput">{{ copied ? 'Copied' : 'Copy' }}</button>
+          <button v-if="result && !result.output_base64" class="small" @click="copyOutput">{{ copied ? 'Copied' : 'Copy' }}</button>
           <button v-if="result" class="small" @click="downloadOutput">Download</button>
         </header>
         <div class="pane-body">
           <div v-if="error" class="failure">
             <strong>No output.</strong>
             <p>{{ error }}</p>
+          </div>
+          <ImagePane
+            v-else-if="image"
+            side="output"
+            :data="image.output_base64!"
+            :media-type="image.media_type!"
+            :findings="findings"
+            :hovered="hovered"
+            @hover="hovered = $event"
+          />
+          <div v-else-if="pdf" class="pages">
+            <ImagePane
+              v-for="(p, i) in pdf.output_pages"
+              :key="i"
+              side="output"
+              :data="p"
+              media-type="image/png"
+              :page="i + 1"
+              :findings="findings"
+              :hovered="hovered"
+              @hover="hovered = $event"
+            />
+          </div>
+          <div v-else-if="result?.output_base64" class="binary">
+            <strong>The redacted file is ready.</strong>
+            <p v-if="result.media_type === 'application/pdf'">Every page rewritten as an image with its findings blacked out; the text layer, links and metadata are gone.</p>
+            <p v-else>Every finding replaced in place, formatting kept; author and editor removed from its properties.</p>
+            <button class="primary" @click="downloadOutput">Download {{ redactedName() }}</button>
           </div>
           <ComparePane
             v-else-if="result"
@@ -308,6 +430,15 @@ onMounted(async () => {
   display: flex;
   gap: 6px;
   min-width: 0;
+}
+.meta select {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 1px var(--space-1);
+  font-size: 12.5px;
+  cursor: pointer;
 }
 .meta dt {
   color: var(--text-muted);
@@ -442,6 +573,15 @@ onMounted(async () => {
   color: var(--text-faint);
   padding: var(--space-4);
   font-size: 13px;
+}
+.binary {
+  margin: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  font-size: 13px;
+  color: var(--text-2);
 }
 .failure {
   margin: var(--space-4);

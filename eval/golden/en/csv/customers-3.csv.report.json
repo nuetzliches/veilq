@@ -1,0 +1,309 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 2,
+        "start": 0,
+        "end": 11
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 3,
+        "start": 0,
+        "end": 25
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 4,
+        "start": 0,
+        "end": 14
+      },
+      "confidence": 0.9,
+      "detector": "pattern:en.phone"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 5,
+        "start": 0,
+        "end": 17
+      },
+      "confidence": 0.9,
+      "detector": "pattern:en.birth-date"
+    },
+    {
+      "entity": "SOCIAL_SECURITY_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 2,
+        "column": 6,
+        "start": 0,
+        "end": 11
+      },
+      "confidence": 0.95,
+      "detector": "pattern:en.ssn"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 2,
+        "start": 0,
+        "end": 12
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 3,
+        "start": 0,
+        "end": 26
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 4,
+        "start": 0,
+        "end": 14
+      },
+      "confidence": 0.9,
+      "detector": "pattern:en.phone"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 5,
+        "start": 0,
+        "end": 14
+      },
+      "confidence": 0.9,
+      "detector": "pattern:en.birth-date"
+    },
+    {
+      "entity": "SOCIAL_SECURITY_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 3,
+        "column": 6,
+        "start": 0,
+        "end": 11
+      },
+      "confidence": 0.95,
+      "detector": "pattern:en.ssn"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 2,
+        "start": 0,
+        "end": 12
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 3,
+        "start": 0,
+        "end": 26
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 4,
+        "start": 0,
+        "end": 14
+      },
+      "confidence": 0.9,
+      "detector": "pattern:en.phone"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 5,
+        "start": 0,
+        "end": 12
+      },
+      "confidence": 0.9,
+      "detector": "pattern:en.birth-date"
+    },
+    {
+      "entity": "SOCIAL_SECURITY_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 4,
+        "column": 6,
+        "start": 0,
+        "end": 11
+      },
+      "confidence": 0.95,
+      "detector": "pattern:en.ssn"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 2,
+        "start": 0,
+        "end": 12
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 3,
+        "start": 0,
+        "end": 24
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 4,
+        "start": 0,
+        "end": 14
+      },
+      "confidence": 0.9,
+      "detector": "pattern:en.phone"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 5,
+        "start": 0,
+        "end": 17
+      },
+      "confidence": 0.9,
+      "detector": "pattern:en.birth-date"
+    },
+    {
+      "entity": "SOCIAL_SECURITY_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 5,
+        "column": 6,
+        "start": 0,
+        "end": 11
+      },
+      "confidence": 0.95,
+      "detector": "pattern:en.ssn"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 2,
+        "start": 0,
+        "end": 13
+      },
+      "confidence": 0.85,
+      "detector": "pattern:intl.name-field"
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 3,
+        "start": 0,
+        "end": 20
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 4,
+        "start": 0,
+        "end": 14
+      },
+      "confidence": 0.9,
+      "detector": "pattern:en.phone"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 5,
+        "start": 0,
+        "end": 15
+      },
+      "confidence": 0.9,
+      "detector": "pattern:en.birth-date"
+    },
+    {
+      "entity": "SOCIAL_SECURITY_NUMBER",
+      "location": {
+        "kind": "cell",
+        "row": 6,
+        "column": 6,
+        "start": 0,
+        "end": 11
+      },
+      "confidence": 0.95,
+      "detector": "pattern:en.ssn"
+    }
+  ],
+  "review_required": true,
+  "review_reasons": [
+    "NER did not run: names without a word that marks them (`Frau`, `Hallo`, a column `name`) may be left; `veilq models fetch ner`"
+  ]
+}

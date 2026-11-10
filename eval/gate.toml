@@ -1,0 +1,17 @@
+# What veilq must reach on the corpus and on held-out seeds (ADR-0013).
+#
+# Recall is the gate: the share of personal data no byte of which is left in
+# the output. Raised as veilq gets better; lowering a value needs the owner's
+# review, never a tuning run (ADR-0014).
+[recall]
+default = 0.98
+
+[recall.entities]
+# Names without a word that marks them (`Beim Termin war auch Lena Vogt`) are
+# in the corpus on purpose and need NER (M3).
+PERSON = 0.85
+
+[precision]
+# A version number after `client=` reads as an IP address: left in the corpus
+# as a known ambiguity.
+min = 0.97

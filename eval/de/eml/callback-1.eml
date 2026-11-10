@@ -1,0 +1,26 @@
+From: Greta Haas <ghaas@example.org>
+To: Mira Kern <mkern@example.com>
+Subject: =?utf-8?B?UsO8Y2tydWYgRnJhdSBIYW5uYSBIb2ZmbWFubg==?=
+Date: Mon, 02 Nov 2026 09:12:00 +0100
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="b1"
+
+--b1
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Hallo,
+
+Frau Hanna Hoffmann bittet um R=C3=BCckruf unter 069 5553952.
+Ihre IBAN: DE15 2159 6005 8608 6056 43
+
+Viele Gr=C3=BC=C3=9Fe
+Greta Haas
+
+--b1
+Content-Type: text/csv; name="kunden.csv"
+Content-Disposition: attachment; filename="kunden.csv"
+Content-Transfer-Encoding: base64
+
+bmFtZSx0ZWxlZm9uCkNsYXJhIEtyw7xnZXIsKzQ5IDg5IDU1NTU3MjgK
+--b1--

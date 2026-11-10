@@ -1,0 +1,12 @@
+Betreff: Vorgang 2026-5697-9663 vom 02.12.2026
+
+Sehr geehrte <PERSON>,
+
+Herr <PERSON> (geb. <DATE_OF_BIRTH>) hat angerufen und bittet um Rückruf unter <PHONE_NUMBER> oder per Mail an <EMAIL_ADDRESS>.
+Bitte überweisen Sie 499,58 EUR auf IBAN <IBAN_CODE>, Kontoinhaber <PERSON>.
+Steuer-ID: <TAX_ID>.
+
+Nicht personenbezogen: Rechnung 2026-5697-9663, Version 17.3.3.9, Referenz DE37430043978075438488 (Prüfsumme falsch).
+
+Mit freundlichen Grüßen
+<PERSON>

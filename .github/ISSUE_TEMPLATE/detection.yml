@@ -1,0 +1,35 @@
+name: Detection miss or false positive
+description: veilq missed personal data, or found some where there is none.
+labels: [detection]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Synthetic data only.** Do not paste the input that failed, not even
+        redacted. Write a made-up value of the same shape (names, `example.org`
+        mail, 555 phone numbers) that shows the same behaviour.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What happened
+      options: [missed (a value stayed), false positive (not personal data, replaced)]
+    validations:
+      required: true
+  - type: input
+    id: entity
+    attributes:
+      label: Entity type and detector
+      description: From `veilq scan` or the report, e.g. `PERSON`, `pattern:de.name-salutation` or `ner`.
+  - type: textarea
+    id: repro
+    attributes:
+      label: Synthetic reproduction
+      description: The smallest made-up input, the format (`--format`) and the command.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: veilq version and installed models
+      description: "`veilq --version` and `veilq models list`"

@@ -32,4 +32,4 @@ and always requires a bearer token; there is no unauthenticated HTTP mode.
 ## Enforced by
 
 - `crates/veilq-core/src/root.rs` (`resolve_under`), with tests (a link out of the root on Unix).
-- The MCP server itself and its token check come in M2.
+- `crates/veilq/src/mcp.rs` (built in M2): every path through `resolve_under`; the token, host and origin checks as ADR-0017 details them.

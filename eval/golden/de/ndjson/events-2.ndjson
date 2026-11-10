@@ -1,0 +1,6 @@
+{"amount":120.5,"event":"payment","iban":"<IBAN_CODE>"}
+{"event":"note","text":"keine Besonderheiten"}
+{"by":"<PERSON>","event":"open","record":2356}
+{"by":"<PERSON>","event":"open","record":1811}
+{"amount":120.5,"event":"payment","iban":"<IBAN_CODE>"}
+{"amount":120.5,"event":"payment","iban":"<IBAN_CODE>"}

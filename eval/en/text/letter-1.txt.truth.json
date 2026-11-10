@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 39,
+        "end": 43,
+        "line": 3,
+        "column": 10
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 50,
+        "end": 62,
+        "line": 5,
+        "column": 5
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "start": 69,
+        "end": 79,
+        "line": 5,
+        "column": 24
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "start": 106,
+        "end": 120,
+        "line": 5,
+        "column": 61
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 127,
+        "end": 151,
+        "line": 5,
+        "column": 82
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 225,
+        "end": 235,
+        "line": 9,
+        "column": 1
+      }
+    }
+  ]
+}

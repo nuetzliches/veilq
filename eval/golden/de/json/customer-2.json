@@ -1,0 +1,27 @@
+{
+  "anschrift": {
+    "ort": "Dresden",
+    "plz": "01067",
+    "strasse": "<ADDRESS>"
+  },
+  "bank": {
+    "iban": "<IBAN_CODE>"
+  },
+  "erstellt": "2026-11-02",
+  "geburtsdatum": "<DATE_OF_BIRTH>",
+  "id": 1147,
+  "kontakt": [
+    {
+      "typ": "mail",
+      "wert": "<EMAIL_ADDRESS>"
+    },
+    {
+      "typ": "tel",
+      "wert": "<PHONE_NUMBER>"
+    }
+  ],
+  "name": "<PERSON>",
+  "notiz": "Sophie Wagner ruft zurück unter <PHONE_NUMBER>",
+  "steuer_id": "<TAX_ID>",
+  "version": "20.1.27.1"
+}

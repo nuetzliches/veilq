@@ -1,0 +1,45 @@
+# Built-in patterns for English (ADR-0010), detector `pattern:en.<name>`.
+# Format: a policy's [[patterns]] (ADR-0011).
+
+[[patterns]]
+name = "name-title"
+entity = "PERSON"
+regex = '\b(?:Mr|Mrs|Ms|Miss|Dr)\.?\s+(?P<pii>\p{Lu}\p{Ll}+(?:[- ]\p{Lu}\p{Ll}+)?)'
+confidence = 0.85
+
+# Not `from`: it names places and companies (`from Hugging Face`) as often
+# as people.
+[[patterns]]
+name = "name-cue"
+entity = "PERSON"
+regex = '\b(?:Dear|Hello|Hi|by|signed|attn\.?|attention)[:,]?\s+(?P<pii>\p{Lu}\p{Ll}+(?:[- ]\p{Lu}\p{Ll}+){1,2})'
+confidence = 0.75
+
+[[patterns]]
+name = "name-signature"
+entity = "PERSON"
+regex = '(?m)(?i:regards|best|sincerely|cheers|thanks|thank you|yours(?: truly| sincerely)?)[,!.]?[ \t]*\r?\n(?:[ \t]*\r?\n)?[ \t]*(?P<pii>\p{Lu}\p{Ll}+(?:[- ]\p{Lu}\p{Ll}+){1,2})[ \t]*\r?$'
+confidence = 0.8
+
+[[patterns]]
+name = "phone"
+entity = "PHONE_NUMBER"
+regex = '(?:^|[^\w\-/.+])(?P<pii>\(?[2-9]\d{2}\)?[ .-]\d{3}[ .-]\d{4})(?:$|[^\w\-/.]|\.(?:\D|$))'
+confidence = 0.6
+context = { words = ["phone", "tel", "call", "mobile", "cell", "fax"], boost = 0.3 }
+
+[[patterns]]
+name = "birth-date"
+entity = "DATE_OF_BIRTH"
+regex = '\b(?:(?:0?[1-9]|1[0-2])/(?:0?[1-9]|[12]\d|3[01])/(?:19|20)\d{2}|(?:January|February|March|April|May|June|July|August|September|October|November|December)\s(?:0?[1-9]|[12]\d|3[01]),?\s(?:19|20)\d{2}|(?:0?[1-9]|[12]\d|3[01])\s(?:January|February|March|April|May|June|July|August|September|October|November|December)\s(?:19|20)\d{2})\b'
+confidence = 0.3
+validate = "date"
+context = { words = ["born", "birth", "dob", "d.o.b", "birthday", "birthdate"], boost = 0.6, window = 40 }
+
+[[patterns]]
+name = "ssn"
+entity = "SOCIAL_SECURITY_NUMBER"
+regex = '\b\d{3}-\d{2}-\d{4}\b'
+confidence = 0.6
+validate = "ssn_us"
+context = { words = ["ssn", "social security", "social-security"], boost = 0.35 }

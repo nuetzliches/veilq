@@ -65,6 +65,7 @@ export function mockRedact(input: string, name?: string): Redaction {
   for (const h of hits) if (!kept.length || h.start >= kept[kept.length - 1].end) kept.push(h);
 
   const findings: Finding[] = [];
+  const inputSpans: [number, number][] = [];
   const outputSpans: [number, number][] = [];
   let output = '';
   let at = 0;
@@ -73,6 +74,7 @@ export function mockRedact(input: string, name?: string): Redaction {
     const before = input.slice(0, h.start);
     const lines = before.split('\n');
     const start = bytes(before);
+    inputSpans.push([start, start + bytes(input.slice(h.start, h.end))]);
     findings.push({
       entity: h.entity,
       location: {
@@ -96,6 +98,7 @@ export function mockRedact(input: string, name?: string): Redaction {
     name,
     input,
     output,
+    input_spans: inputSpans,
     output_spans: outputSpans,
     report: {
       version: 1,
@@ -114,7 +117,7 @@ export function mockApi(): Api {
   return {
     mock: true,
     async info() {
-      return { version: 'mock', root: '/mock', policy: 'built-in defaults', default_action: 'mask', max_input: 32 << 20 };
+      return { version: 'mock', root: '/mock', policy: 'built-in defaults', default_action: 'mask', actions: ['mask'], max_input: 32 << 20 };
     },
     async files(dir) {
       const prefix = dir ? `${dir}/` : '';
@@ -128,6 +131,9 @@ export function mockApi(): Api {
       if (dir && !seen.size) throw new ApiError(404, `${dir}: not found`);
       const entries = [...seen.values()].sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name));
       return { dir, entries, truncated: false };
+    },
+    async picture(path) {
+      throw new ApiError(422, `${path}: the mock has no images`);
     },
     async redact(source: Source) {
       switch (source.kind) {
@@ -143,7 +149,7 @@ export function mockApi(): Api {
           try {
             text = new TextDecoder('utf-8', { fatal: true }).decode(decodeBase64(source.data));
           } catch {
-            throw new ApiError(422, `${source.name} is not UTF-8 text; documents and images come in M3 and M4`);
+            throw new ApiError(422, `${source.name} is not UTF-8 text; the mock reads text only`);
           }
           return mockRedact(text, source.name);
         }

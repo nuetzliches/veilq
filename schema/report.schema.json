@@ -14,7 +14,7 @@
           "type": "number"
         },
         "detector": {
-          "description": "The detector that found it (`pattern`, `ner`, `ocr`, `policy:<name>`).",
+          "description": "The detector that found it: `pattern:<locale>.<rule>` for a built-in\npattern, `policy:<name>` for one of the policy, later `ner`, `ocr`.",
           "type": "string"
         },
         "entity": {
@@ -154,6 +154,13 @@
             "kind": {
               "const": "region",
               "type": "string"
+            },
+            "part": {
+              "description": "The part of a container the image is (`word/media/image1.png`,\nan attachment's name); absent for an image file.",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "width": {
               "format": "uint32",

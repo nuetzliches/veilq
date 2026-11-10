@@ -1,0 +1,27 @@
+{
+  "anschrift": {
+    "ort": "Köln",
+    "plz": "50667",
+    "strasse": "Schillerplatz 84"
+  },
+  "bank": {
+    "iban": "DE93 5626 5499 3937 7702 49"
+  },
+  "erstellt": "2026-11-02",
+  "geburtsdatum": "1969-11-28",
+  "id": 5636,
+  "kontakt": [
+    {
+      "typ": "mail",
+      "wert": "jan.kuehn75@example.com"
+    },
+    {
+      "typ": "tel",
+      "wert": "069 5553842"
+    }
+  ],
+  "name": "Jan Kühn",
+  "notiz": "keine Besonderheiten",
+  "steuer_id": "42528943971",
+  "version": "14.2.9.2"
+}

@@ -36,4 +36,4 @@ user's cache directory) ends the run with exit code 2.
 ## Enforced by
 
 - `crates/veilq-core/src/models.rs` (`PINNED`, `check_required`, `model_dir`), with a test; `veilq policy check` runs the check.
-- `veilq models fetch` itself comes with the first pinned model (M3).
+- `veilq models fetch`, `install --from` and `list` came with the first pinned model (M3b, ADR-0022); ONNX Runtime is pinned like a model.

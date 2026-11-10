@@ -1,0 +1,6 @@
+id;name;email;telefon;iban;geburtsdatum;notiz
+1;Niklas Meyer;niklas.meyer71@example.org;+49 (0)511 555 5003;DE34 5557 2836 3640 5835 77;20.6.1984;keine Besonderheiten
+2;Wiebke Schröder;wiebke.schroeder@example.net;+49 (0)341 555 6025;DE54 3171 0264 6265 1522 73;16.12.1985;keine Besonderheiten
+3;Greta Haas;greta.haas84@example.org;0221/5558723;DE52 5106 5629 3363 3510 96;26.5.1975;Sophie Brandt ruft zurück unter 0421-5556033
+4;Clara Friedrich;clara.friedrich@example.net;040/5556865;DE23 8201 3414 0052 6357 75;1973-03-21;Kfz OS-O 46, Kennzeichen geprüft
+5;Niklas Wagner;niklas.wagner80@example.com;+49 (0)40 555 2563;DE81 1074 5550 5193 1315 07;26.9.1993;Kfz K-P 67, Kennzeichen geprüft

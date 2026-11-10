@@ -1,0 +1,6 @@
+{"by":"<PERSON>","event":"open","record":4500}
+{"event":"note","text":"Malte Meyer ruft zurück unter <PHONE_NUMBER>"}
+{"by":"<PERSON>","event":"open","record":3722}
+{"by":"<PERSON>","event":"open","record":6609}
+{"amount":120.5,"event":"payment","iban":"<IBAN_CODE>"}
+{"amount":120.5,"event":"payment","iban":"<IBAN_CODE>"}

@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 48,
+        "end": 60,
+        "line": 1,
+        "column": 49
+      },
+      "confidence": 0.8,
+      "detector": "pattern:intl.name-key"
+    },
+    {
+      "entity": "IP_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 68,
+        "end": 77,
+        "line": 1,
+        "column": 69
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.ipv4"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "start": 127,
+        "end": 141,
+        "line": 2,
+        "column": 50
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.phone-international"
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "span",
+        "start": 189,
+        "end": 211,
+        "line": 3,
+        "column": 48
+      },
+      "confidence": 1.0,
+      "detector": "pattern:intl.iban"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 274,
+        "end": 287,
+        "line": 4,
+        "column": 49
+      },
+      "confidence": 0.8,
+      "detector": "pattern:intl.name-key"
+    },
+    {
+      "entity": "IP_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 295,
+        "end": 304,
+        "line": 4,
+        "column": 70
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.ipv4"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "start": 354,
+        "end": 366,
+        "line": 5,
+        "column": 50
+      },
+      "confidence": 0.95,
+      "detector": "pattern:de.phone"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 416,
+        "end": 427,
+        "line": 6,
+        "column": 50
+      },
+      "confidence": 0.8,
+      "detector": "pattern:intl.name-key"
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "span",
+        "start": 438,
+        "end": 448,
+        "line": 6,
+        "column": 72
+      },
+      "confidence": 0.9,
+      "detector": "pattern:de.birth-date"
+    }
+  ],
+  "review_required": true,
+  "review_reasons": [
+    "NER did not run: names without a word that marks them (`Frau`, `Hallo`, a column `name`) may be left; `veilq models fetch ner`"
+  ]
+}

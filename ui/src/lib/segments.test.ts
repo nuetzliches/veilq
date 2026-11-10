@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mockRedact } from '@/api/mock';
 import { takeToken } from '@/api/client';
-import { inputSpans, segments } from './segments';
+import { describeLocation, segments } from './segments';
 
 describe('segments', () => {
   it('cuts at byte offsets, not UTF-16 offsets', () => {
@@ -22,7 +22,7 @@ describe('segments', () => {
 
   it('marks input and output of a redaction at the same findings', () => {
     const r = mockRedact('Mail an lena.vogt@example.org, Grüße Jonas Brandt');
-    const input = segments(r.input, inputSpans(r.report.findings)).filter((x) => x.finding !== undefined);
+    const input = segments(r.input, r.input_spans).filter((x) => x.finding !== undefined);
     const output = segments(r.output, r.output_spans).filter((x) => x.finding !== undefined);
     expect(input.map((x) => x.text)).toEqual(['lena.vogt@example.org', 'Jonas Brandt']);
     expect(output.map((x) => x.text)).toEqual(['<EMAIL_ADDRESS>', '<PERSON>']);
@@ -44,5 +44,14 @@ describe('takeToken', () => {
     expect(replaced).toBe('/');
     const later = { hash: '', pathname: '/', search: '' } as Location;
     expect(takeToken(later, fakeStorage, fakeHistory)).toBe('ab12');
+  });
+});
+
+describe('describeLocation', () => {
+  it('names the part and page of a region', () => {
+    expect(describeLocation({ kind: 'region', x: 4, y: 8, width: 20, height: 10 })).toBe('20×10 at 4,8');
+    expect(
+      describeLocation({ kind: 'region', part: 'word/media/image1.png', frame: 2, x: 4, y: 8, width: 20, height: 10 }),
+    ).toBe('word/media/image1.png, page/frame 2, 20×10 at 4,8');
   });
 });

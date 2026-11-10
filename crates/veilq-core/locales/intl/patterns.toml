@@ -1,0 +1,68 @@
+# Built-in patterns that run in every locale (ADR-0010). The format is a
+# policy's [[patterns]] (ADR-0011); the detector of a rule is
+# `pattern:intl.<name>`. A group named `pii` is the finding, the rest of the
+# match is context it needs.
+
+[[patterns]]
+name = "email"
+entity = "EMAIL_ADDRESS"
+regex = '\b[\p{L}\d._%+-]+@[\p{L}\d-]+(?:\.[\p{L}\d-]+)*\.\p{L}{2,}\b'
+confidence = 0.95
+
+[[patterns]]
+name = "iban"
+entity = "IBAN_CODE"
+regex = '\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,3})?\b'
+confidence = 0.95
+validate = "iban"
+context = { words = ["iban", "konto", "bankverbindung", "account", "kontonummer"], boost = 0.05 }
+
+# Luhn passes one digit sequence in ten: without a word such as `card`, a
+# number stays below the threshold.
+[[patterns]]
+name = "credit-card"
+entity = "CREDIT_CARD"
+regex = '\b[3-6]\d{3}(?:[ -]?\d{4}){2}[ -]?\d{1,4}(?:[ -]?\d{1,3})?\b'
+confidence = 0.6
+validate = "luhn"
+context = { words = ["karte", "kreditkarte", "kartennummer", "card", "visa", "mastercard", "amex", "cc"], boost = 0.35 }
+
+# A version number (10.4.21.7) has the shape of an address: without a word
+# such as `ip` or `client` before it, an address stays below the threshold.
+[[patterns]]
+name = "ipv4"
+entity = "IP_ADDRESS"
+regex = '\b(?:\d{1,3}\.){3}\d{1,3}\b'
+confidence = 0.6
+validate = "ipv4"
+context = { words = ["ip", "ip-adresse", "addr", "address", "client", "remote", "host", "src", "from", "von"], boost = 0.35, window = 24 }
+
+# International numbers: `+` and a country code.
+[[patterns]]
+name = "phone-international"
+entity = "PHONE_NUMBER"
+regex = '(?:^|[^\w+\-/.])(?P<pii>\+[1-9]\d{0,2}[ \t/-]?(?:\(0\)[ \t]?)?\d{1,5}(?:[ \t/-]?\d{2,9}){1,4})(?:$|[^\w\-/.]|\.(?:\D|$))'
+confidence = 0.8
+context = { words = ["tel", "telefon", "phone", "mobil", "mobile", "handy", "fax", "rückruf", "call"], boost = 0.15 }
+
+# A whole value under a column or key that names a person (`name`, `kunde`).
+[[patterns]]
+name = "name-field"
+entity = "PERSON"
+regex = '^\p{Lu}\p{Ll}+(?:[ -]\p{Lu}\p{Ll}+){1,3}$'
+confidence = 0.35
+context = { words = ["name", "vorname", "nachname", "kunde", "kundin", "person", "inhaber", "inhaberin", "mandant", "mandantin", "empfänger", "absender", "ansprechpartner", "author", "user", "by", "von", "contact", "customer"], boost = 0.5, window = 32 }
+
+# A name after a key in running text: `"name":"Ida Sommer"`, `user=Lena Vogt`.
+[[patterns]]
+name = "name-key"
+entity = "PERSON"
+regex = '(?i:\b(?:name|vorname|nachname|full_?name|kunde|customer|contact|kontakt|user(?:_?name)?|author|benutzer))"?\s*[:=]\s*"?(?P<pii>\p{Lu}\p{Ll}+(?:[ -]\p{Lu}\p{Ll}+){1,3})'
+confidence = 0.8
+
+# Mail and message headers: `From: Lena Vogt <...>`.
+[[patterns]]
+name = "name-header"
+entity = "PERSON"
+regex = '(?m)^(?:From|To|Cc|Reply-To|Von|An|Absender|Empfänger):[ \t]*"?(?P<pii>\p{Lu}\p{Ll}+(?:[- ]\p{Lu}\p{Ll}+){1,2})'
+confidence = 0.85

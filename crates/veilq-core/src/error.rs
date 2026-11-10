@@ -20,6 +20,28 @@ pub enum Error {
     #[error("{0} is not built yet")]
     NotBuilt(&'static str),
 
+    #[error("unsupported format {0}")]
+    UnsupportedFormat(String),
+
+    /// The input is not what its format says (broken JSON, an open quote).
+    #[error("{0}")]
+    Format(String),
+
+    #[error("line {line} is not UTF-8 text")]
+    NotUtf8 { line: u64 },
+
+    /// verify found personal data in the output outside the replacements.
+    /// The message names the type and detector, never the value.
+    #[error("the output still contains {entity} (found by {detector}); nothing was written")]
+    Leftover { entity: String, detector: String },
+
+    /// Writing or reading a mapping file (ADR-0018).
+    #[error("mapping: {0}")]
+    Mapping(String),
+
+    #[error("reading or writing: {0}")]
+    Stream(#[source] std::io::Error),
+
     #[error("action `pseudonymize` needs a key")]
     KeyMissing,
 
@@ -28,6 +50,16 @@ pub enum Error {
     ModelMissing {
         detector: String,
         hint: &'static str,
+    },
+
+    /// A download that is not the pinned file (ADR-0005).
+    #[error(
+        "{file} is not the pinned file (SHA-256 {got}, expected {expected}); nothing was installed"
+    )]
+    ModelMismatch {
+        file: String,
+        expected: String,
+        got: String,
     },
 
     #[error("{path} is outside the allowed root {root}")]
