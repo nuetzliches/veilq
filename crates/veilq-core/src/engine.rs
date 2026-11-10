@@ -51,6 +51,8 @@ pub enum Format {
     Png,
     Jpeg,
     Webp,
+    /// An animated GIF (ADR-0023), frame by frame.
+    Gif,
 }
 
 impl Format {
@@ -71,6 +73,7 @@ impl Format {
             "png" => Self::Png,
             "jpg" | "jpeg" => Self::Jpeg,
             "webp" => Self::Webp,
+            "gif" => Self::Gif,
             other => return Err(Error::UnsupportedFormat(other.to_owned())),
         })
     }
@@ -109,6 +112,7 @@ impl Format {
             Self::Png => "png",
             Self::Jpeg => "jpeg",
             Self::Webp => "webp",
+            Self::Gif => "gif",
         }
     }
 
@@ -219,7 +223,7 @@ impl Engine {
         }
         let o = match format {
             Format::Eml => crate::mail::process(self, input, apply)?,
-            Format::Png | Format::Jpeg | Format::Webp => self.image(input, apply)?,
+            Format::Png | Format::Jpeg | Format::Webp | Format::Gif => self.image(input, apply)?,
             _ => crate::office::process(self, input, apply)?,
         };
         let report = self.report(o.findings, o.review_reasons);

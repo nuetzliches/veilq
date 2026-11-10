@@ -9,6 +9,12 @@
 //! into pixels faithfully. **verify** reads the filled image again; what it
 //! still finds is filled too, for up to three rounds (ADR-0022).
 //!
+//! A GIF is read frame by frame. A box stays filled in the following frames
+//! as long as its pixels do not change there, so a value that stands still
+//! is not visible for a frame because OCR missed it once; every frame that
+//! changed is read and verified on its own. Unchanged frames are not read
+//! again.
+//!
 //! The output is encoded anew, so EXIF, XMP and text chunks are gone; when
 //! the input had EXIF (camera, time, often GPS), the report has a `METADATA`
 //! finding for it. EXIF orientation is applied first, so boxes and pixels
@@ -16,7 +22,10 @@
 
 use std::io::Cursor;
 
-use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader, Rgba, RgbaImage};
+use image::codecs::gif::{GifDecoder, GifEncoder, Repeat};
+use image::{
+    AnimationDecoder, DynamicImage, Frame, ImageDecoder, ImageFormat, ImageReader, Rgba, RgbaImage,
+};
 
 use crate::Engine;
 use crate::Error;
@@ -211,9 +220,80 @@ fn format_of(bytes: &[u8]) -> Result<ImageFormat, Error> {
     image::guess_format(bytes).map_err(|_| error("not an image veilq reads (PNG, JPEG, WebP, GIF)"))
 }
 
-/// A PNG, JPEG or WebP image, redacted and encoded anew (no metadata).
+fn outcome() -> Outcome {
+    Outcome {
+        output: Vec::new(),
+        findings: Vec::new(),
+        mapping: Vec::new(),
+        review_reasons: Vec::new(),
+    }
+}
+
+/// Whether the pixels inside `r` differ between `a` and `b`.
+fn changed(a: &RgbaImage, b: &RgbaImage, r: &Rect) -> bool {
+    (r.y..r.bottom().min(a.height()))
+        .any(|y| (r.x..r.right().min(a.width())).any(|x| a.get_pixel(x, y) != b.get_pixel(x, y)))
+}
+
+/// An animated GIF, frame by frame (frames counted from 1), encoded anew.
+fn gif(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Outcome, Error> {
+    let frames = GifDecoder::new(Cursor::new(bytes))
+        .map_err(error)?
+        .into_frames()
+        .collect_frames()
+        .map_err(error)?;
+    let mut out = outcome();
+    let mut redacted: Vec<Frame> = Vec::with_capacity(frames.len());
+    // The previous frame as decoded, as redacted, and its boxes.
+    let mut prev: Option<(RgbaImage, RgbaImage)> = None;
+    let mut boxes: Vec<Rect> = Vec::new();
+    for (i, frame) in frames.into_iter().enumerate() {
+        let delay = frame.delay();
+        let original = frame.into_buffer();
+        let img = match &prev {
+            Some((before, done)) if *before == original => done.clone(),
+            _ => {
+                let mut img = original.clone();
+                // A box stays while its pixels stand still.
+                if let Some((before, _)) = &prev {
+                    boxes.retain(|r| !changed(before, &original, r));
+                } else {
+                    boxes.clear();
+                }
+                if apply {
+                    for r in &boxes {
+                        fill(&mut img, r);
+                    }
+                }
+                let found =
+                    redact_picture(engine, ocr, &mut img, Some(i as u64 + 1), apply, &mut out)?;
+                boxes.extend(found);
+                img
+            }
+        };
+        if apply {
+            redacted.push(Frame::from_parts(img.clone(), 0, 0, delay));
+        }
+        prev = Some((original, img));
+    }
+    if apply {
+        let mut buf = Vec::new();
+        {
+            let mut encoder = GifEncoder::new_with_speed(&mut buf, 10);
+            encoder.set_repeat(Repeat::Infinite).map_err(error)?;
+            encoder.encode_frames(redacted).map_err(error)?;
+        }
+        out.output = buf;
+    }
+    Ok(out)
+}
+
+/// A PNG, JPEG, WebP or GIF image, redacted and encoded anew (no metadata).
 pub fn image(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Outcome, Error> {
     let format = format_of(bytes)?;
+    if format == ImageFormat::Gif {
+        return gif(engine, ocr, bytes, apply);
+    }
     let mut decoder = ImageReader::with_format(Cursor::new(bytes), format)
         .into_decoder()
         .map_err(error)?;
@@ -226,12 +306,7 @@ pub fn image(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Ou
     let mut img = DynamicImage::from_decoder(decoder).map_err(error)?;
     img.apply_orientation(orientation);
     let mut rgba = img.to_rgba8();
-    let mut out = Outcome {
-        output: Vec::new(),
-        findings: Vec::new(),
-        mapping: Vec::new(),
-        review_reasons: Vec::new(),
-    };
+    let mut out = outcome();
     if exif {
         out.findings.push(Finding {
             entity: EntityType::new("METADATA").expect("a valid type"),
@@ -330,6 +405,27 @@ mod tests {
                 h: 24
             }]
         );
+    }
+
+    #[test]
+    fn a_box_stays_while_its_pixels_stand_still() {
+        let a = RgbaImage::from_pixel(20, 20, Rgba([255, 255, 255, 255]));
+        let mut b = a.clone();
+        b.put_pixel(15, 15, Rgba([0, 0, 0, 255]));
+        let still = Rect {
+            x: 0,
+            y: 0,
+            w: 10,
+            h: 10,
+        };
+        let moved = Rect {
+            x: 10,
+            y: 10,
+            w: 10,
+            h: 10,
+        };
+        assert!(!changed(&a, &b, &still));
+        assert!(changed(&a, &b, &moved));
     }
 
     #[test]
