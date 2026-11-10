@@ -152,21 +152,34 @@ fn part(
             head_out.push_str(&h.raw);
             continue;
         }
+        // Read as the line `Name: value`, redacted in the value only: what a
+        // detector finds in the name (NER once read `To` as a name) is
+        // dropped or cut back to the value, so the name cannot change.
         let decoded = decode_words(&h.value);
         let line = format!("{}: {decoded}", h.name);
         let prefix = h.name.len() + 2;
+        let found = engine
+            .findings(&line, "")?
+            .into_iter()
+            .filter(|c| c.end > prefix)
+            .map(|mut c| {
+                c.start = c.start.max(prefix) - prefix;
+                c.end -= prefix;
+                c
+            })
+            .collect();
         match redact_line(
             engine,
-            &line,
-            &h.name,
+            &decoded,
+            found,
+            &format!("{}:", h.name),
             &format!("{label}headers"),
-            i as u64 + 1,
+            (i as u64 + 1, prefix),
             apply,
             out,
         )? {
             Some(new) => {
-                let value = new.get(prefix..).unwrap_or(&new);
-                head_out.push_str(&format!("{}: {}{eol}", h.name, encode_words(value)));
+                head_out.push_str(&format!("{}: {}{eol}", h.name, encode_words(&new)));
             }
             None => head_out.push_str(&h.raw),
         }
@@ -228,18 +241,20 @@ fn part(
     Ok(result)
 }
 
-/// A header line or other short text: its findings reported, and with
-/// `apply` the new text if anything was found.
+/// A header value with what was `found` in it: the findings reported, and
+/// with `apply` the new text if anything was found. `at` is its line and
+/// the column (in ASCII characters) the value starts at.
+#[allow(clippy::too_many_arguments)]
 fn redact_line(
     engine: &Engine,
     text: &str,
+    mut found: Vec<Candidate>,
     context: &str,
     part: &str,
-    n: u64,
+    at: (u64, usize),
     apply: bool,
     out: &mut Outcome,
 ) -> Result<Option<String>, Error> {
-    let mut found = engine.findings(text, context)?;
     if found.is_empty() {
         return Ok(None);
     }
@@ -253,20 +268,26 @@ fn redact_line(
         (None, vec![None; found.len()])
     };
     for (c, p) in found.iter().zip(pseudonyms) {
-        out.findings.push(finding(c, part, n, text, p));
+        out.findings.push(finding(c, part, at, text, p));
     }
     Ok(new)
 }
 
-fn finding(c: &Candidate, part: &str, n: u64, text: &str, pseudonym: Option<String>) -> Finding {
+fn finding(
+    c: &Candidate,
+    part: &str,
+    (line, shift): (u64, usize),
+    text: &str,
+    pseudonym: Option<String>,
+) -> Finding {
     Finding {
         entity: c.entity.clone(),
         location: Location::Span {
             part: Some(part.to_owned()),
-            start: c.start as u64,
-            end: c.end as u64,
-            line: n,
-            column: text[..c.start].chars().count() as u64 + 1,
+            start: (shift + c.start) as u64,
+            end: (shift + c.end) as u64,
+            line,
+            column: (shift + text[..c.start].chars().count()) as u64 + 1,
         },
         confidence: c.confidence,
         detector: c.detector.clone(),
@@ -912,6 +933,26 @@ Content-Transfer-Encoding: base64\r\n\
 \r\n\
 bmFtZSx0ZWxlZm9uCk1pcmEgQWxiZXJzLDA0MjEgNTU1MDE3Mwo=\r\n\
 --b1--\r\n";
+
+    #[test]
+    fn a_header_name_is_never_redacted() {
+        // A detector that takes the header's name for a finding (NER read
+        // `To` as a name) must not shift its value: the name is context.
+        let policy = Policy::parse(
+            "version = 1\n[[patterns]]\nname = \"to\"\nentity = \"PERSON\"\nregex = '\\bTo\\b'\n",
+        )
+        .unwrap();
+        let e = Engine::new(&policy, None, b"s", None).unwrap();
+        let mail = "From: a@b.example\r\nTo: team nord\r\nSubject: x\r\n\r\nHallo\r\n";
+        let r = process(&e, mail.as_bytes(), true).unwrap();
+        let out = String::from_utf8(r.output).unwrap();
+        assert!(out.contains("\r\nTo: team nord\r\n"), "{out}");
+        assert!(
+            r.findings.iter().all(|f| f.entity.as_str() != "PERSON"),
+            "{:?}",
+            r.findings
+        );
+    }
 
     #[test]
     fn headers_bodies_and_attachments_are_redacted() {
