@@ -63,6 +63,21 @@ enum Command {
         #[arg(long)]
         mapping: Option<PathBuf>,
     },
+    /// Decide on a ticket's body (Markdown) for a gateway: hand it on as it
+    /// is when its first line is a matching `veilq: cleaned|pass <hash>` or
+    /// an exempt prefix, else redact it and mark it (ADR-0024).
+    ///
+    /// Prints JSON: `state` (`kept`, `exempt`, `cleaned`, `pass`), `text` (what
+    /// the agent may read), `write` (the body to write back, when it
+    /// changed) and the `report`. Exit code 1 when something was replaced.
+    Mark {
+        /// The body, or `-` for standard input.
+        path: PathBuf,
+        /// The policy file; by default veilq.toml in the current directory,
+        /// else in the git repository's root, else the built-in defaults.
+        #[arg(long)]
+        policy: Option<PathBuf>,
+    },
     /// Put the original values back into a redacted file, from its mapping.
     Reveal {
         /// A redacted file, or `-` for standard input.
@@ -144,7 +159,7 @@ enum Command {
 struct InputArgs {
     /// The input's format; by default from the file's extension, `text` for
     /// standard input.
-    #[arg(long, value_parser = ["text", "ndjson", "json", "csv", "tsv", "docx", "xlsx", "pptx", "eml", "png", "jpeg", "webp", "gif", "pdf"])]
+    #[arg(long, value_parser = ["text", "markdown", "ndjson", "json", "csv", "tsv", "docx", "xlsx", "pptx", "eml", "png", "jpeg", "webp", "gif", "pdf"])]
     format: Option<String>,
     /// The policy file; by default veilq.toml in the current directory, else
     /// in the git repository's root, else the built-in defaults.
@@ -243,6 +258,21 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
             mapping,
             identity,
         } => reveal(&path, &output, &mapping, &identity),
+        Command::Mark { path, policy } => {
+            let (policy, _) = load_policy(policy.as_deref())?;
+            let engine = engine(&policy, None)?;
+            let mut body = String::new();
+            open(&path)?
+                .read_to_string(&mut body)
+                .context("the body is not UTF-8 text")?;
+            let marked = veilq_core::marker::mark(&engine, &body)?;
+            println!("{}", serde_json::to_string(&marked)?);
+            Ok(if marked.state == veilq_core::marker::State::Cleaned {
+                Outcome::Findings
+            } else {
+                Outcome::Clean
+            })
+        }
         #[cfg(feature = "mcp")]
         Command::Mcp { root, http, policy } => {
             let (policy, _) = load_policy(policy.as_deref())?;

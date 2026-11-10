@@ -158,6 +158,21 @@
       ],
       "type": "object"
     },
+    "Markers": {
+      "additionalProperties": false,
+      "description": "How `veilq mark` reads a body's first line.",
+      "properties": {
+        "exempt": {
+          "default": [],
+          "description": "A body whose first line starts with one of these is handed on as it\nis, unread and unmarked: an agent's technical note, say.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "Office": {
       "additionalProperties": false,
       "description": "How Office files are read.",
@@ -283,6 +298,13 @@
         }
       ],
       "description": "Who can read a mapping file (ADR-0018)."
+    },
+    "markers": {
+      "$ref": "#/$defs/Markers",
+      "default": {
+        "exempt": []
+      },
+      "description": "Bodies that carry their verdict (`veilq mark`, ADR-0024)."
     },
     "office": {
       "$ref": "#/$defs/Office",

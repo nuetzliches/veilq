@@ -53,6 +53,9 @@ pub enum Format {
     Webp,
     /// An animated GIF (ADR-0023), frame by frame.
     Gif,
+    /// Markdown (ADR-0024): text, with `mask` written as `\<TYPE\>` so that
+    /// a renderer shows it instead of taking it for an HTML tag.
+    Markdown,
     /// A PDF (ADR-0023), its pages rendered and read with OCR.
     Pdf,
 }
@@ -62,6 +65,7 @@ impl Format {
     pub fn from_name(name: &str) -> Result<Self, Error> {
         Ok(match name {
             "text" => Self::Text,
+            "markdown" | "md" => Self::Markdown,
             "ndjson" | "jsonl" => Self::Ndjson,
             "json" => Self::Json,
             "csv" => Self::Csv { delimiter: None },
@@ -89,7 +93,8 @@ impl Format {
             .map(|e| e.to_string_lossy().to_lowercase())
             .unwrap_or_default();
         match ext.as_str() {
-            "txt" | "log" | "md" | "text" => Ok(Self::Text),
+            "txt" | "log" | "text" => Ok(Self::Text),
+            "md" | "markdown" => Ok(Self::Markdown),
             "" => Err(Error::UnsupportedFormat(format!(
                 "{} (no extension; name one with --format)",
                 path.display()
@@ -102,6 +107,7 @@ impl Format {
     pub fn name(self) -> &'static str {
         match self {
             Self::Text => "text",
+            Self::Markdown => "markdown",
             Self::Ndjson => "ndjson",
             Self::Json => "json",
             Self::Csv {
@@ -133,7 +139,7 @@ impl Format {
     pub fn is_container(self) -> bool {
         !matches!(
             self,
-            Self::Text | Self::Ndjson | Self::Json | Self::Csv { .. }
+            Self::Text | Self::Markdown | Self::Ndjson | Self::Json | Self::Csv { .. }
         )
     }
 }
@@ -157,6 +163,8 @@ pub struct Engine {
     key: Option<PseudonymKey>,
     faker: Faker,
     action: Option<Action>,
+    /// Writes `mask` as `\<TYPE\>` (the format `markdown`).
+    markdown: bool,
     #[cfg(feature = "ocr")]
     ocr: Option<std::sync::Arc<crate::ocr::Ocr>>,
     #[cfg(feature = "pdf")]
@@ -190,6 +198,7 @@ impl Engine {
             key,
             faker: Faker::new(fake_seed),
             action,
+            markdown: false,
             #[cfg(feature = "ocr")]
             ocr: None,
             #[cfg(feature = "pdf")]
@@ -272,6 +281,11 @@ impl Engine {
                 format.name()
             )));
         }
+        if format == Format::Markdown && !self.markdown {
+            let mut engine = self.clone();
+            engine.markdown = true;
+            return engine.run(input, output, format);
+        }
         let mut state = State::default();
         let mut pending = String::new();
         let mut line = Vec::new();
@@ -309,7 +323,9 @@ impl Engine {
             }
             if ready && !pending.is_empty() {
                 let consumed = match format {
-                    Format::Text => self.text_chunk(&pending, eof, &mut state, &mut output)?,
+                    Format::Text | Format::Markdown => {
+                        self.text_chunk(&pending, eof, &mut state, &mut output)?
+                    }
                     Format::Ndjson => self.ndjson_chunk(&pending, &mut state, &mut output)?,
                     Format::Json => {
                         let segments = json_segments(&pending, "")?;
@@ -579,7 +595,7 @@ impl Engine {
         // ADR-0001) are no personal data: what lies inside one is dropped, so
         // a model that reads `<PERSON>` as a name changes nothing.
         static PLACEHOLDER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-            regex::Regex::new(r"<[A-Z][A-Z0-9_]*>|\[[A-Z][A-Z0-9_]*:[0-9a-f]{8}\]")
+            regex::Regex::new(r"\\?<[A-Z][A-Z0-9_]*\\?>|\[[A-Z][A-Z0-9_]*:[0-9a-f]{8}\]")
                 .expect("a valid regex")
         });
         let mut found = self.detector.findings(text, context)?;
@@ -641,8 +657,11 @@ impl Engine {
             pieces.push((text[at..c.start].to_owned(), false));
             let value = &text[c.start..c.end];
             let action = self.action_for(c);
-            let replacement =
+            let mut replacement =
                 action.replacement(&c.entity, value, self.key.as_ref(), &self.faker)?;
+            if self.markdown && action == Action::Mask {
+                replacement = format!("\\<{}\\>", c.entity.as_str());
+            }
             pseudonyms.push((action == Action::Pseudonymize).then(|| replacement.clone()));
             if matches!(action, Action::Pseudonymize | Action::Fake) {
                 mapping.push(Entry {

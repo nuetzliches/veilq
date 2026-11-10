@@ -14,6 +14,7 @@ pub mod fake;
 pub mod finding;
 pub mod mail;
 pub mod mapping;
+pub mod marker;
 pub mod models;
 #[cfg(feature = "ner")]
 pub mod ner;

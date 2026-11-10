@@ -102,6 +102,12 @@ OCR an image is an error; without NER the report says `review_required`.
   sets locales, actions per type, thresholds, allow lists and own patterns
   ([`schema/policy.schema.json`](schema/policy.schema.json));
   `veilq policy check` validates it.
+- **`veilq mark <body>`** decides on a ticket's description for a gateway
+  between a tracker and an agent: a body whose first line is a matching
+  `veilq: cleaned|pass <hash>` (or an exempt prefix from the policy's
+  `[markers]`) is handed on as it is, any other is redacted as Markdown and
+  marked; JSON with `state`, `text` and the `write` to store back
+  ([ADR-0024](docs/adr/0024-a-body-carries-its-verdict-in-its-first-line.md)).
 - **`veilq ui`** serves a local web UI on loopback, bound to a token, that
   reads files under `--root` only.
 - **`veilq mcp`** is an MCP server over stdio (or `--http` on loopback with

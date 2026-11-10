@@ -57,6 +57,19 @@ pub struct Policy {
     /// Office files (ADR-0019).
     #[serde(default)]
     pub office: Office,
+    /// Bodies that carry their verdict (`veilq mark`, ADR-0024).
+    #[serde(default)]
+    pub markers: Markers,
+}
+
+/// How `veilq mark` reads a body's first line.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Markers {
+    /// A body whose first line starts with one of these is handed on as it
+    /// is, unread and unmarked: an agent's technical note, say.
+    #[serde(default)]
+    pub exempt: Vec<String>,
 }
 
 /// How Office files are read.
@@ -255,6 +268,7 @@ impl Default for Policy {
             pseudonymize: None,
             mapping: None,
             office: Office::default(),
+            markers: Markers::default(),
         }
     }
 }

@@ -179,3 +179,33 @@ fn the_mcp_server_answers_over_stdio() {
     drop(stdin);
     let _ = child.wait();
 }
+
+#[test]
+fn mark_cleans_a_body_once_and_keeps_it_after() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("veilq.toml"), "version = 1\n").unwrap();
+    let body = dir.path().join("body.md");
+    std::fs::write(&body, "Rückruf unter 0421 5550173.\n").unwrap();
+    let run = |path: &Path| {
+        let out = veilq(dir.path())
+            .env("VEILQ_MODEL_DIR", dir.path().join("no-models"))
+            .arg("mark")
+            .arg(path)
+            .output()
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        (out.status.code(), v)
+    };
+    let (code, v) = run(&body);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(v["state"], "cleaned");
+    let write = v["write"].as_str().unwrap();
+    assert!(
+        write.starts_with("veilq: cleaned ") && write.contains(r"\<PHONE_NUMBER\>"),
+        "{write}"
+    );
+    std::fs::write(&body, write).unwrap();
+    let (code, v) = run(&body);
+    assert_eq!((code, v["state"].as_str()), (Some(0), Some("kept")), "{v}");
+    assert!(v.get("write").is_none());
+}

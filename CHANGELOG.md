@@ -10,6 +10,13 @@ Notable changes per release. The format follows
 
 ### Added
 
+- `veilq mark` (ADR-0024): a ticket's body carries veilq's verdict in its
+  first line, `veilq: cleaned|pass <hash>` over the rest's letters and
+  digits; a matching body is handed on, a body whose first line is an exempt
+  prefix (`[markers] exempt` in the policy) too, any other is redacted and
+  marked, its images replaced by a note. The format `markdown` (`.md`)
+  writes `mask` as `\<TYPE\>`.
+
 - The repository: plan, workspace, CI.
 - The contracts of M0 (ADR-0001 to ADR-0007): the report and policy schemas
   (`schema/`), keyed pseudonyms `[TYPE:hex8]`, exit codes 0/1/2, the policy
