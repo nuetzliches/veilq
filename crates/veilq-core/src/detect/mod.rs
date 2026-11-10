@@ -218,6 +218,7 @@ impl Detector {
     /// rule does not find a phone number in its digits.
     pub fn findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
         let mut kept = self.candidates(text, context)?;
+        kept.retain(|c| c.entity.as_str() != "PERSON" || !only_role_words(&text[c.start..c.end]));
         kept.sort_by(|a, b| {
             (b.end - b.start)
                 .cmp(&(a.end - a.start))
@@ -253,6 +254,74 @@ impl Detector {
     pub fn policy(&self) -> &Policy {
         &self.policy
     }
+}
+
+/// Words a span of only these is not a name.
+pub(crate) const NOT_NAMES: &[&str] = &[
+    "der",
+    "die",
+    "das",
+    "den",
+    "dem",
+    "des",
+    "ein",
+    "eine",
+    "einen",
+    "herr",
+    "herrn",
+    "frau",
+    "dr",
+    "doktor",
+    "prof",
+    "professor",
+    "kunde",
+    "kundin",
+    "kunden",
+    "mitarbeiter",
+    "mitarbeiterin",
+    "kollege",
+    "kollegin",
+    "chef",
+    "chefin",
+    "mandant",
+    "mandantin",
+    "patient",
+    "patientin",
+    "the",
+    "mr",
+    "mrs",
+    "ms",
+    "customer",
+    "colleague",
+    "manager",
+    "agent",
+    // Greetings and contact labels: what is left when `remove` took the
+    // name and number after them.
+    "hallo",
+    "hello",
+    "hi",
+    "hey",
+    "dear",
+    "liebe",
+    "lieber",
+    "tel",
+    "telefon",
+    "phone",
+    "fax",
+    "mobil",
+    "mobile",
+    "team",
+];
+
+/// Whether `span` is nothing but role, title and greeting words
+/// ([`NOT_NAMES`]): `Herr Doktor`, `Frau Kundin` name no person, whichever
+/// detector found them.
+pub(crate) fn only_role_words(span: &str) -> bool {
+    let mut words = span
+        .split(|c: char| !c.is_alphabetic())
+        .filter(|w| w.chars().count() >= 2)
+        .peekable();
+    words.peek().is_some() && words.all(|w| NOT_NAMES.contains(&w.to_lowercase().as_str()))
 }
 
 /// Confidences in thousandths: `1.0 - 0.3` is `0.7`, not `0.69999998`.
@@ -304,6 +373,23 @@ mod tests {
         findings(text, "")
             .iter()
             .any(|(e, v)| e == entity && v == value)
+    }
+
+    #[test]
+    fn a_role_is_no_name_whoever_finds_it() {
+        // `Herr` and `Frau` before a title or a role: the pattern took the
+        // word after them for a name.
+        for text in [
+            "Herr Doktor kommt gleich.",
+            "Bitte Frau Kundin informieren.",
+        ] {
+            assert!(findings(text, "").is_empty(), "{text}");
+        }
+        assert!(
+            found("Herr Doktor Kern kommt.", "PERSON", "Kern")
+                || found("Herr Doktor Kern kommt.", "PERSON", "Doktor Kern")
+        );
+        assert!(found("Frau Albers kommt.", "PERSON", "Albers"));
     }
 
     #[test]

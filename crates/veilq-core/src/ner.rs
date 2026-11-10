@@ -34,63 +34,6 @@ const OVERLAP: usize = 40;
 /// The model's own threshold: spans below it are no candidates.
 pub const MIN_SCORE: f32 = 0.3;
 
-/// Words a span of only these is not a name.
-const NOT_NAMES: &[&str] = &[
-    "der",
-    "die",
-    "das",
-    "den",
-    "dem",
-    "des",
-    "ein",
-    "eine",
-    "einen",
-    "herr",
-    "herrn",
-    "frau",
-    "dr",
-    "doktor",
-    "prof",
-    "professor",
-    "kunde",
-    "kundin",
-    "kunden",
-    "mitarbeiter",
-    "mitarbeiterin",
-    "kollege",
-    "kollegin",
-    "chef",
-    "chefin",
-    "mandant",
-    "mandantin",
-    "patient",
-    "patientin",
-    "the",
-    "mr",
-    "mrs",
-    "ms",
-    "customer",
-    "colleague",
-    "manager",
-    "agent",
-    // Greetings and contact labels: what is left when `remove` took the
-    // name and number after them.
-    "hallo",
-    "hello",
-    "hi",
-    "hey",
-    "dear",
-    "liebe",
-    "lieber",
-    "tel",
-    "telefon",
-    "phone",
-    "fax",
-    "mobil",
-    "mobile",
-    "team",
-];
-
 fn error(message: impl std::fmt::Display) -> Error {
     Error::Format(format!("NER: {message}"))
 }
@@ -293,7 +236,7 @@ fn can_be_name(span: &str) -> bool {
         && words.iter().any(|w| {
             capital(w)
                 && w.chars().skip(1).any(char::is_lowercase)
-                && !NOT_NAMES.contains(&w.to_lowercase().as_str())
+                && !crate::detect::NOT_NAMES.contains(&w.to_lowercase().as_str())
         })
 }
 
