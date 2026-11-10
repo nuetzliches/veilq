@@ -237,6 +237,7 @@ fn can_be_name(span: &str) -> bool {
             capital(w)
                 && w.chars().skip(1).any(char::is_lowercase)
                 && !crate::detect::NOT_NAMES.contains(&w.to_lowercase().as_str())
+                && !crate::detect::person_noun(w)
         })
 }
 
@@ -338,6 +339,39 @@ mod tests {
             "Caller",
         ] {
             assert!(!can_be_name(word), "{word}");
+        }
+        // German writes every noun with a capital: a word that means a
+        // person, in any form or at the end of a compound, is still no name.
+        for span in [
+            "Personen",
+            "Person",
+            "Menschen",
+            "Leute",
+            "Teilnehmerinnen",
+            "Teilnehmende",
+            "Betroffener",
+            "Beteiligten",
+            "Kläger",
+            "Beklagte",
+            "Zeugin",
+            "Mieter",
+            "Vermieterin",
+            "Käufer",
+            "Antragstellerin",
+            "Ansprechpartner",
+            "Kontaktperson",
+            "Personenkreis",
+            "Ehepartner",
+            "Eltern",
+            "Kinder",
+            "Gäste",
+            "Betroffene Personen",
+        ] {
+            assert!(!can_be_name(span), "{span}");
+        }
+        // A surname that is also such a word stays a name for NER.
+        for name in ["Schüler", "Bürger", "Gast", "Richter", "Lena Teilnehmer"] {
+            assert!(can_be_name(name), "{name}");
         }
         assert!(can_be_name("Jonas Brandt's"));
         assert!(can_be_name("Ursula von der Leyen"));
