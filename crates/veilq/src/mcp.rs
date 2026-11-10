@@ -184,8 +184,7 @@ fn file_result(
         return Ok(v);
     }
     // Fail closed: what veilq cannot read is an error, not a pass-through.
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| format!("{name} is not UTF-8 text; images come in M4"))?;
+    let text = std::str::from_utf8(bytes).map_err(|_| format!("{name} is not UTF-8 text"))?;
     if apply {
         let r = s
             .engine
@@ -270,7 +269,7 @@ impl Server {
     }
 
     #[tool(
-        description = "Redact personal data in a file: a path under the server's root, or base64 `content_base64` with a `name`. Returns `name`, the redacted content in the file's format (`output` for text, `output_base64` for .docx .xlsx .pptx) and the `report`. Writes nothing. Formats by extension: .txt .log .md, .ndjson .jsonl, .json, .csv, .tsv, .docx, .xlsx, .pptx; anything else is an error."
+        description = "Redact personal data in a file: a path under the server's root, or base64 `content_base64` with a `name`. Returns `name`, the redacted content in the file's format (`output` for text, `output_base64` for .docx .xlsx .pptx .eml, images and PDF) and the `report`. Writes nothing. Formats by extension: .txt .log .md, .ndjson .jsonl, .json, .csv, .tsv, .docx, .xlsx, .pptx, .eml, .png .jpg .jpeg .webp .gif and .pdf (with OCR installed; pictures are redacted with black boxes, a PDF becomes images of its pages); anything else is an error."
     )]
     async fn redact_file(
         &self,

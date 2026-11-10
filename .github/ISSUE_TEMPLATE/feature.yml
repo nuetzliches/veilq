@@ -1,0 +1,16 @@
+name: Feature
+description: A format, an entity type, a locale, an integration.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What you need, and why
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Synthetic example
+      description: A made-up input that shows it, if it helps.
+      render: text

@@ -63,9 +63,10 @@ pub struct Policy {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Office {
-    /// Images and embedded objects, which veilq does not read until M4:
-    /// `error` (the default) stops the run, `remove` blanks images (the
-    /// report then asks for a review); other objects stay an error.
+    /// Embedded objects, and images when OCR is not installed (with OCR an
+    /// image is read and redacted, ADR-0023): `error` (the default) stops
+    /// the run, `remove` blanks images (the report then asks for a review);
+    /// other objects stay an error.
     #[serde(default)]
     pub embedded: Embedded,
 }

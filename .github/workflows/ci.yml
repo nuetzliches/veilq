@@ -58,6 +58,36 @@ jobs:
       - name: gate
         run: cargo run --release --locked -p veilq-eval -- check eval --held-out 7001,7002,7003,7004,7005 --list 0
 
+  eval-models:
+    # The same corpus with the pinned models (ADR-0022, ADR-0023): NER, OCR
+    # and PDFium, fetched by veilq itself from their pinned URLs and checked
+    # against their SHA-256, cached by the pins (models.rs). The pictures of
+    # the corpus are read too; the gate is eval/gate-ner.toml. About 650 MB on
+    # a cache miss.
+    runs-on: ubuntu-latest
+    env:
+      VEILQ_MODEL_DIR: ${{ github.workspace }}/.models
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: models cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .models
+          key: veilq-models-${{ runner.os }}-${{ hashFiles('crates/veilq-core/src/models.rs') }}
+      - name: fetch models
+        run: |
+          cargo build --release --locked -p veilq
+          for m in ner ocr pdf; do target/release/veilq models fetch "$m"; done
+          target/release/veilq models list
+      - name: gate
+        run: cargo run --release --locked -p veilq-eval -- check eval --ner --ocr --gate eval/gate-ner.toml --held-out 7001,7002,7003,7004,7005 --list 20
+
   ui:
     # The web UI (ui/) that `veilq ui` embeds: types, unit tests, build.
     runs-on: ubuntu-latest

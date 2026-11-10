@@ -165,7 +165,7 @@
         "embedded": {
           "$ref": "#/$defs/Embedded",
           "default": "error",
-          "description": "Images and embedded objects, which veilq does not read until M4:\n`error` (the default) stops the run, `remove` blanks images (the\nreport then asks for a review); other objects stay an error."
+          "description": "Embedded objects, and images when OCR is not installed (with OCR an\nimage is read and redacted, ADR-0023): `error` (the default) stops\nthe run, `remove` blanks images (the report then asks for a review);\nother objects stay an error."
         }
       },
       "type": "object"

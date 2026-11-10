@@ -6,6 +6,8 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-10
+
 ### Added
 
 - The repository: plan, workspace, CI.
@@ -74,6 +76,10 @@ Notable changes per release. The format follows
 - The UI chooses the action of a run (`mask`, `fake`, `remove`, and
   `pseudonymize` when a key is set) instead of the policy's, as `--action`
   does; a change runs the last source again.
+- Releases: archives for Windows, Linux (x86_64, arm64) and macOS with
+  `SHA256SUMS` and build provenance; CI measures the corpus with the pinned
+  NER, OCR and PDF models too (`eval-models`). README with install, models
+  and use; CONTRIBUTING, issue and pull request templates.
 - The UI sets an image beside its redacted twin, each finding a frame on
   both sides, and a PDF page by page (its first 20 pages, rendered by
   PDFium in the pixels its findings are in); a GIF is offered as a

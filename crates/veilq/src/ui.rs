@@ -25,8 +25,8 @@ use veilq_core::{Action, Engine, Error, Format, Policy, Report, root};
 
 static UI: Dir<'_> = include_dir!("$OUT_DIR/ui");
 
-/// The largest input the UI redacts. Text formats only until M3; a log
-/// export above this belongs to `veilq redact`, which streams.
+/// The largest input the UI redacts; a log export above this belongs to
+/// `veilq redact`, which streams.
 const MAX_INPUT: usize = 32 << 20;
 /// A request carries an upload as base64 (4/3) and some JSON around it.
 const MAX_BODY: usize = MAX_INPUT / 3 * 4 + (64 << 10);

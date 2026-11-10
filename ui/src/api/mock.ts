@@ -149,7 +149,7 @@ export function mockApi(): Api {
           try {
             text = new TextDecoder('utf-8', { fatal: true }).decode(decodeBase64(source.data));
           } catch {
-            throw new ApiError(422, `${source.name} is not UTF-8 text; documents and images come in M3 and M4`);
+            throw new ApiError(422, `${source.name} is not UTF-8 text; the mock reads text only`);
           }
           return mockRedact(text, source.name);
         }
