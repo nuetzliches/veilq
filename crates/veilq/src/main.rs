@@ -367,7 +367,7 @@ fn models_command(command: ModelsCommand) -> anyhow::Result<Outcome> {
                 let tmp = downloads.join(f.name);
                 println!("fetching {}", f.url());
                 let status = std::process::Command::new("curl")
-                    .args(["-fL", "--proto", "=https", "--tlsv1.2", "-o"])
+                    .args(["-fsSL", "--proto", "=https", "--tlsv1.2", "-o"])
                     .arg(&tmp)
                     .arg(f.url())
                     .status()

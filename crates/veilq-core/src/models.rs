@@ -43,27 +43,29 @@ impl PinnedFile {
 }
 
 const ORT: &str = "https://github.com/microsoft/onnxruntime/releases/download/v1.31.1";
-/// Our ONNX export of `urchade/gliner_multi_pii-v1` (Apache-2.0), hosted as
-/// a release asset of veilq (ADR-0022).
-const NER_MODEL: &str = "https://github.com/nuetzliches/veilq/releases/download/models-ner-1";
+/// The ONNX export of `urchade/gliner_multi_pii-v1` (Apache-2.0) that
+/// onnx-community publishes on Hugging Face, at a fixed revision (ADR-0022):
+/// veilq ships and hosts no model.
+const NER_REPO: &str = "https://huggingface.co/onnx-community/gliner_multi_pii-v1/resolve/2e0397a7e8a250d76c37122232b3cbde42c8d629";
+const NER_ONNX: &str = "https://huggingface.co/onnx-community/gliner_multi_pii-v1/resolve/2e0397a7e8a250d76c37122232b3cbde42c8d629/onnx";
 
 /// The files of this release.
 pub const PINNED: &[PinnedFile] = &[
     PinnedFile {
         detector: "ner",
-        file: "ner/gliner_multi_pii-v1/model.onnx",
-        base: NER_MODEL,
-        name: "gliner_multi_pii-v1.onnx",
-        sha256: "b0d9c9fba42ef290523cd7b71d96b45cd9f1e8d94eb7db0f4287940bdecf1e4b",
+        file: "ner/gliner_multi_pii-v1-fp16/model.onnx",
+        base: NER_ONNX,
+        name: "model_fp16.onnx",
+        sha256: "e756837e13d16ef832f6cd9fca473c2c3dd1eb232cab13e6443d958d608e797b",
         member: None,
         target: None,
     },
     PinnedFile {
         detector: "ner",
-        file: "ner/gliner_multi_pii-v1/tokenizer.json",
-        base: NER_MODEL,
-        name: "gliner_multi_pii-v1.tokenizer.json",
-        sha256: "c5b8041501fcdee792b9b112dd592861f04391a24633a73fd9f05aaaf6e8eff1",
+        file: "ner/gliner_multi_pii-v1-fp16/tokenizer.json",
+        base: NER_REPO,
+        name: "tokenizer.json",
+        sha256: "914bd3c8fb7b525af9e23b60d0ec7b1248ddb2b99014efd9c02ebeb022f8cab7",
         member: None,
         target: None,
     },
@@ -298,7 +300,10 @@ mod tests {
     fn urls_are_complete() {
         for f in PINNED {
             let u = f.url();
-            assert!(u.starts_with("https://github.com/"), "{u}");
+            assert!(
+                u.starts_with("https://github.com/") || u.starts_with("https://huggingface.co/"),
+                "{u}"
+            );
             assert_eq!(f.sha256.len(), 64);
         }
     }

@@ -237,12 +237,12 @@ fn redact_line(
     apply: bool,
     out: &mut Outcome,
 ) -> Result<Option<String>, Error> {
-    let found = engine.findings(text, context)?;
+    let mut found = engine.findings(text, context)?;
     if found.is_empty() {
         return Ok(None);
     }
     let (new, pseudonyms) = if apply {
-        let (pieces, pseudonyms) = engine.replace(text, context, &found, &mut out.mapping)?;
+        let (pieces, pseudonyms) = engine.replace(text, context, &mut found, &mut out.mapping)?;
         (
             Some(pieces.into_iter().map(|(p, _)| p).collect::<String>()),
             pseudonyms,

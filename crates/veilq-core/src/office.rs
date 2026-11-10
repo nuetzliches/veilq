@@ -392,7 +392,7 @@ pub(crate) fn edit_segment(
     edits: &mut Vec<(Range<usize>, String)>,
 ) -> Result<Vec<Candidate>, Error> {
     let text = seg.text();
-    let found: Vec<Candidate> = match seg.forced {
+    let mut found: Vec<Candidate> = match seg.forced {
         Some(entity) if !text.trim().is_empty() => vec![Candidate {
             start: 0,
             end: text.len(),
@@ -407,7 +407,8 @@ pub(crate) fn edit_segment(
         return Ok(found);
     }
     let pseudonyms = if apply {
-        let (pieces, pseudonyms) = engine.replace(&text, &seg.context, &found, &mut out.mapping)?;
+        let (pieces, pseudonyms) =
+            engine.replace(&text, &seg.context, &mut found, &mut out.mapping)?;
         let replacements: Vec<String> = pieces
             .into_iter()
             .filter(|(_, r)| *r)
@@ -864,7 +865,7 @@ impl Workbook {
                 .unwrap_or_default();
             let pseudonyms = if apply {
                 let (pieces, pseudonyms) =
-                    engine.replace(&text, &context, &all, &mut out.mapping)?;
+                    engine.replace(&text, &context, &mut all, &mut out.mapping)?;
                 let replacements: Vec<String> = pieces
                     .into_iter()
                     .filter(|(_, r)| *r)

@@ -375,7 +375,7 @@ impl Engine {
         let mut out = String::with_capacity(upto);
         let mut at = 0;
         for seg in segments {
-            let found: Vec<Candidate> = self
+            let mut found: Vec<Candidate> = self
                 .detector
                 .findings(&seg.text, &seg.context)?
                 .into_iter()
@@ -385,7 +385,7 @@ impl Engine {
                 continue;
             }
             let (raw, ranges, pseudonyms) = match output {
-                Some(_) => self.apply(&seg, &found, &mut state.mapping)?,
+                Some(_) => self.apply(&seg, &mut found, &mut state.mapping)?,
                 None => (String::new(), Vec::new(), vec![None; found.len()]),
             };
             out.push_str(&chunk[at..seg.raw.start]);
@@ -453,16 +453,47 @@ impl Engine {
     /// `text` cut into pieces: what stays (`false`) and each finding's
     /// replacement (`true`), in order; the pseudonym of each finding. What a
     /// `pseudonymize` or `fake` replacement stood for goes to `mapping`.
-    /// **verify**: the new text holds nothing above the threshold outside the
-    /// replacements, or the run stops (ADR-0003).
+    ///
+    /// **verify**: the new text is read again. A model reads context, and a
+    /// name it scored just below its threshold may cross it once the text
+    /// around it changed: what verify finds outside the replacements is added
+    /// to `found` and replaced too, for up to three rounds. What is left then
+    /// stops the run (ADR-0003).
     #[allow(clippy::type_complexity)]
     pub(crate) fn replace(
         &self,
         text: &str,
         context: &str,
-        found: &[Candidate],
+        found: &mut Vec<Candidate>,
         mapping: &mut Vec<Entry>,
     ) -> Result<(Vec<(String, bool)>, Vec<Option<String>>), Error> {
+        const ROUNDS: usize = 3;
+        for round in 1..=ROUNDS {
+            let mut entries = Vec::new();
+            let (pieces, pseudonyms) = self.replace_once(text, found, &mut entries)?;
+            let left = self.leftovers(text, context, found, &pieces)?;
+            if left.is_empty() {
+                mapping.extend(entries);
+                return Ok((pieces, pseudonyms));
+            }
+            if round == ROUNDS {
+                return Err(Error::Leftover {
+                    entity: left[0].entity.as_str().to_owned(),
+                    detector: left[0].detector.clone(),
+                });
+            }
+            found.extend(left);
+            found.sort_by_key(|c| c.start);
+        }
+        unreachable!("the last round returns")
+    }
+
+    fn replace_once(
+        &self,
+        text: &str,
+        found: &[Candidate],
+        mapping: &mut Vec<Entry>,
+    ) -> Result<Replaced, Error> {
         let mut pieces: Vec<(String, bool)> = Vec::new();
         let mut pseudonyms = Vec::new();
         let mut at = 0;
@@ -484,28 +515,48 @@ impl Engine {
             at = c.end;
         }
         pieces.push((text[at..].to_owned(), false));
-
-        let new: String = pieces.iter().map(|(p, _)| p.as_str()).collect();
-        let mut replaced = Vec::new();
-        let mut pos = 0;
-        for (p, r) in &pieces {
-            if *r {
-                replaced.push(pos..pos + p.len());
-            }
-            pos += p.len();
-        }
-        for f in self.detector.findings(&new, context)? {
-            if replaced
-                .iter()
-                .all(|r| f.end <= r.start || f.start >= r.end)
-            {
-                return Err(Error::Leftover {
-                    entity: f.entity.as_str().to_owned(),
-                    detector: f.detector,
-                });
-            }
-        }
         Ok((pieces, pseudonyms))
+    }
+
+    /// What the detector finds in the new text outside the replacements, at
+    /// its place in the old text.
+    fn leftovers(
+        &self,
+        text: &str,
+        context: &str,
+        found: &[Candidate],
+        pieces: &[(String, bool)],
+    ) -> Result<Vec<Candidate>, Error> {
+        let new: String = pieces.iter().map(|(p, _)| p.as_str()).collect();
+        // Each kept piece: its range in the new text and where it starts in
+        // the old one.
+        let mut kept: Vec<(Range<usize>, usize)> = Vec::new();
+        let (mut new_at, mut old_at, mut k) = (0, 0, 0);
+        for (p, replaced) in pieces {
+            if *replaced {
+                old_at = found[k].end;
+                k += 1;
+            } else {
+                kept.push((new_at..new_at + p.len(), old_at));
+                old_at += p.len();
+            }
+            new_at += p.len();
+        }
+        let mut out = Vec::new();
+        for f in self.detector.findings(&new, context)? {
+            let Some((range, old)) = kept
+                .iter()
+                .find(|(r, _)| r.start <= f.start && f.end <= r.end)
+            else {
+                // Overlapping a replacement: the replacement's own text.
+                continue;
+            };
+            let start = old + (f.start - range.start);
+            let end = old + (f.end - range.start);
+            debug_assert!(text.is_char_boundary(start) && text.is_char_boundary(end));
+            out.push(Candidate { start, end, ..f });
+        }
+        Ok(out)
     }
 
     /// The policy this engine decides by.
@@ -520,7 +571,7 @@ impl Engine {
     fn apply(
         &self,
         seg: &Segment,
-        found: &[Candidate],
+        found: &mut Vec<Candidate>,
         mapping: &mut Vec<Entry>,
     ) -> Result<(String, Vec<Range<usize>>, Vec<Option<String>>), Error> {
         let (pieces, pseudonyms) = self.replace(&seg.text, &seg.context, found, mapping)?;
@@ -544,6 +595,10 @@ impl Engine {
         Ok((raw, ranges, pseudonyms))
     }
 }
+
+/// A text cut into kept pieces and replacements (`true`), and the pseudonym
+/// of each finding.
+type Replaced = (Vec<(String, bool)>, Vec<Option<String>>);
 
 /// What a streamed run found.
 pub struct Run {
@@ -1168,6 +1223,36 @@ mod tests {
         );
         assert!(Format::from_path(Path::new("Makefile")).is_err());
         assert_eq!(Format::from_path(Path::new("x.LOG")).unwrap(), Format::Text);
+    }
+
+    #[test]
+    fn what_verify_finds_is_replaced_too() {
+        // A rule that only matches once the e-mail is replaced: as a model
+        // that reads context differently in the new text.
+        let policy = Policy::parse(
+            "version = 1\n[[patterns]]\nname = \"after-mask\"\nentity = \"SECRET\"\nregex = '<EMAIL_ADDRESS> (?P<pii>[A-Z][a-z]+)'\n",
+        )
+        .unwrap();
+        let e = Engine::new(&policy, None, b"s", None).unwrap();
+        let r = e
+            .redact_str("Mail a.b@example.org Geheim und mehr", Format::Text)
+            .unwrap();
+        assert_eq!(r.text, "Mail <EMAIL_ADDRESS> <SECRET> und mehr");
+        assert_eq!(r.report.findings.len(), 2);
+        assert_eq!(
+            &"Mail a.b@example.org Geheim und mehr"[r.input_spans[1].clone()],
+            "Geheim"
+        );
+        // A rule that finds something in every new text never settles.
+        let endless = Policy::parse(
+            "version = 1\n[[patterns]]\nname = \"chain\"\nentity = \"SECRET\"\nregex = '>\\s?(?P<pii>\\w)'\n",
+        )
+        .unwrap();
+        let e = Engine::new(&endless, None, b"s", None).unwrap();
+        assert!(matches!(
+            e.redact_str("Mail a.b@example.org a b c d e f", Format::Text),
+            Err(Error::Leftover { .. })
+        ));
     }
 
     #[test]

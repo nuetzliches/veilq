@@ -54,8 +54,10 @@ Notable changes per release. The format follows
 - EML: headers (encoded words), plain and HTML bodies, attachments
   recursively, written back as MIME (ADR-0020).
 - The corpus has DOCX, XLSX and EML documents with their truth.
-- M3b: NER (ADR-0022): `urchade/gliner_multi_pii-v1` in ONNX finds names
-  that no word marks; optional, a report without it asks for a review.
+- M3b: NER (ADR-0022): `urchade/gliner_multi_pii-v1` in ONNX (fp16, from
+  Hugging Face; veilq ships no model) finds names that no word marks;
+  optional, a report without it asks for a review. Verify adds what it finds
+  and replaces it, for up to three rounds.
   `veilq models fetch|install|list`: the model and ONNX Runtime pinned by
   SHA-256, nothing downloaded at build or run time. `veilq-eval check --ner`
   and `eval/gate-ner.toml`.

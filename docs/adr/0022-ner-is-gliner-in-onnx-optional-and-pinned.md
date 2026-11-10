@@ -1,6 +1,6 @@
 # ADR-0022: NER is GLiNER in ONNX, optional and pinned
 
-- **Status:** Accepted (card M3b, points 1 to 6, approved 2026-11-09; the model chosen by measurement, approved 2026-11-10); amends [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md)
+- **Status:** Accepted (card M3b, points 1 to 6, approved 2026-11-09; the model chosen by measurement, and its source changed from our release to Hugging Face, approved 2026-11-10); amends [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md)
 - **Date:** 2026-11-10
 - **Deciders:** project owner
 - **Related:** plan O-1, [ADR-0013](0013-a-synthetic-corpus-with-truth-and-golden-outputs-gates-recall.md)
@@ -16,11 +16,17 @@ gigabyte, and ONNX Runtime is code veilq loads.
 ## Decision
 
 - **The model:** `urchade/gliner_multi_pii-v1` (Apache-2.0, mDeBERTa-v3
-  base), exported to ONNX in fp32 (1.1 GB). Chosen by measurement against
-  GLiNER2-PII: equal on the corpus (person recall 0.98 at a score of 0.3, no
-  false person), one false person fewer on a harder German set, one ONNX
-  file instead of eight. int8 quantisation lost five of nine names; fp16 did
-  not convert: fp32 until a smaller variant measures the same.
+  base; its training data `urchade/synthetic-pii-ner-mistral-v1` and
+  `urchade/pile-mistral-v0.1` are Apache-2.0 too), in the ONNX export that
+  `onnx-community/gliner_multi_pii-v1` publishes, **fp16 (580 MB)**, at the
+  fixed revision `2e0397a7`. Chosen by measurement against GLiNER2-PII:
+  equal on the corpus (person recall 0.98 at a score of 0.3, no false
+  person), one false person fewer on a harder German set, one ONNX file
+  instead of eight. fp16 and fp32 gave the same results on the corpus and
+  the held-out seeds; int8 lost five of nine names.
+- **veilq ships and hosts no model:** `veilq models fetch ner` downloads it
+  from Hugging Face, the user's own download; ONNX Runtime from Microsoft's
+  GitHub release. Both are checked against their SHA-256 in the binary.
 - **The detector `ner`:** the model is asked for `person`, `organization`,
   `location`; only `person` becomes a `PERSON` candidate (the other labels
   take firms and places away from it). A span without a capitalised word of
@@ -38,15 +44,23 @@ gigabyte, and ONNX Runtime is code veilq loads.
   from local files; `veilq models list` shows both. ONNX Runtime 1.31.1 is
   pinned the same way, as Microsoft's release archive per platform
   (Windows x64, Linux x64 and aarch64, macOS arm64) and the library in it.
-  The model files are hosted as a release asset of veilq (`models-ner-1`).
 - **Built without downloads:** `ort` with `load-dynamic` only, `tokenizers`
   without `http`; GLiNER's span-mode inputs and decoding are veilq's own,
   tested against a dump of the Python implementation.
+- **Verify in rounds:** a model reads context, and a name it scored just
+  below its threshold may cross it once the text around it changed. What
+  verify finds outside the replacements is added and replaced, for up to
+  three rounds; what is left then stops the run (ADR-0003). Without this a
+  text with ten names stopped at verify; with it all ten were replaced.
 - **Measured:** `veilq-eval check eval --ner --gate eval/gate-ner.toml`:
-  recall 1.000 on the corpus and five held-out seeds, no false person.
+  recall 1.000 on the corpus and five held-out seeds, no false person; a
+  harder German set: ten of ten names, no firm, place or role word.
 
 ## Alternatives considered
 
+- **Our own export, hosted as a release asset of veilq:** allowed by the
+  licence, but veilq would distribute a model; the published export is the
+  same graph and gives the same results.
 - **GLiNER2-PII:** as good on our data, eight ONNX fragments, its own
   precision reported low (0.35 on SPY).
 - **`gline-rs`:** pins an older `ort` with its default features (a build
