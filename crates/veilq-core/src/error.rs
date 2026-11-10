@@ -52,6 +52,16 @@ pub enum Error {
         hint: &'static str,
     },
 
+    /// A download that is not the pinned file (ADR-0005).
+    #[error(
+        "{file} is not the pinned file (SHA-256 {got}, expected {expected}); nothing was installed"
+    )]
+    ModelMismatch {
+        file: String,
+        expected: String,
+        got: String,
+    },
+
     #[error("{path} is outside the allowed root {root}")]
     OutsideRoot { path: PathBuf, root: PathBuf },
 

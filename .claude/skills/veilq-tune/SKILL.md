@@ -19,7 +19,10 @@ then tune against that.
 cargo run -q --release -p veilq-eval -- check eval --only de/csv
 ```
 
-`--only` takes a path prefix in the corpus (`de`, `de/text`, `en/csv`). The
+`--only` takes a path prefix in the corpus (`de`, `de/text`, `en/csv`).
+With the NER model installed (`veilq models fetch ner`), `--ner --gate
+eval/gate-ner.toml` measures patterns and NER together; a name without a
+marking word is NER's, a pattern for it is not the fix. The
 table gives per type: truth, covered (no byte left in the output), recall,
 typed (found as the right type), false positives. Below it each miss and
 false positive with file, place and the (synthetic) value. `--json` gives the

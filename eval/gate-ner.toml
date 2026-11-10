@@ -1,0 +1,10 @@
+# The gate with NER (ADR-0022): `veilq-eval check eval --ner --gate
+# eval/gate-ner.toml`, on a machine where `veilq models fetch ner` ran.
+# Names without a word that marks them are NER's to find: no exception for
+# PERSON here.
+[recall]
+default = 0.98
+
+[precision]
+# A version number after `client=` reads as an IP address (see gate.toml).
+min = 0.97

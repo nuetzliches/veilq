@@ -401,7 +401,7 @@ pub(crate) fn edit_segment(
             detector: "metadata".into(),
         }],
         Some(_) => Vec::new(),
-        None => engine.findings(&text, &seg.context),
+        None => engine.findings(&text, &seg.context)?,
     };
     if found.is_empty() {
         return Ok(found);
@@ -743,7 +743,7 @@ impl Workbook {
                 column: c.column,
             };
             if let Some(f) = &c.formula {
-                let found = engine.findings(&f.1, "");
+                let found = engine.findings(&f.1, "")?;
                 if !found.is_empty() {
                     return Err(error(format!(
                         "{sheet}!{}: a formula holds {}; veilq does not rewrite formulas",
@@ -791,7 +791,7 @@ impl Workbook {
                     // A number or date that is personal data becomes text; a
                     // formula would compute it again: an error.
                     if c.formula.is_some() {
-                        if let Some(f) = engine.findings(&v.1, &context).first() {
+                        if let Some(f) = engine.findings(&v.1, &context)?.first() {
                             return Err(error(format!(
                                 "{sheet}!{}: a formula's result is {}; veilq does not rewrite formulas",
                                 c.reference,
@@ -847,7 +847,7 @@ impl Workbook {
             contexts.dedup();
             let mut all: Vec<Candidate> = Vec::new();
             for ctx in &contexts {
-                for c in engine.findings(&text, ctx) {
+                for c in engine.findings(&text, ctx)? {
                     if all.iter().all(|a| c.end <= a.start || c.start >= a.end) {
                         all.push(c);
                     }

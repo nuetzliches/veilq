@@ -54,5 +54,10 @@ Notable changes per release. The format follows
 - EML: headers (encoded words), plain and HTML bodies, attachments
   recursively, written back as MIME (ADR-0020).
 - The corpus has DOCX, XLSX and EML documents with their truth.
+- M3b: NER (ADR-0022): `urchade/gliner_multi_pii-v1` in ONNX finds names
+  that no word marks; optional, a report without it asks for a review.
+  `veilq models fetch|install|list`: the model and ONNX Runtime pinned by
+  SHA-256, nothing downloaded at build or run time. `veilq-eval check --ner`
+  and `eval/gate-ner.toml`.
 - `veilq ui --token-file`: the token kept across starts (ADR-0021); under
   devstack an open tab survives a change going live. The UI explains a 401.

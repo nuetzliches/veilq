@@ -302,5 +302,8 @@
       "detector": "pattern:en.ssn"
     }
   ],
-  "review_required": false
+  "review_required": true,
+  "review_reasons": [
+    "NER did not run: names without a word that marks them (`Frau`, `Hallo`, a column `name`) may be left; `veilq models fetch ner`"
+  ]
 }

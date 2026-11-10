@@ -101,6 +101,9 @@ struct Allow {
 pub struct Detector {
     rules: Vec<Rule>,
     allow: Allow,
+    /// The NER model, when it is installed (ADR-0022).
+    #[cfg(feature = "ner")]
+    ner: Option<std::sync::Arc<crate::ner::Ner>>,
     policy: Policy,
 }
 
@@ -139,14 +142,35 @@ impl Detector {
         Ok(Self {
             rules,
             allow,
+            #[cfg(feature = "ner")]
+            ner: None,
             policy: policy.clone(),
         })
     }
 
+    /// Runs the NER model beside the patterns.
+    #[cfg(feature = "ner")]
+    pub fn set_ner(&mut self, ner: std::sync::Arc<crate::ner::Ner>) {
+        self.ner = Some(ner);
+    }
+
+    /// Whether the NER model runs.
+    pub fn has_ner(&self) -> bool {
+        #[cfg(feature = "ner")]
+        return self.ner.is_some();
+        #[cfg(not(feature = "ner"))]
+        false
+    }
+
     /// Every candidate in `text`. `context` is what stands before the text
-    /// and is not part of it: a column's or a key's name.
-    pub fn candidates(&self, text: &str, context: &str) -> Vec<Candidate> {
+    /// and is not part of it: a column's or a key's name. A failing model is
+    /// an error (ADR-0003).
+    pub fn candidates(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
         let mut out = Vec::new();
+        #[cfg(feature = "ner")]
+        if let Some(ner) = &self.ner {
+            out.extend(ner.candidates(text)?);
+        }
         for rule in &self.rules {
             for caps in rule.regex.captures_iter(text) {
                 let m = match rule.group {
@@ -179,7 +203,7 @@ impl Detector {
                 });
             }
         }
-        out
+        Ok(out)
     }
 
     /// The findings in `text`: of overlapping candidates the longest, then
@@ -189,8 +213,8 @@ impl Detector {
     /// Overlaps are resolved before the threshold: a long candidate below it
     /// (an IBAN with a wrong checksum) still claims its span, so that a short
     /// rule does not find a phone number in its digits.
-    pub fn findings(&self, text: &str, context: &str) -> Vec<Candidate> {
-        let mut kept = self.candidates(text, context);
+    pub fn findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
+        let mut kept = self.candidates(text, context)?;
         kept.sort_by(|a, b| {
             (b.end - b.start)
                 .cmp(&(a.end - a.start))
@@ -207,7 +231,7 @@ impl Detector {
             c.confidence >= round(self.threshold(&c.entity)) && !self.allowed(&text[c.start..c.end])
         });
         chosen.sort_by_key(|c| c.start);
-        chosen
+        Ok(chosen)
     }
 
     pub fn threshold(&self, entity: &EntityType) -> f32 {
@@ -262,6 +286,7 @@ mod tests {
     fn findings(text: &str, context: &str) -> Vec<(String, String)> {
         let d = Detector::new(&Policy::default()).unwrap();
         d.findings(text, context)
+            .unwrap()
             .into_iter()
             .map(|c| {
                 (
@@ -394,7 +419,7 @@ values = ["Mira Albers"]
         .unwrap();
         let d = Detector::new(&policy).unwrap();
         let text = "Vertrag 2026-0815 mit Frau Mira Albers";
-        let f = d.findings(text, "");
+        let f = d.findings(text, "").unwrap();
         assert_eq!(f.len(), 1, "{f:?}");
         assert_eq!(f[0].detector, "policy:contract");
         assert_eq!(&text[f[0].start..f[0].end], "2026-0815");

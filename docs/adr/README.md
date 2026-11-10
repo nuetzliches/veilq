@@ -61,3 +61,4 @@ keep it to about a page.
 | [0019](0019-office-files-are-edited-in-place-every-part-read.md) | Office files are edited in place, every part read | Accepted |
 | [0020](0020-mail-headers-bodies-and-attachments-are-read-and-written-as-mime.md) | Mail headers, bodies and attachments are read and written as MIME | Accepted |
 | [0021](0021-the-ui-token-can-be-kept-in-a-file-across-starts.md) | The UI's token can be kept in a file across starts | Accepted |
+| [0022](0022-ner-is-gliner-in-onnx-optional-and-pinned.md) | NER is GLiNER in ONNX, optional and pinned | Accepted |

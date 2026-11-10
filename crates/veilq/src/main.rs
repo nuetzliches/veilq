@@ -98,6 +98,11 @@ enum Command {
         #[arg(long)]
         policy: Option<PathBuf>,
     },
+    /// Models the detectors need (ADR-0005, ADR-0022).
+    Models {
+        #[command(subcommand)]
+        command: ModelsCommand,
+    },
     /// Work with the policy file (veilq.toml).
     Policy {
         #[command(subcommand)]
@@ -167,6 +172,25 @@ impl From<ActionArg> for Action {
 }
 
 #[derive(Subcommand)]
+enum ModelsCommand {
+    /// What is pinned for this platform and what is installed.
+    List,
+    /// Download a detector's files from their pinned URLs (with `curl`) and
+    /// install what matches its SHA-256.
+    Fetch {
+        /// `ner`.
+        detector: String,
+    },
+    /// Install a detector's files from a directory that holds the downloads
+    /// (by their file names), for a machine without network.
+    Install {
+        detector: String,
+        #[arg(long)]
+        from: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
 enum PolicyCommand {
     /// Check the policy a run here would use, and that the detectors it
     /// requires can run.
@@ -231,6 +255,7 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
             })?;
             Ok(Outcome::Clean)
         }
+        Command::Models { command } => models_command(command),
         Command::Policy {
             command: PolicyCommand::Check { policy },
         } => {
@@ -290,7 +315,92 @@ fn engine(policy: &Policy, action: Option<Action>) -> anyhow::Result<Engine> {
             seed
         }
     };
-    Ok(Engine::new(policy, key, &seed, action)?)
+    let engine = Engine::new(policy, key, &seed, action)?;
+    #[cfg(feature = "ner")]
+    if let Some((model, tokenizer, runtime)) = models::ner_files(&models::model_dir()) {
+        let ner = veilq_core::ner::Ner::load(&veilq_core::ner::ModelFiles {
+            model: &model,
+            tokenizer: &tokenizer,
+            runtime: &runtime,
+        })?;
+        return Ok(engine.with_ner(std::sync::Arc::new(ner)));
+    }
+    Ok(engine)
+}
+
+fn models_command(command: ModelsCommand) -> anyhow::Result<Outcome> {
+    let dir = models::model_dir();
+    match command {
+        ModelsCommand::List => {
+            println!("model directory: {}", dir.display());
+            for d in models::DETECTORS {
+                let files = models::pinned_for(d);
+                if files.is_empty() {
+                    continue;
+                }
+                let state = if models::installed(d, &dir) {
+                    "installed"
+                } else {
+                    "not installed"
+                };
+                println!("{d}: {state}");
+                for f in files {
+                    let here = if dir.join(f.file).is_file() {
+                        "ok"
+                    } else {
+                        "missing"
+                    };
+                    println!("  {here:7} {}  <- {}", f.file, f.url());
+                }
+            }
+            Ok(Outcome::Clean)
+        }
+        ModelsCommand::Fetch { detector } => {
+            let files = pinned_files(&detector)?;
+            let downloads = dir.join(".downloads");
+            std::fs::create_dir_all(&downloads)?;
+            for f in files {
+                if dir.join(f.file).is_file() {
+                    println!("ok       {}", f.file);
+                    continue;
+                }
+                let tmp = downloads.join(f.name);
+                println!("fetching {}", f.url());
+                let status = std::process::Command::new("curl")
+                    .args(["-fL", "--proto", "=https", "--tlsv1.2", "-o"])
+                    .arg(&tmp)
+                    .arg(f.url())
+                    .status()
+                    .context("curl is needed to download (or use `veilq models install --from`)")?;
+                if !status.success() {
+                    let _ = std::fs::remove_file(&tmp);
+                    anyhow::bail!("{}: download failed ({status})", f.url());
+                }
+                let result = models::install(f, &tmp, &dir);
+                let _ = std::fs::remove_file(&tmp);
+                println!("ok       {}", result?.display());
+            }
+            Ok(Outcome::Clean)
+        }
+        ModelsCommand::Install { detector, from } => {
+            for f in pinned_files(&detector)? {
+                let src = from.join(f.name);
+                if !src.is_file() {
+                    anyhow::bail!("{} is not in {}", f.name, from.display());
+                }
+                println!("ok       {}", models::install(f, &src, &dir)?.display());
+            }
+            Ok(Outcome::Clean)
+        }
+    }
+}
+
+fn pinned_files(detector: &str) -> anyhow::Result<Vec<&'static models::PinnedFile>> {
+    let files = models::pinned_for(detector);
+    if files.is_empty() {
+        anyhow::bail!("this release pins no files for `{detector}` on this platform");
+    }
+    Ok(files)
 }
 
 fn format_of(path: &Path, explicit: Option<&str>) -> anyhow::Result<Format> {

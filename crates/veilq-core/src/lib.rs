@@ -15,6 +15,8 @@ pub mod finding;
 pub mod mail;
 pub mod mapping;
 pub mod models;
+#[cfg(feature = "ner")]
+pub mod ner;
 pub mod office;
 pub mod outcome;
 pub mod policy;

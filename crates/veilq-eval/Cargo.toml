@@ -18,5 +18,10 @@ toml = "1.2.1"
 veilq-core.workspace = true
 zip = { version = "9.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
+[features]
+default = ["ner"]
+# `check --ner` runs the NER model when it is installed.
+ner = ["veilq-core/ner"]
+
 [lints]
 workspace = true

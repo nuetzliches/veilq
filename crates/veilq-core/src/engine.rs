@@ -204,11 +204,7 @@ impl Engine {
             Format::Eml => crate::mail::process(self, input, apply)?,
             _ => crate::office::process(self, input, apply)?,
         };
-        let mut report = Report::new(o.findings);
-        if !o.review_reasons.is_empty() {
-            report.review_required = true;
-            report.review_reasons = o.review_reasons;
-        }
+        let report = self.report(o.findings, o.review_reasons);
         Ok((
             o.output,
             Run {
@@ -300,7 +296,7 @@ impl Engine {
             out.flush().map_err(Error::Stream)?;
         }
         Ok(Run {
-            report: Report::new(state.findings),
+            report: self.report(state.findings, Vec::new()),
             input_spans: state.input_spans,
             output_spans: state.output_spans,
             mapping: state.mapping,
@@ -325,7 +321,7 @@ impl Engine {
             if starts.len() > CARRY_LINES {
                 cut = starts[starts.len() - CARRY_LINES];
                 // A finding across the cut goes whole into the next chunk.
-                for f in self.detector.findings(chunk, "") {
+                for f in self.detector.findings(chunk, "")? {
                     if f.start < cut && f.end > cut {
                         cut = chunk[..f.start].rfind('\n').map_or(0, |i| i + 1);
                     }
@@ -381,7 +377,7 @@ impl Engine {
         for seg in segments {
             let found: Vec<Candidate> = self
                 .detector
-                .findings(&seg.text, &seg.context)
+                .findings(&seg.text, &seg.context)?
                 .into_iter()
                 .filter(|c| seg.raw_of(c.start) < upto)
                 .collect();
@@ -427,8 +423,30 @@ impl Engine {
         Ok(())
     }
 
+    /// Runs the NER model beside the patterns (ADR-0022).
+    #[cfg(feature = "ner")]
+    pub fn with_ner(mut self, ner: std::sync::Arc<crate::ner::Ner>) -> Self {
+        self.detector.set_ner(ner);
+        self
+    }
+
+    /// The report of a run: without NER it asks for a review, since names
+    /// that no word marks may be left (ADR-0022).
+    fn report(&self, findings: Vec<Finding>, mut reasons: Vec<String>) -> Report {
+        if !self.detector.has_ner() {
+            reasons.insert(
+                0,
+                "NER did not run: names without a word that marks them (`Frau`, `Hallo`, a column `name`) may be left; `veilq models fetch ner`".into(),
+            );
+        }
+        let mut report = Report::new(findings);
+        report.review_required = !reasons.is_empty();
+        report.review_reasons = reasons;
+        report
+    }
+
     /// The findings in `text`, decided (for formats beside this module).
-    pub(crate) fn findings(&self, text: &str, context: &str) -> Vec<Candidate> {
+    pub(crate) fn findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
         self.detector.findings(text, context)
     }
 
@@ -476,7 +494,7 @@ impl Engine {
             }
             pos += p.len();
         }
-        for f in self.detector.findings(&new, context) {
+        for f in self.detector.findings(&new, context)? {
             if replaced
                 .iter()
                 .all(|r| f.end <= r.start || f.start >= r.end)

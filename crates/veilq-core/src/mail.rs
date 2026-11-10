@@ -237,7 +237,7 @@ fn redact_line(
     apply: bool,
     out: &mut Outcome,
 ) -> Result<Option<String>, Error> {
-    let found = engine.findings(text, context);
+    let found = engine.findings(text, context)?;
     if found.is_empty() {
         return Ok(None);
     }

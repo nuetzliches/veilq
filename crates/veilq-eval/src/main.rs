@@ -45,6 +45,9 @@ enum Command {
         /// The evaluation as JSON.
         #[arg(long)]
         json: bool,
+        /// Run the installed NER model too (`veilq models fetch ner`).
+        #[arg(long)]
+        ner: bool,
         /// How many misses and false positives to list.
         #[arg(long, default_value_t = 40)]
         list: usize,
@@ -76,6 +79,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             gate,
             json,
             list,
+            ner,
         } => {
             let gate_path = gate.unwrap_or_else(|| dir.join("gate.toml"));
             let gate: check::Gate = toml::from_str(&std::fs::read_to_string(&gate_path)?)
@@ -90,7 +94,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 runs.push((format!("held-out seed {seed}"), tmp));
             }
             for (label, d) in &runs {
-                let (eval, findings) = check::evaluate(d, only.as_deref())?;
+                let (eval, findings) = check::evaluate(d, only.as_deref(), ner)?;
                 let failures = check::judge(&eval, findings, &gate);
                 if json {
                     println!(

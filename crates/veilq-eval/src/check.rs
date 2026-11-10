@@ -180,15 +180,46 @@ pub fn relative(dir: &Path, p: &Path) -> String {
 }
 
 /// The engine every evaluation and golden test runs: the built-in defaults,
-/// a fixed seed.
+/// a fixed seed; with `ner`, the installed NER model (an error without one).
+pub fn engine_with(ner: bool) -> anyhow::Result<Engine> {
+    let engine = Engine::new(&Policy::default(), None, b"veilq eval", None)?;
+    if !ner {
+        return Ok(engine);
+    }
+    #[cfg(feature = "ner")]
+    {
+        // Loaded once per process: the model is a gigabyte.
+        static NER: std::sync::OnceLock<std::sync::Arc<veilq_core::ner::Ner>> =
+            std::sync::OnceLock::new();
+        let ner = match NER.get() {
+            Some(n) => n.clone(),
+            None => {
+                let dir = veilq_core::models::model_dir();
+                let (model, tokenizer, runtime) = veilq_core::models::ner_files(&dir)
+                    .ok_or_else(|| anyhow::anyhow!("NER is not installed in {}", dir.display()))?;
+                let ner = veilq_core::ner::Ner::load(&veilq_core::ner::ModelFiles {
+                    model: &model,
+                    tokenizer: &tokenizer,
+                    runtime: &runtime,
+                })?;
+                NER.get_or_init(|| std::sync::Arc::new(ner)).clone()
+            }
+        };
+        Ok(engine.with_ner(ner))
+    }
+    #[cfg(not(feature = "ner"))]
+    anyhow::bail!("this build has no NER")
+}
+
+/// The pattern-only engine of the golden tests: the same on every machine.
 pub fn engine() -> anyhow::Result<Engine> {
-    Ok(Engine::new(&Policy::default(), None, b"veilq eval", None)?)
+    engine_with(false)
 }
 
 /// Evaluates every document under `dir`; returns the evaluation and the
 /// number of findings.
-pub fn evaluate(dir: &Path, only: Option<&str>) -> anyhow::Result<(Evaluation, usize)> {
-    let engine = engine()?;
+pub fn evaluate(dir: &Path, only: Option<&str>, ner: bool) -> anyhow::Result<(Evaluation, usize)> {
+    let engine = engine_with(ner)?;
     let mut eval = Evaluation::default();
     let mut findings_total = 0;
     for doc in documents(dir, only)? {
