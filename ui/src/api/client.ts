@@ -1,4 +1,4 @@
-import { ApiError, type Api, type Info, type Listing, type Redaction, type Source } from './types';
+import { ApiError, type Api, type Info, type Listing, type Picture, type Redaction, type Source } from './types';
 
 const TOKEN_KEY = 'veilq-token';
 
@@ -35,6 +35,7 @@ export function httpApi(token: string): Api {
     mock: false,
     info: () => call<Info>('/info'),
     files: (dir) => call<Listing>(`/files?dir=${encodeURIComponent(dir)}`),
+    picture: (path) => call<Picture>(`/picture?path=${encodeURIComponent(path)}`),
     redact: (source: Source, action?: string) =>
       call<Redaction>('/redact', { method: 'POST', body: JSON.stringify({ source, action }) }),
   };

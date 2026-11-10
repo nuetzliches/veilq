@@ -27,6 +27,8 @@ const hovered = ref<number | null>(null);
 const copied = ref(false);
 /** The action of a run: `''` for the policy's, else one of `info.actions`. */
 const action = ref('');
+/** An image shown as soon as it is chosen, before its redaction is back. */
+const preview = ref<{ data: string; mediaType: string } | null>(null);
 /** The last run's source, run again when the action changes. */
 const lastRun = ref<{ source: Source; name: string | null } | null>(null);
 
@@ -78,14 +80,26 @@ function editText() {
 
 function selectTab(k: Kind) {
   kind.value = k;
+  preview.value = null;
   result.value = null;
   error.value = null;
   sourceName.value = null;
   if (k === 'text') editing.value = true;
 }
 
+const PICTURE = /\.(png|jpe?g|webp|gif)$/i;
+
 function selectFile(path: string) {
   selectedFile.value = path;
+  preview.value = null;
+  if (PICTURE.test(path)) {
+    api
+      .picture(path)
+      .then((p) => {
+        if (selectedFile.value === path) preview.value = { data: p.data, mediaType: p.media_type };
+      })
+      .catch(() => {});
+  }
   void run({ kind: 'file', path }, path);
 }
 
@@ -98,6 +112,7 @@ async function upload(file: File | undefined) {
     return;
   }
   const data = await toBase64(file);
+  preview.value = PICTURE.test(file.name) && file.type.startsWith('image/') ? { data, mediaType: file.type } : null;
   void run({ kind: 'upload', name: file.name, data }, file.name);
 }
 
@@ -266,6 +281,14 @@ onMounted(async () => {
             side="input"
             :text="text"
             :spans="[]"
+            :findings="[]"
+            :hovered="null"
+          />
+          <ImagePane
+            v-else-if="preview"
+            side="input"
+            :data="preview.data"
+            :media-type="preview.mediaType"
             :findings="[]"
             :hovered="null"
           />

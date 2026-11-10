@@ -152,6 +152,7 @@ fn router(state: Arc<AppState>) -> Router {
         .route("/info", get(info))
         .route("/files", get(files))
         .route("/redact", post(redact))
+        .route("/picture", get(picture))
         .layer(DefaultBodyLimit::max(MAX_BODY))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_token));
     Router::new()
@@ -419,6 +420,59 @@ enum Source {
     Upload { name: String, data: String },
     /// A file under the root.
     File { path: String },
+}
+
+#[derive(Deserialize)]
+struct PictureQuery {
+    path: String,
+}
+
+#[derive(Serialize)]
+struct Picture {
+    data: String,
+    media_type: &'static str,
+}
+
+/// An image under the root as it is, to show while it is redacted: the
+/// answer of `/redact` holds it too, only later.
+async fn picture(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<PictureQuery>,
+) -> Response {
+    let result = tokio::task::spawn_blocking(move || -> Result<Picture, Failure> {
+        let path = Path::new(&query.path);
+        let media_type = Format::from_path(path)
+            .ok()
+            .filter(|f| *f != Format::Pdf)
+            .and_then(media_type)
+            .ok_or_else(|| {
+                Failure(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    format!("{}: not an image", query.path),
+                )
+            })?;
+        let resolved = root::resolve_under(&state.root, path).map_err(Failure::from)?;
+        let io = |source| {
+            Failure::from(Error::Io {
+                path: PathBuf::from(&query.path),
+                source,
+            })
+        };
+        if resolved.metadata().map_err(io)?.len() > MAX_INPUT as u64 {
+            return Err(too_large(&query.path));
+        }
+        let bytes = std::fs::read(&resolved).map_err(io)?;
+        Ok(Picture {
+            data: base64::engine::general_purpose::STANDARD.encode(bytes),
+            media_type,
+        })
+    })
+    .await;
+    match result {
+        Ok(Ok(p)) => axum::Json(p).into_response(),
+        Ok(Err(failure)) => failure.into_response(),
+        Err(e) => api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
 }
 
 #[derive(Deserialize)]
@@ -890,6 +944,38 @@ mod tests {
             info["actions"],
             serde_json::json!(["mask", "fake", "remove"])
         );
+    }
+
+    #[tokio::test]
+    async fn a_picture_is_shown_before_it_is_redacted() {
+        let outer = tempfile::tempdir().unwrap();
+        let root = outer.path().join("root");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("a.png"), b"\x89PNG").unwrap();
+        std::fs::write(root.join("b.txt"), "Hallo").unwrap();
+        std::fs::write(outer.path().join("c.png"), b"\x89PNG").unwrap();
+        let get = |path: &str| {
+            authed("GET", &format!("/api/picture?path={path}"))
+                .body(Body::empty())
+                .unwrap()
+        };
+        let (status, body) = send(app(&root), get("a.png")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["media_type"], "image/png");
+        assert_eq!(body["data"], "iVBORw==");
+        // Only images, and only under the root.
+        let (status, _) = send(app(&root), get("b.txt")).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let (status, _) = send(app(&root), get("../c.png")).await;
+        assert!(status.is_client_error(), "{status}");
+        let (status, _) = send(
+            app(&root),
+            request("GET", "/api/picture?path=a.png")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]

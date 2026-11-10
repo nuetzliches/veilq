@@ -67,10 +67,17 @@ export interface Redaction {
   media_type?: string;
 }
 
+export interface Picture {
+  data: string;
+  media_type: string;
+}
+
 export interface Api {
   readonly mock: boolean;
   info(): Promise<Info>;
   files(dir: string): Promise<Listing>;
+  /** An image under the root as it is, shown while it is redacted. */
+  picture(path: string): Promise<Picture>;
   /** `action`: overrides the policy's actions for this run. */
   redact(source: Source, action?: string): Promise<Redaction>;
 }

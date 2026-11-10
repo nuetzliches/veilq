@@ -132,6 +132,9 @@ export function mockApi(): Api {
       const entries = [...seen.values()].sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name));
       return { dir, entries, truncated: false };
     },
+    async picture(path) {
+      throw new ApiError(422, `${path}: the mock has no images`);
+    },
     async redact(source: Source) {
       switch (source.kind) {
         case 'text':
