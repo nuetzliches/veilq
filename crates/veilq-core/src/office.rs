@@ -40,6 +40,19 @@ pub struct Outcome {
 
 const PARAGRAPHS: &[&str] = &["p", "si"];
 const TEXTS: &[&str] = &["t", "delText", "instrText"];
+/// Tracked deletions: their text and the text around them are alternatives
+/// (before and after the change), so a deletion reads as a line of its own,
+/// not glued to the next word.
+const DELETIONS: &[&str] = &["del", "moveFrom"];
+
+/// A line break that is in no element: it separates, and is never written.
+fn separator() -> Piece {
+    Piece {
+        raw: None,
+        text: "\n".into(),
+        space_tag: None,
+    }
+}
 /// Elements whose whole text is who wrote or owns the file.
 const PERSON_ELEMENTS: &[&str] = &["creator", "lastModifiedBy", "Manager", "author"];
 const PERSON_ATTRS: &[&str] = &["author", "initials", "displayName", "userId"];
@@ -320,6 +333,11 @@ fn segments(name: &str, s: &str) -> Result<Vec<Segment>, Error> {
                         if PARAGRAPHS.contains(&l) {
                             open.push(Vec::new());
                         }
+                        if DELETIONS.contains(&l)
+                            && let Some(p) = open.last_mut()
+                        {
+                            p.push(separator());
+                        }
                         let space =
                             !attrs.iter().any(|(a, _)| a == "xml:space") && tag.starts_with("w:");
                         stack.push((l.to_owned(), Some(range.clone()), space));
@@ -337,6 +355,11 @@ fn segments(name: &str, s: &str) -> Result<Vec<Segment>, Error> {
                     }
                     TagKind::End => {
                         stack.pop();
+                        if DELETIONS.contains(&l)
+                            && let Some(p) = open.last_mut()
+                        {
+                            p.push(separator());
+                        }
                         if PARAGRAPHS.contains(&l)
                             && let Some(pieces) = open.pop()
                         {
@@ -1072,6 +1095,21 @@ mod tests {
             panic!()
         };
         assert_eq!((part.as_deref(), *line), (Some("word/document.xml"), 1));
+    }
+
+    #[test]
+    fn a_deletion_does_not_run_into_the_text_after_it() {
+        // Deleted and inserted text are alternatives, not one word: glued
+        // together (`5550198siehe`), the phone number matched only in part
+        // and its last digits stayed.
+        let doc = format!(
+            r#"<w:document {W}><w:body><w:p><w:r><w:t xml:space="preserve">Ansprechpartner: </w:t></w:r><w:del w:id="1" w:author="A"><w:r><w:delText>+49 89 5550198</w:delText></w:r></w:del><w:ins w:id="2" w:author="A"><w:r><w:t>siehe Anlage</w:t></w:r></w:ins></w:p></w:body></w:document>"#
+        );
+        let input = zip(&[("word/document.xml", doc.as_bytes())]);
+        let r = process(&default_engine(), &input, true).unwrap();
+        let xml = unzip(&r.output, "word/document.xml");
+        assert!(!xml.contains("5550198"), "{xml}");
+        assert!(xml.contains("<w:t>siehe Anlage</w:t>"), "{xml}");
     }
 
     #[test]
