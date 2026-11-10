@@ -256,15 +256,29 @@ fn confidence(score: f32) -> f32 {
     ((0.7 + 0.3 * score) * 1000.0).round() / 1000.0
 }
 
-/// Whether a span can be a name: a word of letters that starts with a
-/// capital, not a role word. On a few words the model calls anything a
-/// person (a column `name`, an id `1`).
+/// Lowercase words inside a name.
+const PARTICLES: &[&str] = &[
+    "von", "van", "vom", "zu", "zur", "der", "den", "de", "del", "della", "di", "da", "du", "la",
+    "le", "ten", "ter", "bin", "ibn", "al", "el", "y",
+];
+
+/// Whether a span can be a name: every word capitalised or a particle
+/// (`von der`), and one word written like a name (`Kern`, not `IBAN`) that
+/// is no role word. On a few words the model calls anything a person (a
+/// column `name`, an id `1`), and a line that starts with `customer's IBAN`
+/// once read as one.
 fn can_be_name(span: &str) -> bool {
-    span.split(|c: char| !c.is_alphabetic()).any(|w| {
-        w.chars().next().is_some_and(char::is_uppercase)
-            && w.chars().count() >= 2
-            && !NOT_NAMES.contains(&w.to_lowercase().as_str())
-    })
+    let words: Vec<&str> = span
+        .split(|c: char| !c.is_alphabetic())
+        .filter(|w| w.chars().count() >= 2)
+        .collect();
+    let capital = |w: &str| w.chars().next().is_some_and(char::is_uppercase);
+    words.iter().all(|w| capital(w) || PARTICLES.contains(w))
+        && words.iter().any(|w| {
+            capital(w)
+                && w.chars().skip(1).any(char::is_lowercase)
+                && !NOT_NAMES.contains(&w.to_lowercase().as_str())
+        })
 }
 
 /// The person spans of the logits `[1, words, max_width, labels]`.
@@ -345,6 +359,12 @@ mod tests {
         assert!(can_be_name("Lena Vogt"));
         assert!(can_be_name("Herr Kern"));
         assert!(!can_be_name("Kunde #1"));
+        // A lowercase word that is no particle, or capitals only: no name.
+        assert!(!can_be_name("customer's IBAN"));
+        assert!(!can_be_name("IBAN"));
+        assert!(can_be_name("Jonas Brandt's"));
+        assert!(can_be_name("Ursula von der Leyen"));
+        assert!(can_be_name("MEIER, Jonas"));
         assert_eq!(confidence(MIN_SCORE), 0.79);
     }
 
