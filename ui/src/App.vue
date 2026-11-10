@@ -113,12 +113,20 @@ async function copyOutput() {
   setTimeout(() => (copied.value = false), 1200);
 }
 
+function redactedName(): string {
+  const base = (result.value?.name ?? 'text.txt').split('/').pop() ?? 'text.txt';
+  const dot = base.lastIndexOf('.');
+  return dot > 0 ? `${base.slice(0, dot)}.redacted${base.slice(dot)}` : `${base}.redacted`;
+}
+
 function downloadOutput() {
   if (!result.value) return;
-  const base = (result.value.name ?? 'text.txt').split('/').pop() ?? 'text.txt';
-  const dot = base.lastIndexOf('.');
-  const name = dot > 0 ? `${base.slice(0, dot)}.redacted${base.slice(dot)}` : `${base}.redacted`;
-  const url = URL.createObjectURL(new Blob([result.value.output], { type: 'text/plain;charset=utf-8' }));
+  const name = redactedName();
+  const data = result.value.output_base64;
+  const blob = data
+    ? new Blob([Uint8Array.from(atob(data), (c) => c.charCodeAt(0))], { type: 'application/octet-stream' })
+    : new Blob([result.value.output], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
@@ -184,7 +192,7 @@ onMounted(async () => {
           <strong>Drop a file</strong>
           <span>or click to choose one. It is sent to veilq on this machine only.</span>
         </label>
-        <p class="hint">Text files until M3; documents and images are refused, not passed through.</p>
+        <p class="hint">Text, logs, CSV, JSON, Word, Excel, PowerPoint and mails. Images and PDF come in M4: until then they are refused, not passed through.</p>
       </section>
 
       <section v-else class="source browser">
@@ -208,6 +216,10 @@ onMounted(async () => {
             @keydown.ctrl.enter="redactText"
             @keydown.meta.enter="redactText"
           />
+          <div v-else-if="result?.output_base64" class="binary">
+            <strong>{{ result.name }}</strong>
+            <p>An Office file has no text to set side by side here: its findings are listed below, by part and paragraph or sheet and cell.</p>
+          </div>
           <ComparePane
             v-else-if="result"
             side="input"
@@ -234,13 +246,18 @@ onMounted(async () => {
           <h2>Output</h2>
           <span v-if="result" class="count">{{ findings.length }} finding{{ findings.length === 1 ? '' : 's' }}</span>
           <span class="spacer" />
-          <button v-if="result" class="small" @click="copyOutput">{{ copied ? 'Copied' : 'Copy' }}</button>
+          <button v-if="result && !result.output_base64" class="small" @click="copyOutput">{{ copied ? 'Copied' : 'Copy' }}</button>
           <button v-if="result" class="small" @click="downloadOutput">Download</button>
         </header>
         <div class="pane-body">
           <div v-if="error" class="failure">
             <strong>No output.</strong>
             <p>{{ error }}</p>
+          </div>
+          <div v-else-if="result?.output_base64" class="binary">
+            <strong>The redacted file is ready.</strong>
+            <p>Every finding replaced in place, formatting kept; author and editor removed from its properties.</p>
+            <button class="primary" @click="downloadOutput">Download {{ redactedName() }}</button>
           </div>
           <ComparePane
             v-else-if="result"
@@ -440,6 +457,15 @@ onMounted(async () => {
   color: var(--text-faint);
   padding: var(--space-4);
   font-size: 13px;
+}
+.binary {
+  margin: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  font-size: 13px;
+  color: var(--text-2);
 }
 .failure {
   margin: var(--space-4);

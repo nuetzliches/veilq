@@ -130,12 +130,24 @@ impl Ner {
     }
 
     /// The person candidates in `text`: byte offsets, the model's score.
+    ///
+    /// A text of one word (a cell, a column's name, a key) has no context to
+    /// read, and the model guesses (`Name` read as a person): there, only
+    /// the patterns decide, with the column's name as their context.
     pub fn candidates(&self, text: &str) -> Result<Vec<Candidate>, Error> {
         let words: Vec<(usize, usize)> = self
             .words
             .find_iter(text)
             .map(|m| (m.start(), m.end()))
             .collect();
+        if words
+            .iter()
+            .filter(|(s, e)| text[*s..*e].chars().any(char::is_alphabetic))
+            .count()
+            < 2
+        {
+            return Ok(Vec::new());
+        }
         let mut out: Vec<Candidate> = Vec::new();
         let mut start = 0;
         while start < words.len() {
@@ -380,5 +392,8 @@ mod tests {
             .map(|c| &text[c.start..c.end])
             .collect();
         assert_eq!(found, ["Lena Vogt"]);
+        // One word has no context: no guess.
+        assert!(ner.candidates("Name").unwrap().is_empty());
+        assert!(ner.candidates("Mira").unwrap().is_empty());
     }
 }

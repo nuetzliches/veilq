@@ -426,6 +426,9 @@ struct RedactResponse {
     /// Per finding, the byte range of its replacement in `output`.
     output_spans: Vec<[usize; 2]>,
     report: Report,
+    /// An Office file: no text to set side by side; the redacted file, base64.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_base64: Option<String>,
 }
 
 async fn redact(
@@ -482,13 +485,31 @@ fn redact_source(state: &AppState, source: Source) -> Result<RedactResponse, Fai
         None => Format::Text,
     };
     if format.is_container() {
-        return Err(Failure(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            format!(
-                "{label}: the UI sets text formats side by side; redact {} files with `veilq redact` or the MCP server",
-                format.name()
-            ),
-        ));
+        // Read whole (ADR-0019, ADR-0020). A mail is text: both sides are
+        // shown, without marks (its findings name their parts). An Office
+        // file is offered as a download.
+        let (out, run) = state
+            .engine
+            .run_bytes(&bytes, format, true)
+            .map_err(Failure::from)?;
+        let mail = format == Format::Eml;
+        return Ok(RedactResponse {
+            name,
+            input: if mail {
+                String::from_utf8_lossy(&bytes).into_owned()
+            } else {
+                String::new()
+            },
+            output: if mail {
+                String::from_utf8_lossy(&out).into_owned()
+            } else {
+                String::new()
+            },
+            input_spans: Vec::new(),
+            output_spans: Vec::new(),
+            report: run.report,
+            output_base64: (!mail).then(|| base64::engine::general_purpose::STANDARD.encode(&out)),
+        });
     }
     // Fail closed: what veilq cannot read is an error, not a pass-through.
     let input = String::from_utf8(bytes).map_err(|_| {
@@ -509,6 +530,7 @@ fn redact_source(state: &AppState, source: Source) -> Result<RedactResponse, Fai
         output: redacted.text,
         input,
         report: redacted.report,
+        output_base64: None,
     })
 }
 
@@ -833,7 +855,7 @@ Mira Albers,14.03.1987
             body["error"]
                 .as_str()
                 .unwrap()
-                .contains("the UI sets text formats"),
+                .contains("not an Office file"),
             "{body}"
         );
     }
