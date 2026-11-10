@@ -21,6 +21,8 @@ pub mod ner;
 pub mod ocr;
 pub mod office;
 pub mod outcome;
+#[cfg(feature = "pdf")]
+pub mod pdf;
 pub mod policy;
 pub mod pseudonym;
 pub mod root;

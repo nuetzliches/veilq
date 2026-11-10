@@ -6,8 +6,8 @@
 //! downloads. A detector the policy requires whose files are not installed
 //! ends the run with exit code 2.
 //!
-//! ONNX Runtime is code that veilq loads: it is pinned like a model, as the
-//! official release archive of each platform and the library in it.
+//! ONNX Runtime and PDFium are code that veilq loads: they are pinned like a
+//! model, as a release archive of each platform and the library in it.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -18,6 +18,10 @@ use crate::Error;
 
 /// The detectors a policy can name.
 pub const DETECTORS: &[&str] = &["pattern", "ner", "ocr", "verifier"];
+
+/// What `veilq models` fetches: the detectors with a model, and `pdf`
+/// (PDFium, which renders a PDF's pages for OCR; ADR-0023).
+pub const COMPONENTS: &[&str] = &["ner", "ocr", "pdf"];
 
 /// A file a detector needs, as compiled into the binary.
 #[derive(Debug)]
@@ -54,6 +58,11 @@ const NER_ONNX: &str = "https://huggingface.co/onnx-community/gliner_multi_pii-v
 /// Face, at a fixed revision (ADR-0023).
 const OCR_DET: &str = "https://huggingface.co/monkt/paddleocr-onnx/resolve/7b02d0a30a07ba2b92ad1ff5a8941ae2c633de65/detection/v3";
 const OCR_LATIN: &str = "https://huggingface.co/monkt/paddleocr-onnx/resolve/7b02d0a30a07ba2b92ad1ff5a8941ae2c633de65/languages/latin";
+
+/// PDFium (BSD-3-Clause, with the licences of its parts in the archive), as
+/// `bblanchon/pdfium-binaries` (MIT) builds it, at the version whose API
+/// pdfium-render binds (ADR-0023).
+const PDFIUM: &str = "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium/8125";
 
 /// The files of this release.
 pub const PINNED: &[PinnedFile] = &[
@@ -138,6 +147,42 @@ pub const PINNED: &[PinnedFile] = &[
         member: Some("onnxruntime-osx-arm64-1.31.1/lib/libonnxruntime.dylib"),
         target: Some(("macos", "aarch64")),
     },
+    PinnedFile {
+        detector: "pdf",
+        file: "pdfium-8125/pdfium.dll",
+        base: PDFIUM,
+        name: "pdfium-win-x64.tgz",
+        sha256: "9a964261760cff52570aabf038ab346d3a5034dd8b30d0d5fe8861235d356b8b",
+        member: Some("bin/pdfium.dll"),
+        target: Some(("windows", "x86_64")),
+    },
+    PinnedFile {
+        detector: "pdf",
+        file: "pdfium-8125/libpdfium.so",
+        base: PDFIUM,
+        name: "pdfium-linux-x64.tgz",
+        sha256: "e1c3ce6e270cb5e0c20816b379ad9f2c1309972697c505f508de92bf5e7d6659",
+        member: Some("lib/libpdfium.so"),
+        target: Some(("linux", "x86_64")),
+    },
+    PinnedFile {
+        detector: "pdf",
+        file: "pdfium-8125/libpdfium.so",
+        base: PDFIUM,
+        name: "pdfium-linux-arm64.tgz",
+        sha256: "8b8818f2ec57d1b213d952ca6d7f0ffeca9d0110487d0e20ad83ba918bc92efa",
+        member: Some("lib/libpdfium.so"),
+        target: Some(("linux", "aarch64")),
+    },
+    PinnedFile {
+        detector: "pdf",
+        file: "pdfium-8125/libpdfium.dylib",
+        base: PDFIUM,
+        name: "pdfium-mac-arm64.tgz",
+        sha256: "4939bd935ac83ddc09a3a4f038bc43a19cea1660316a3667f26cb07a070e139d",
+        member: Some("lib/libpdfium.dylib"),
+        target: Some(("macos", "aarch64")),
+    },
 ];
 
 /// What `detector` needs on this platform: its files and, for a model,
@@ -211,6 +256,14 @@ pub fn ocr_files(model_dir: &Path) -> Option<(PathBuf, PathBuf, PathBuf, PathBuf
         find("dict.txt")?,
         runtime,
     ))
+}
+
+/// The installed PDFium library.
+pub fn pdf_library(model_dir: &Path) -> Option<PathBuf> {
+    if !installed("pdf", model_dir) {
+        return None;
+    }
+    pinned_for("pdf").first().map(|f| model_dir.join(f.file))
 }
 
 /// The installed files of the NER detector: model, tokenizer, runtime.

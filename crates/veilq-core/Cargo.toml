@@ -17,6 +17,7 @@ base64 = "0.23"
 flate2 = "1"
 hmac = "0.13.0"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
+pdfium-render = { version = "0.9.5", default-features = false, features = ["pdfium_8125", "image_025", "thread_safe"], optional = true }
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["load-dynamic", "std"], optional = true }
 regex = "1.13.1"
 schemars = "1.2.3"
@@ -39,5 +40,8 @@ tempfile = "3.27.0"
 ner = ["models", "dep:tokenizers"]
 # OCR (ADR-0023): PaddleOCR in ONNX for images, GIF and PDF pages.
 ocr = ["models"]
+# PDF (ADR-0023): pages rendered with PDFium, loaded at run time, then read
+# with OCR.
+pdf = ["ocr", "dep:pdfium-render"]
 # ONNX Runtime, loaded at run time.
 models = ["dep:ort"]

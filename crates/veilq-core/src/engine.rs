@@ -53,6 +53,8 @@ pub enum Format {
     Webp,
     /// An animated GIF (ADR-0023), frame by frame.
     Gif,
+    /// A PDF (ADR-0023), its pages rendered and read with OCR.
+    Pdf,
 }
 
 impl Format {
@@ -74,6 +76,7 @@ impl Format {
             "jpg" | "jpeg" => Self::Jpeg,
             "webp" => Self::Webp,
             "gif" => Self::Gif,
+            "pdf" => Self::Pdf,
             other => return Err(Error::UnsupportedFormat(other.to_owned())),
         })
     }
@@ -113,6 +116,7 @@ impl Format {
             Self::Jpeg => "jpeg",
             Self::Webp => "webp",
             Self::Gif => "gif",
+            Self::Pdf => "pdf",
         }
     }
 
@@ -146,6 +150,8 @@ pub struct Engine {
     action: Option<Action>,
     #[cfg(feature = "ocr")]
     ocr: Option<std::sync::Arc<crate::ocr::Ocr>>,
+    #[cfg(feature = "pdf")]
+    pdfium: Option<&'static pdfium_render::prelude::Pdfium>,
 }
 
 impl Engine {
@@ -177,6 +183,8 @@ impl Engine {
             action,
             #[cfg(feature = "ocr")]
             ocr: None,
+            #[cfg(feature = "pdf")]
+            pdfium: None,
         })
     }
 
@@ -224,6 +232,7 @@ impl Engine {
         let o = match format {
             Format::Eml => crate::mail::process(self, input, apply)?,
             Format::Png | Format::Jpeg | Format::Webp | Format::Gif => self.image(input, apply)?,
+            Format::Pdf => self.pdf(input, apply)?,
             _ => crate::office::process(self, input, apply)?,
         };
         let report = self.report(o.findings, o.review_reasons);
@@ -456,6 +465,25 @@ impl Engine {
         return self.ocr.is_some();
         #[cfg(not(feature = "ocr"))]
         false
+    }
+
+    /// Renders PDFs with PDFium (ADR-0023).
+    #[cfg(feature = "pdf")]
+    pub fn with_pdfium(mut self, pdfium: &'static pdfium_render::prelude::Pdfium) -> Self {
+        self.pdfium = Some(pdfium);
+        self
+    }
+
+    /// A PDF, redacted (ADR-0023); without OCR and PDFium an error.
+    pub(crate) fn pdf(&self, input: &[u8], apply: bool) -> Result<crate::office::Outcome, Error> {
+        #[cfg(feature = "pdf")]
+        if let (Some(ocr), Some(pdfium)) = (&self.ocr, self.pdfium) {
+            return crate::pdf::redact(self, ocr, pdfium, input, apply);
+        }
+        let _ = (input, apply);
+        Err(Error::Format(
+            "PDFs need OCR and PDFium, which are not installed: `veilq models fetch ocr` and `veilq models fetch pdf`".into(),
+        ))
     }
 
     /// An image, redacted (ADR-0023); without OCR an error (ADR-0003).
@@ -1129,6 +1157,20 @@ mod tests {
     }
 
     #[test]
+    fn pictures_without_their_readers_are_an_error() {
+        // An engine without OCR (and PDFium) reads no image and no PDF,
+        // rather than passing them through (ADR-0003).
+        for name in ["png", "jpeg", "webp", "gif", "pdf"] {
+            let format = Format::from_name(name).unwrap();
+            assert!(format.is_container());
+            assert!(matches!(
+                engine().run_bytes(b"not read", format, true),
+                Err(Error::Format(_))
+            ));
+        }
+    }
+
+    #[test]
     fn text_is_redacted_in_place() {
         let input = "Hallo Jonas Brandt,\nRückruf unter 0421 5550173.\n";
         let r = engine().redact_str(input, Format::Text).unwrap();
@@ -1263,7 +1305,7 @@ mod tests {
             engine().run(&[0x48, 0xff, 0x0a][..], None, Format::Text),
             Err(Error::NotUtf8 { line: 1 })
         ));
-        assert!(Format::from_path(Path::new("a.pdf")).is_err());
+        assert!(Format::from_path(Path::new("a.odt")).is_err());
         assert_eq!(
             Format::from_path(Path::new("a.DOCX")).unwrap(),
             Format::Docx

@@ -144,7 +144,7 @@ enum Command {
 struct InputArgs {
     /// The input's format; by default from the file's extension, `text` for
     /// standard input.
-    #[arg(long, value_parser = ["text", "ndjson", "json", "csv", "tsv", "docx", "xlsx", "pptx", "eml", "png", "jpeg", "webp", "gif"])]
+    #[arg(long, value_parser = ["text", "ndjson", "json", "csv", "tsv", "docx", "xlsx", "pptx", "eml", "png", "jpeg", "webp", "gif", "pdf"])]
     format: Option<String>,
     /// The policy file; by default veilq.toml in the current directory, else
     /// in the git repository's root, else the built-in defaults.
@@ -178,7 +178,7 @@ enum ModelsCommand {
     /// Download a detector's files from their pinned URLs (with `curl`) and
     /// install what matches its SHA-256.
     Fetch {
-        /// `ner`.
+        /// `ner`, `ocr` or `pdf`.
         detector: String,
     },
     /// Install a detector's files from a directory that holds the downloads
@@ -337,6 +337,10 @@ fn engine(policy: &Policy, action: Option<Action>) -> anyhow::Result<Engine> {
         })?;
         engine = engine.with_ocr(std::sync::Arc::new(ocr));
     }
+    #[cfg(feature = "pdf")]
+    if let Some(library) = models::pdf_library(&dir) {
+        engine = engine.with_pdfium(veilq_core::pdf::pdfium(&library)?);
+    }
     let _ = &dir;
     Ok(engine)
 }
@@ -346,7 +350,7 @@ fn models_command(command: ModelsCommand) -> anyhow::Result<Outcome> {
     match command {
         ModelsCommand::List => {
             println!("model directory: {}", dir.display());
-            for d in models::DETECTORS {
+            for d in models::COMPONENTS {
                 let files = models::pinned_for(d);
                 if files.is_empty() {
                     continue;
