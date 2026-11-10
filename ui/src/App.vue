@@ -4,6 +4,7 @@ import { createApi, type Info, type Redaction, type Source } from '@/api';
 import ComparePane from '@/components/ComparePane.vue';
 import FileBrowser from '@/components/FileBrowser.vue';
 import FindingsTable from '@/components/FindingsTable.vue';
+import ImagePane from '@/components/ImagePane.vue';
 
 type Kind = Source['kind'];
 
@@ -30,6 +31,11 @@ const action = ref('');
 const lastRun = ref<{ source: Source; name: string | null } | null>(null);
 
 const findings = computed(() => result.value?.report.findings ?? []);
+/** An image the browser shows: set side by side; a PDF is a download. */
+const image = computed(() => {
+  const r = result.value;
+  return r?.media_type?.startsWith('image/') && r.input_base64 && r.output_base64 ? r : null;
+});
 
 const tabs: { kind: Kind; label: string }[] = [
   { kind: 'text', label: 'Text' },
@@ -209,7 +215,7 @@ onMounted(async () => {
           <strong>Drop a file</strong>
           <span>or click to choose one. It is sent to veilq on this machine only.</span>
         </label>
-        <p class="hint">Text, logs, CSV, JSON, Word, Excel, PowerPoint and mails. Images and PDF come in M4: until then they are refused, not passed through.</p>
+        <p class="hint">Text, logs, CSV, JSON, Word, Excel, PowerPoint, mails, images (PNG, JPEG, WebP, GIF) and PDF. Images and PDF need OCR (`veilq models fetch ocr`, for PDF also `pdf`); without it they are refused, not passed through.</p>
       </section>
 
       <section v-else class="source browser">
@@ -233,9 +239,18 @@ onMounted(async () => {
             @keydown.ctrl.enter="redactText"
             @keydown.meta.enter="redactText"
           />
+          <ImagePane
+            v-else-if="image"
+            side="input"
+            :data="image.input_base64!"
+            :media-type="image.media_type!"
+            :findings="findings"
+            :hovered="hovered"
+            @hover="hovered = $event"
+          />
           <div v-else-if="result?.output_base64" class="binary">
             <strong>{{ result.name }}</strong>
-            <p>An Office file has no text to set side by side here: its findings are listed below, by part and paragraph or sheet and cell.</p>
+            <p>This file has no text to set side by side here: its findings are listed below, by part and paragraph, sheet and cell, or page and region.</p>
           </div>
           <ComparePane
             v-else-if="result"
@@ -271,9 +286,19 @@ onMounted(async () => {
             <strong>No output.</strong>
             <p>{{ error }}</p>
           </div>
+          <ImagePane
+            v-else-if="image"
+            side="output"
+            :data="image.output_base64!"
+            :media-type="image.media_type!"
+            :findings="findings"
+            :hovered="hovered"
+            @hover="hovered = $event"
+          />
           <div v-else-if="result?.output_base64" class="binary">
             <strong>The redacted file is ready.</strong>
-            <p>Every finding replaced in place, formatting kept; author and editor removed from its properties.</p>
+            <p v-if="result.media_type === 'application/pdf'">Every page rewritten as an image with its findings blacked out; the text layer, links and metadata are gone.</p>
+            <p v-else>Every finding replaced in place, formatting kept; author and editor removed from its properties.</p>
             <button class="primary" @click="downloadOutput">Download {{ redactedName() }}</button>
           </div>
           <ComparePane

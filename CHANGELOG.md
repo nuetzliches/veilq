@@ -66,3 +66,6 @@ Notable changes per release. The format follows
 - The UI chooses the action of a run (`mask`, `fake`, `remove`, and
   `pseudonymize` when a key is set) instead of the policy's, as `--action`
   does; a change runs the last source again.
+- The UI sets an image beside its redacted twin, each finding a frame on
+  both sides; a PDF and a GIF are offered as a download, with their
+  findings by page or frame.

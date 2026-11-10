@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mockRedact } from '@/api/mock';
 import { takeToken } from '@/api/client';
-import { segments } from './segments';
+import { describeLocation, segments } from './segments';
 
 describe('segments', () => {
   it('cuts at byte offsets, not UTF-16 offsets', () => {
@@ -44,5 +44,14 @@ describe('takeToken', () => {
     expect(replaced).toBe('/');
     const later = { hash: '', pathname: '/', search: '' } as Location;
     expect(takeToken(later, fakeStorage, fakeHistory)).toBe('ab12');
+  });
+});
+
+describe('describeLocation', () => {
+  it('names the part and page of a region', () => {
+    expect(describeLocation({ kind: 'region', x: 4, y: 8, width: 20, height: 10 })).toBe('20×10 at 4,8');
+    expect(
+      describeLocation({ kind: 'region', part: 'word/media/image1.png', frame: 2, x: 4, y: 8, width: 20, height: 10 }),
+    ).toBe('word/media/image1.png, page/frame 2, 20×10 at 4,8');
   });
 });

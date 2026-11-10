@@ -59,8 +59,12 @@ export interface Redaction {
   /** Per finding, the byte range of its replacement in `output`. */
   output_spans: [number, number][];
   report: Report;
-  /** An Office file: the redacted file, base64; `input` and `output` are empty. */
+  /** An Office file, image or PDF: the redacted file, base64; `input` and `output` are empty. */
   output_base64?: string;
+  /** An image or PDF: the input, base64. */
+  input_base64?: string;
+  /** An image or PDF: its media type. */
+  media_type?: string;
 }
 
 export interface Api {

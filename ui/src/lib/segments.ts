@@ -37,7 +37,7 @@ export function describeLocation(location: Location): string {
     case 'cell':
       return `${location.sheet ? `${location.sheet}, ` : ''}row ${location.row}, col ${location.column}`;
     case 'region':
-      return `${location.frame ? `frame ${location.frame}, ` : ''}${location.width}×${location.height} at ${location.x},${location.y}`;
+      return `${location.part ? `${location.part}, ` : ''}${location.frame ? `page/frame ${location.frame}, ` : ''}${location.width}×${location.height} at ${location.x},${location.y}`;
   }
 }
 

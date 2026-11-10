@@ -442,9 +442,29 @@ struct RedactResponse {
     /// Per finding, the byte range of its replacement in `output`.
     output_spans: Vec<[usize; 2]>,
     report: Report,
-    /// An Office file: no text to set side by side; the redacted file, base64.
+    /// An Office file, image or PDF: no text to set side by side; the
+    /// redacted file, base64.
     #[serde(skip_serializing_if = "Option::is_none")]
     output_base64: Option<String>,
+    /// An image or PDF: the input as it came, base64, to set beside the
+    /// output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input_base64: Option<String>,
+    /// An image or PDF: its media type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    media_type: Option<&'static str>,
+}
+
+/// The media type of a picture format.
+fn media_type(format: Format) -> Option<&'static str> {
+    Some(match format {
+        Format::Png => "image/png",
+        Format::Jpeg => "image/jpeg",
+        Format::Webp => "image/webp",
+        Format::Gif => "image/gif",
+        Format::Pdf => "application/pdf",
+        _ => return None,
+    })
 }
 
 async fn redact(
@@ -539,6 +559,10 @@ fn redact_source(
             output_spans: Vec::new(),
             report: run.report,
             output_base64: (!mail).then(|| base64::engine::general_purpose::STANDARD.encode(&out)),
+            input_base64: format
+                .is_picture()
+                .then(|| base64::engine::general_purpose::STANDARD.encode(&bytes)),
+            media_type: media_type(format),
         });
     }
     // Fail closed: what veilq cannot read is an error, not a pass-through.
@@ -558,6 +582,8 @@ fn redact_source(
         input,
         report: redacted.report,
         output_base64: None,
+        input_base64: None,
+        media_type: None,
     })
 }
 
