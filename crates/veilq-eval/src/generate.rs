@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 use veilq_core::detect::validate;
 use veilq_core::{EntityType, Location};
 
+mod visual;
+
 /// One piece of personal data a document holds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -872,6 +874,20 @@ pub fn corpus(seed: u64) -> Vec<Doc> {
             });
         }
     }
+    // Pictures from a stream of their own as well (ADR-0023).
+    let mut r = Rng::new(seed ^ 0x0C12_FACE_0000_0000);
+    for (path, (content, truth)) in [
+        ("de/png/screenshot-1.png", visual::screenshot_png(&mut r)),
+        ("de/jpeg/form-1.jpg", visual::form_jpeg(&mut r)),
+        ("de/gif/recording-1.gif", visual::recording_gif(&mut r)),
+        ("de/pdf/scan-1.pdf", visual::scan_pdf(&mut r)),
+    ] {
+        docs.push(Doc {
+            path: path.to_owned(),
+            content,
+            truth,
+        });
+    }
     docs
 }
 
@@ -1231,6 +1247,45 @@ mod tests {
                 }
             }
             assert!(!d.truth.is_empty(), "{}", d.path);
+        }
+    }
+
+    #[test]
+    fn a_pictures_truth_is_ink_inside_it() {
+        for d in corpus(7) {
+            let Some(format) = [("png", 0), ("jpg", 1), ("gif", 2)]
+                .iter()
+                .find(|(e, _)| d.path.ends_with(e))
+            else {
+                continue;
+            };
+            let img = image::load_from_memory(&d.content).unwrap().to_rgb8();
+            for t in &d.truth {
+                let Location::Region {
+                    x,
+                    y,
+                    width,
+                    height,
+                    ..
+                } = t.location
+                else {
+                    panic!("{}: {t:?}", d.path);
+                };
+                assert!(
+                    x + width <= img.width() && y + height <= img.height(),
+                    "{}",
+                    d.path
+                );
+                if t.entity.as_str() == "METADATA" || format.1 == 2 {
+                    continue;
+                }
+                // Dark pixels in the box: the value was drawn there.
+                let ink = (y..y + height)
+                    .flat_map(|yy| (x..x + width).map(move |xx| (xx, yy)))
+                    .filter(|&(xx, yy)| img.get_pixel(xx, yy).0.iter().all(|c| *c < 120))
+                    .count();
+                assert!(ink > 0, "{} {t:?}", d.path);
+            }
         }
     }
 

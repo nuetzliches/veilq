@@ -6,6 +6,11 @@
 //! per type; it is the gate, since a missed value leaks and an extra one
 //! costs only readability. **typed** counts the covered ones a finding of the
 //! same type overlaps. A finding that overlaps no truth is a false positive.
+//!
+//! In a picture (ADR-0023) a value is the box of its ink, at its part and
+//! page or frame; it is covered when the boxes found there cover at least
+//! [`COVER`] of it. A picture's `METADATA` (the whole picture) covers and
+//! explains only `METADATA`. Pictures are read only with `--ocr`.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -96,6 +101,54 @@ pub struct PrecisionGate {
     pub min: f64,
 }
 
+/// The share of a value's ink box that findings must cover in a picture.
+pub const COVER: f64 = 0.98;
+
+/// A box in pixels: x, y, width, height.
+type Bounds = (u32, u32, u32, u32);
+
+/// A region's place (part, frame) and box.
+fn region(location: &Location) -> Option<((String, u64), Bounds)> {
+    match location {
+        Location::Region {
+            part,
+            frame,
+            x,
+            y,
+            width,
+            height,
+        } => Some((
+            (part.clone().unwrap_or_default(), frame.unwrap_or(0)),
+            (*x, *y, *width, *height),
+        )),
+        _ => None,
+    }
+}
+
+fn intersects(a: Bounds, b: Bounds) -> bool {
+    a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3
+}
+
+/// The share of `t` that the boxes `found` cover.
+fn covered_share(t: Bounds, found: &[Bounds]) -> f64 {
+    let area = u64::from(t.2) * u64::from(t.3);
+    if area == 0 {
+        return 1.0;
+    }
+    let mut n = 0u64;
+    for y in t.1..t.1 + t.3 {
+        for x in t.0..t.0 + t.2 {
+            if found
+                .iter()
+                .any(|f| x >= f.0 && x < f.0 + f.2 && y >= f.1 && y < f.1 + f.3)
+            {
+                n += 1;
+            }
+        }
+    }
+    n as f64 / area as f64
+}
+
 /// Where a location is, as a key two locations of one place share, and its
 /// byte range there.
 fn place(location: &Location, json_document: bool) -> ((u8, String, u64, u64), (u64, u64)) {
@@ -141,7 +194,18 @@ fn describe(location: &Location) -> String {
             ..
         } => format!("line {line} {p}"),
         Location::Cell { row, column, .. } => format!("row {row}, column {column}"),
-        Location::Region { .. } => "region".into(),
+        Location::Region {
+            part,
+            frame,
+            x,
+            y,
+            width,
+            height,
+        } => format!(
+            "{}{}{width}x{height} at {x},{y}",
+            part.as_ref().map(|p| format!("{p}, ")).unwrap_or_default(),
+            frame.map(|f| format!("frame {f}, ")).unwrap_or_default()
+        ),
     }
 }
 
@@ -186,6 +250,38 @@ pub fn engine_with(ner: bool) -> anyhow::Result<Engine> {
     if !ner {
         return Ok(engine);
     }
+    with_ner(engine)
+}
+
+/// The engine of `check --ocr`: OCR and PDFium as installed (an error
+/// without them), and NER with `ner`.
+pub fn engine_for(ner: bool, ocr: bool) -> anyhow::Result<Engine> {
+    let engine = engine_with(ner)?;
+    if !ocr {
+        return Ok(engine);
+    }
+    #[cfg(feature = "ocr")]
+    {
+        let dir = veilq_core::models::model_dir();
+        let (det, rec, dict, runtime) = veilq_core::models::ocr_files(&dir)
+            .ok_or_else(|| anyhow::anyhow!("OCR is not installed in {}", dir.display()))?;
+        let ocr = veilq_core::ocr::Ocr::load(&veilq_core::ocr::ModelFiles {
+            det: &det,
+            rec: &rec,
+            dict: &dict,
+            runtime: &runtime,
+        })?;
+        let library = veilq_core::models::pdf_library(&dir)
+            .ok_or_else(|| anyhow::anyhow!("PDFium is not installed in {}", dir.display()))?;
+        Ok(engine
+            .with_ocr(std::sync::Arc::new(ocr))
+            .with_pdfium(veilq_core::pdf::pdfium(&library)?))
+    }
+    #[cfg(not(feature = "ocr"))]
+    anyhow::bail!("this build has no OCR")
+}
+
+fn with_ner(engine: Engine) -> anyhow::Result<Engine> {
     #[cfg(feature = "ner")]
     {
         // Loaded once per process: the model is a gigabyte.
@@ -208,7 +304,10 @@ pub fn engine_with(ner: bool) -> anyhow::Result<Engine> {
         Ok(engine.with_ner(ner))
     }
     #[cfg(not(feature = "ner"))]
-    anyhow::bail!("this build has no NER")
+    {
+        let _ = engine;
+        anyhow::bail!("this build has no NER")
+    }
 }
 
 /// The pattern-only engine of the golden tests: the same on every machine.
@@ -218,8 +317,13 @@ pub fn engine() -> anyhow::Result<Engine> {
 
 /// Evaluates every document under `dir`; returns the evaluation and the
 /// number of findings.
-pub fn evaluate(dir: &Path, only: Option<&str>, ner: bool) -> anyhow::Result<(Evaluation, usize)> {
-    let engine = engine_with(ner)?;
+pub fn evaluate(
+    dir: &Path,
+    only: Option<&str>,
+    ner: bool,
+    ocr: bool,
+) -> anyhow::Result<(Evaluation, usize)> {
+    let engine = engine_for(ner, ocr)?;
     let mut eval = Evaluation::default();
     let mut findings_total = 0;
     for doc in documents(dir, only)? {
@@ -227,6 +331,9 @@ pub fn evaluate(dir: &Path, only: Option<&str>, ner: bool) -> anyhow::Result<(Ev
         let bytes = std::fs::read(&doc)?;
         let truth: TruthFile = serde_json::from_str(&std::fs::read_to_string(truth_path(&doc))?)?;
         let format = Format::from_path(&doc)?;
+        if format.is_picture() && !ocr {
+            continue;
+        }
         let json_document = format == Format::Json;
         // A container's values are not shown (they are in its parts).
         let content = if format.is_container() {
@@ -246,6 +353,7 @@ pub fn evaluate(dir: &Path, only: Option<&str>, ner: bool) -> anyhow::Result<(Ev
             .iter()
             .map(|f| place(&f.location, json_document))
             .collect();
+        let metadata = |e: &veilq_core::EntityType| e.as_str() == "METADATA";
         for t in &truth.findings {
             let (key, (s, e)) = place(&t.location, json_document);
             let stat = eval
@@ -253,6 +361,34 @@ pub fn evaluate(dir: &Path, only: Option<&str>, ner: bool) -> anyhow::Result<(Ev
                 .entry(t.entity.as_str().to_owned())
                 .or_default();
             stat.truth += 1;
+            if let Some((at, tb)) = region(&t.location) {
+                let here: Vec<_> = found
+                    .iter()
+                    .filter(|f| metadata(&f.entity) == metadata(&t.entity))
+                    .filter_map(|f| region(&f.location).map(|(p, b)| (p, b, f)))
+                    .filter(|(p, _, _)| *p == at)
+                    .collect();
+                let boxes: Vec<Bounds> = here.iter().map(|(_, b, _)| *b).collect();
+                let share = covered_share(tb, &boxes);
+                if share >= COVER {
+                    stat.covered += 1;
+                    if here
+                        .iter()
+                        .any(|(_, b, f)| f.entity == t.entity && intersects(*b, tb))
+                    {
+                        stat.typed += 1;
+                    }
+                } else {
+                    eval.misses.push(Item {
+                        file: name.clone(),
+                        entity: t.entity.as_str().to_owned(),
+                        location: describe(&t.location),
+                        value: format!("{:.0} % covered", share * 100.0),
+                        detector: None,
+                    });
+                }
+                continue;
+            }
             let mut here: Vec<(u64, u64, &str)> = found_places
                 .iter()
                 .zip(&found)
@@ -285,10 +421,16 @@ pub fn evaluate(dir: &Path, only: Option<&str>, ner: bool) -> anyhow::Result<(Ev
             }
         }
         for (f, (key, (s, e))) in found.iter().zip(&found_places) {
-            let explained = truth.findings.iter().any(|t| {
-                let (k, (ts, te)) = place(&t.location, json_document);
-                k == *key && ts < *e && te > *s
-            });
+            let explained = match region(&f.location) {
+                Some((at, fb)) => truth.findings.iter().any(|t| {
+                    metadata(&t.entity) == metadata(&f.entity)
+                        && region(&t.location).is_some_and(|(p, tb)| p == at && intersects(fb, tb))
+                }),
+                None => truth.findings.iter().any(|t| {
+                    let (k, (ts, te)) = place(&t.location, json_document);
+                    k == *key && ts < *e && te > *s
+                }),
+            };
             if !explained {
                 eval.per_entity
                     .entry(f.entity.as_str().to_owned())

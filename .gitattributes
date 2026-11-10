@@ -5,3 +5,8 @@ eval/**/*.eml -text
 *.docx binary
 *.xlsx binary
 *.pptx binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.pdf binary
+*.ttf binary

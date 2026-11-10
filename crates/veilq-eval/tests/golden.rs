@@ -24,6 +24,10 @@ fn the_corpus_redacts_as_recorded() {
         let name = check::relative(&root, &doc);
         let input = std::fs::read(&doc).unwrap();
         let format = Format::from_path(&doc).unwrap();
+        // Pictures need OCR, which CI does not install: `check --ocr`.
+        if format.is_picture() {
+            continue;
+        }
         let (output, run) = engine
             .run_bytes(&input, format, true)
             .unwrap_or_else(|e| panic!("{name}: {e}"));

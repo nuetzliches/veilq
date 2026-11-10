@@ -2,6 +2,10 @@
 # eval/gate-ner.toml`, on a machine where `veilq models fetch ner` ran.
 # Names without a word that marks them are NER's to find: no exception for
 # PERSON here.
+#
+# With `--ocr` as well (ADR-0023; `veilq models fetch ocr` and `pdf`), the
+# pictures under `de/png`, `de/jpeg`, `de/gif` and `de/pdf` are read too:
+# a value counts as covered when the boxes found cover 98 % of its ink.
 [recall]
 default = 0.98
 
