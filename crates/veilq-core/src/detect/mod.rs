@@ -60,6 +60,7 @@ pub struct Candidate {
     pub detector: String,
 }
 
+#[derive(Clone)]
 struct Rule {
     detector: String,
     entity: EntityType,
@@ -91,6 +92,7 @@ impl Rule {
 }
 
 /// Allow lists, compiled.
+#[derive(Clone)]
 struct Allow {
     values: Vec<String>,
     patterns: Vec<Regex>,
@@ -98,6 +100,7 @@ struct Allow {
 
 /// The rules of one run: the `intl` pack, the policy's locales, the policy's
 /// own patterns, and how the policy decides.
+#[derive(Clone)]
 pub struct Detector {
     rules: Vec<Rule>,
     allow: Allow,

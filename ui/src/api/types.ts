@@ -26,6 +26,8 @@ export interface Info {
   root: string;
   policy: string;
   default_action: string;
+  /** What a run can choose instead of the policy's actions. */
+  actions: string[];
   max_input: number;
 }
 
@@ -65,7 +67,8 @@ export interface Api {
   readonly mock: boolean;
   info(): Promise<Info>;
   files(dir: string): Promise<Listing>;
-  redact(source: Source): Promise<Redaction>;
+  /** `action`: overrides the policy's actions for this run. */
+  redact(source: Source, action?: string): Promise<Redaction>;
 }
 
 export class ApiError extends Error {

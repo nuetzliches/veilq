@@ -151,6 +151,7 @@ pub struct Redacted {
 }
 
 /// The pipeline of one run: detector, policy, key and faker.
+#[derive(Clone)]
 pub struct Engine {
     detector: Detector,
     key: Option<PseudonymKey>,
@@ -488,6 +489,22 @@ impl Engine {
         return self.ocr.is_some();
         #[cfg(not(feature = "ocr"))]
         false
+    }
+
+    /// This engine with `action` overriding the policy's actions (`None`:
+    /// the policy's), as `--action` does; `pseudonymize` needs a key.
+    pub fn with_action(&self, action: Option<Action>) -> Result<Self, Error> {
+        if action == Some(Action::Pseudonymize) && self.key.is_none() {
+            return Err(Error::KeyMissing);
+        }
+        let mut engine = self.clone();
+        engine.action = action;
+        Ok(engine)
+    }
+
+    /// Whether a pseudonym key is set: `pseudonymize` works.
+    pub fn has_key(&self) -> bool {
+        self.key.is_some()
     }
 
     /// Renders PDFs with PDFium (ADR-0023).

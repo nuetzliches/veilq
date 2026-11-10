@@ -63,3 +63,6 @@ Notable changes per release. The format follows
   and `eval/gate-ner.toml`.
 - `veilq ui --token-file`: the token kept across starts (ADR-0021); under
   devstack an open tab survives a change going live. The UI explains a 401.
+- The UI chooses the action of a run (`mask`, `fake`, `remove`, and
+  `pseudonymize` when a key is set) instead of the policy's, as `--action`
+  does; a change runs the last source again.

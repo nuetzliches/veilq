@@ -35,6 +35,7 @@ export function httpApi(token: string): Api {
     mock: false,
     info: () => call<Info>('/info'),
     files: (dir) => call<Listing>(`/files?dir=${encodeURIComponent(dir)}`),
-    redact: (source: Source) => call<Redaction>('/redact', { method: 'POST', body: JSON.stringify({ source }) }),
+    redact: (source: Source, action?: string) =>
+      call<Redaction>('/redact', { method: 'POST', body: JSON.stringify({ source, action }) }),
   };
 }

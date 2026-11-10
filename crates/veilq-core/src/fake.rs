@@ -56,6 +56,7 @@ const PLACES: &[(&str, &str)] = &[
     ("28195", "Bremen"),
 ];
 
+#[derive(Clone)]
 pub struct Faker {
     seed: Vec<u8>,
 }

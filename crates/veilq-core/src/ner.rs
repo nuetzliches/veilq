@@ -73,6 +73,21 @@ const NOT_NAMES: &[&str] = &[
     "colleague",
     "manager",
     "agent",
+    // Greetings and contact labels: what is left when `remove` took the
+    // name and number after them.
+    "hallo",
+    "hello",
+    "hi",
+    "hey",
+    "dear",
+    "liebe",
+    "lieber",
+    "tel",
+    "telefon",
+    "phone",
+    "fax",
+    "mobil",
+    "mobile",
     "team",
 ];
 
@@ -364,6 +379,10 @@ mod tests {
         assert!(!can_be_name("customer's IBAN"));
         assert!(!can_be_name("IBAN"));
         assert!(!can_be_name("Agent"));
+        // Left alone once `remove` took the name and number (`Hallo , Tel. `).
+        for word in ["Hallo", "Hello", "Dear", "Tel", "Telefon", "Fax", "Mobil"] {
+            assert!(!can_be_name(word), "{word}");
+        }
         assert!(can_be_name("Jonas Brandt's"));
         assert!(can_be_name("Ursula von der Leyen"));
         assert!(can_be_name("MEIER, Jonas"));

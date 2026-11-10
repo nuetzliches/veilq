@@ -24,6 +24,10 @@ const error = ref<string | null>(null);
 const sourceName = ref<string | null>(null);
 const hovered = ref<number | null>(null);
 const copied = ref(false);
+/** The action of a run: `''` for the policy's, else one of `info.actions`. */
+const action = ref('');
+/** The last run's source, run again when the action changes. */
+const lastRun = ref<{ source: Source; name: string | null } | null>(null);
 
 const findings = computed(() => result.value?.report.findings ?? []);
 
@@ -39,14 +43,19 @@ async function run(source: Source, name: string | null) {
   result.value = null;
   hovered.value = null;
   sourceName.value = name;
+  lastRun.value = { source, name };
   try {
-    result.value = await api.redact(source);
+    result.value = await api.redact(source, action.value || undefined);
   } catch (e) {
     // Fail closed: no output at all when veilq could not redact.
     error.value = e instanceof Error ? e.message : String(e);
   } finally {
     busy.value = false;
   }
+}
+
+function changeAction() {
+  if (lastRun.value && !editing.value) void run(lastRun.value.source, lastRun.value.name);
 }
 
 function redactText() {
@@ -154,7 +163,15 @@ onMounted(async () => {
       <dl v-if="info" class="meta">
         <div><dt>root</dt><dd class="mono">{{ info.root }}</dd></div>
         <div><dt>policy</dt><dd class="mono">{{ info.policy }}</dd></div>
-        <div><dt>action</dt><dd class="mono">{{ info.default_action }}</dd></div>
+        <div>
+          <dt><label for="action">action</label></dt>
+          <dd>
+            <select id="action" v-model="action" class="mono" :disabled="busy" @change="changeAction">
+              <option value="">policy ({{ info.default_action }})</option>
+              <option v-for="a in info.actions" :key="a" :value="a">{{ a }}</option>
+            </select>
+          </dd>
+        </div>
         <div><dt>version</dt><dd class="mono">{{ info.version }}</dd></div>
       </dl>
       <p v-else-if="infoError" class="meta error">{{ infoError }}</p>
@@ -323,6 +340,15 @@ onMounted(async () => {
   display: flex;
   gap: 6px;
   min-width: 0;
+}
+.meta select {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 1px var(--space-1);
+  font-size: 12.5px;
+  cursor: pointer;
 }
 .meta dt {
   color: var(--text-muted);

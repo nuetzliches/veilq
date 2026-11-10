@@ -117,7 +117,7 @@ export function mockApi(): Api {
   return {
     mock: true,
     async info() {
-      return { version: 'mock', root: '/mock', policy: 'built-in defaults', default_action: 'mask', max_input: 32 << 20 };
+      return { version: 'mock', root: '/mock', policy: 'built-in defaults', default_action: 'mask', actions: ['mask'], max_input: 32 << 20 };
     },
     async files(dir) {
       const prefix = dir ? `${dir}/` : '';

@@ -21,7 +21,7 @@ use axum::routing::{get, post};
 use base64::Engine as _;
 use include_dir::{Dir, include_dir};
 use serde::{Deserialize, Serialize};
-use veilq_core::{Engine, Error, Format, Policy, Report, root};
+use veilq_core::{Action, Engine, Error, Format, Policy, Report, root};
 
 static UI: Dir<'_> = include_dir!("$OUT_DIR/ui");
 
@@ -313,6 +313,9 @@ struct Info {
     root: String,
     policy: String,
     default_action: &'static str,
+    /// The actions a request can choose instead of the policy's;
+    /// `pseudonymize` only with a key.
+    actions: Vec<&'static str>,
     max_input: usize,
 }
 
@@ -322,6 +325,16 @@ async fn info(State(state): State<Arc<AppState>>) -> axum::Json<Info> {
         root: display_path(&state.root),
         policy: state.policy_source.clone(),
         default_action: state.policy.defaults.action.name(),
+        actions: [
+            Action::Mask,
+            Action::Fake,
+            Action::Remove,
+            Action::Pseudonymize,
+        ]
+        .into_iter()
+        .filter(|a| *a != Action::Pseudonymize || state.engine.has_key())
+        .map(Action::name)
+        .collect(),
         max_input: MAX_INPUT,
     })
 }
@@ -412,6 +425,9 @@ enum Source {
 #[serde(deny_unknown_fields)]
 struct RedactRequest {
     source: Source,
+    /// Overrides the policy's actions for this request, as `--action` does.
+    #[serde(default)]
+    action: Option<Action>,
 }
 
 #[derive(Serialize)]
@@ -435,7 +451,18 @@ async fn redact(
     State(state): State<Arc<AppState>>,
     axum::Json(request): axum::Json<RedactRequest>,
 ) -> Response {
-    let result = tokio::task::spawn_blocking(move || redact_source(&state, request.source)).await;
+    let result = tokio::task::spawn_blocking(move || {
+        let engine = match request.action {
+            None => None,
+            Some(a) => Some(state.engine.with_action(Some(a)).map_err(Failure::from)?),
+        };
+        redact_source(
+            &state,
+            engine.as_ref().unwrap_or(&state.engine),
+            request.source,
+        )
+    })
+    .await;
     match result {
         Ok(Ok(response)) => axum::Json(response).into_response(),
         Ok(Err(failure)) => failure.into_response(),
@@ -443,7 +470,11 @@ async fn redact(
     }
 }
 
-fn redact_source(state: &AppState, source: Source) -> Result<RedactResponse, Failure> {
+fn redact_source(
+    state: &AppState,
+    engine: &Engine,
+    source: Source,
+) -> Result<RedactResponse, Failure> {
     let (name, bytes) = match source {
         Source::Text { text } => (None, text.into_bytes()),
         Source::Upload { name, data } => {
@@ -488,8 +519,7 @@ fn redact_source(state: &AppState, source: Source) -> Result<RedactResponse, Fai
         // Read whole (ADR-0019, ADR-0020). A mail is text: both sides are
         // shown, without marks (its findings name their parts). An Office
         // file is offered as a download.
-        let (out, run) = state
-            .engine
+        let (out, run) = engine
             .run_bytes(&bytes, format, true)
             .map_err(Failure::from)?;
         let mail = format == Format::Eml;
@@ -515,13 +545,10 @@ fn redact_source(state: &AppState, source: Source) -> Result<RedactResponse, Fai
     let input = String::from_utf8(bytes).map_err(|_| {
         Failure(
             StatusCode::UNPROCESSABLE_ENTITY,
-            format!("{label} is not UTF-8 text; images come in M4"),
+            format!("{label} is not UTF-8 text"),
         )
     })?;
-    let redacted = state
-        .engine
-        .redact_str(&input, format)
-        .map_err(Failure::from)?;
+    let redacted = engine.redact_str(&input, format).map_err(Failure::from)?;
     let pairs = |spans: &[std::ops::Range<usize>]| spans.iter().map(|r| [r.start, r.end]).collect();
     Ok(RedactResponse {
         name,
@@ -799,6 +826,44 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn a_run_can_choose_its_action() {
+        let dir = tempfile::tempdir().unwrap();
+        let text = "Hallo Erika Mustermann, Tel. 0421 5550173";
+        let post = |action: &str| {
+            authed("POST", "/api/redact")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "source": { "kind": "text", "text": text }, "action": action })
+                        .to_string(),
+                ))
+                .unwrap()
+        };
+        let (status, body) = send(app(dir.path()), post("fake")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let out = body["output"].as_str().unwrap();
+        assert!(out.starts_with("Hallo ") && !out.contains('<'), "{out}");
+        assert!(
+            !out.contains("Mustermann") && !out.contains("5550173"),
+            "{out}"
+        );
+        let (status, body) = send(app(dir.path()), post("remove")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["output"], "Hallo , Tel. ");
+        // Without a key there is no pseudonym, and the info does not offer it.
+        let (status, _) = send(app(dir.path()), post("pseudonymize")).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let (_, info) = send(
+            app(dir.path()),
+            authed("GET", "/api/info").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(
+            info["actions"],
+            serde_json::json!(["mask", "fake", "remove"])
+        );
     }
 
     #[tokio::test]
