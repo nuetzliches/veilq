@@ -17,11 +17,17 @@ pub mod mapping;
 pub mod models;
 #[cfg(feature = "ner")]
 pub mod ner;
+#[cfg(feature = "ocr")]
+pub mod ocr;
 pub mod office;
 pub mod outcome;
 pub mod policy;
 pub mod pseudonym;
 pub mod root;
+#[cfg(feature = "models")]
+pub mod runtime;
+#[cfg(feature = "ocr")]
+pub mod visual;
 pub mod xml;
 
 pub use action::Action;

@@ -49,8 +49,41 @@ const ORT: &str = "https://github.com/microsoft/onnxruntime/releases/download/v1
 const NER_REPO: &str = "https://huggingface.co/onnx-community/gliner_multi_pii-v1/resolve/2e0397a7e8a250d76c37122232b3cbde42c8d629";
 const NER_ONNX: &str = "https://huggingface.co/onnx-community/gliner_multi_pii-v1/resolve/2e0397a7e8a250d76c37122232b3cbde42c8d629/onnx";
 
+/// PaddleOCR's detector (PP-OCRv3) and Latin recogniser (PP-OCRv5) in
+/// ONNX (Apache-2.0), as `monkt/paddleocr-onnx` publishes them on Hugging
+/// Face, at a fixed revision (ADR-0023).
+const OCR_DET: &str = "https://huggingface.co/monkt/paddleocr-onnx/resolve/7b02d0a30a07ba2b92ad1ff5a8941ae2c633de65/detection/v3";
+const OCR_LATIN: &str = "https://huggingface.co/monkt/paddleocr-onnx/resolve/7b02d0a30a07ba2b92ad1ff5a8941ae2c633de65/languages/latin";
+
 /// The files of this release.
 pub const PINNED: &[PinnedFile] = &[
+    PinnedFile {
+        detector: "ocr",
+        file: "ocr/pp-ocrv3-det/det.onnx",
+        base: OCR_DET,
+        name: "det.onnx",
+        sha256: "ee40e80071ba3a320d4efda75f3e22047a7d049e9bf7bcaaf9daea23fc21b935",
+        member: None,
+        target: None,
+    },
+    PinnedFile {
+        detector: "ocr",
+        file: "ocr/latin-pp-ocrv5-rec/rec.onnx",
+        base: OCR_LATIN,
+        name: "rec.onnx",
+        sha256: "614ffc2d6d3902d360fad7f1b0dd455ee45e877069d14c4e51a99dc4ef144409",
+        member: None,
+        target: None,
+    },
+    PinnedFile {
+        detector: "ocr",
+        file: "ocr/latin-pp-ocrv5-rec/dict.txt",
+        base: OCR_LATIN,
+        name: "dict.txt",
+        sha256: "3c0a8a79b612653c25f765271714f71281e4e955962c153e272b7b8c1d2b13ff",
+        member: None,
+        target: None,
+    },
     PinnedFile {
         detector: "ner",
         file: "ner/gliner_multi_pii-v1-fp16/model.onnx",
@@ -70,7 +103,7 @@ pub const PINNED: &[PinnedFile] = &[
         target: None,
     },
     PinnedFile {
-        detector: "ner",
+        detector: "runtime",
         file: "onnxruntime-1.31.1/onnxruntime.dll",
         base: ORT,
         name: "onnxruntime-win-x64-1.31.1.zip",
@@ -79,7 +112,7 @@ pub const PINNED: &[PinnedFile] = &[
         target: Some(("windows", "x86_64")),
     },
     PinnedFile {
-        detector: "ner",
+        detector: "runtime",
         file: "onnxruntime-1.31.1/libonnxruntime.so",
         base: ORT,
         name: "onnxruntime-linux-x64-1.31.1.tgz",
@@ -88,7 +121,7 @@ pub const PINNED: &[PinnedFile] = &[
         target: Some(("linux", "x86_64")),
     },
     PinnedFile {
-        detector: "ner",
+        detector: "runtime",
         file: "onnxruntime-1.31.1/libonnxruntime.so",
         base: ORT,
         name: "onnxruntime-linux-aarch64-1.31.1.tgz",
@@ -97,7 +130,7 @@ pub const PINNED: &[PinnedFile] = &[
         target: Some(("linux", "aarch64")),
     },
     PinnedFile {
-        detector: "ner",
+        detector: "runtime",
         file: "onnxruntime-1.31.1/libonnxruntime.dylib",
         base: ORT,
         name: "onnxruntime-osx-arm64-1.31.1.tgz",
@@ -107,11 +140,14 @@ pub const PINNED: &[PinnedFile] = &[
     },
 ];
 
-/// What `detector` needs on this platform.
+/// What `detector` needs on this platform: its files and, for a model,
+/// ONNX Runtime.
 pub fn pinned_for(detector: &str) -> Vec<&'static PinnedFile> {
     PINNED
         .iter()
-        .filter(|f| f.detector == detector)
+        .filter(|f| {
+            f.detector == detector || (f.detector == "runtime" && matches!(detector, "ner" | "ocr"))
+        })
         .filter(|f| {
             f.target.is_none_or(|(os, arch)| {
                 os == std::env::consts::OS && arch == std::env::consts::ARCH
@@ -151,6 +187,30 @@ pub fn check_required(required: &[String], model_dir: &Path) -> Result<(), Error
         }
     }
     Ok(())
+}
+
+/// The installed files of OCR: detector, recogniser, dictionary, runtime.
+pub fn ocr_files(model_dir: &Path) -> Option<(PathBuf, PathBuf, PathBuf, PathBuf)> {
+    if !installed("ocr", model_dir) {
+        return None;
+    }
+    let files = pinned_for("ocr");
+    let find = |suffix: &str| {
+        files
+            .iter()
+            .find(|f| f.file.ends_with(suffix))
+            .map(|f| model_dir.join(f.file))
+    };
+    let runtime = files
+        .iter()
+        .find(|f| f.member.is_some())
+        .map(|f| model_dir.join(f.file))?;
+    Some((
+        find("det.onnx")?,
+        find("rec.onnx")?,
+        find("dict.txt")?,
+        runtime,
+    ))
 }
 
 /// The installed files of the NER detector: model, tokenizer, runtime.

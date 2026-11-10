@@ -95,20 +95,7 @@ pub struct ModelFiles<'a> {
 
 impl Ner {
     pub fn load(files: &ModelFiles) -> Result<Self, Error> {
-        // ONNX Runtime allows one environment per process: the first load
-        // makes it, every later one uses it.
-        static ENV: std::sync::OnceLock<ort::environment::Environment> = std::sync::OnceLock::new();
-        let env = match ENV.get() {
-            Some(env) => env,
-            None => {
-                let env = ort::init_from(files.runtime)
-                    .map_err(|e| error(format!("ONNX Runtime {}: {e}", files.runtime.display())))?
-                    .with_name("veilq")
-                    .build()
-                    .map_err(error)?;
-                ENV.get_or_init(|| env)
-            }
-        };
+        let env = crate::runtime::env(files.runtime)?;
         let session = Session::builder(env)
             .map_err(error)?
             .commit_from_file(files.model)
@@ -269,21 +256,15 @@ fn confidence(score: f32) -> f32 {
     ((0.7 + 0.3 * score) * 1000.0).round() / 1000.0
 }
 
-fn is_role_only(span: &str) -> bool {
-    span.split(|c: char| !c.is_alphanumeric())
-        .filter(|w| !w.is_empty())
-        .all(|w| NOT_NAMES.contains(&w.to_lowercase().as_str()))
-}
-
 /// Whether a span can be a name: a word of letters that starts with a
 /// capital, not a role word. On a few words the model calls anything a
 /// person (a column `name`, an id `1`).
 fn can_be_name(span: &str) -> bool {
-    let capitalised = span.split(|c: char| !c.is_alphabetic()).any(|w| {
-        let mut chars = w.chars();
-        chars.next().is_some_and(char::is_uppercase) && w.chars().count() >= 2
-    });
-    capitalised && !is_role_only(span)
+    span.split(|c: char| !c.is_alphabetic()).any(|w| {
+        w.chars().next().is_some_and(char::is_uppercase)
+            && w.chars().count() >= 2
+            && !NOT_NAMES.contains(&w.to_lowercase().as_str())
+    })
 }
 
 /// The person spans of the logits `[1, words, max_width, labels]`.
@@ -356,14 +337,14 @@ mod tests {
 
     #[test]
     fn role_words_are_no_names() {
-        assert!(is_role_only("Der Kunde"));
-        assert!(is_role_only("Herr Doktor"));
-        assert!(!is_role_only("Herr Kern"));
+        assert!(!can_be_name("Der Kunde"));
+        assert!(!can_be_name("Herr Doktor"));
         assert!(!can_be_name("name"));
         assert!(!can_be_name("1"));
         assert!(!can_be_name("Der Kunde"));
         assert!(can_be_name("Lena Vogt"));
         assert!(can_be_name("Herr Kern"));
+        assert!(!can_be_name("Kunde #1"));
         assert_eq!(confidence(MIN_SCORE), 0.79);
     }
 

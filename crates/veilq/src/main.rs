@@ -144,7 +144,7 @@ enum Command {
 struct InputArgs {
     /// The input's format; by default from the file's extension, `text` for
     /// standard input.
-    #[arg(long, value_parser = ["text", "ndjson", "json", "csv", "tsv", "docx", "xlsx", "pptx", "eml"])]
+    #[arg(long, value_parser = ["text", "ndjson", "json", "csv", "tsv", "docx", "xlsx", "pptx", "eml", "png", "jpeg", "webp"])]
     format: Option<String>,
     /// The policy file; by default veilq.toml in the current directory, else
     /// in the git repository's root, else the built-in defaults.
@@ -315,16 +315,29 @@ fn engine(policy: &Policy, action: Option<Action>) -> anyhow::Result<Engine> {
             seed
         }
     };
-    let engine = Engine::new(policy, key, &seed, action)?;
+    #[allow(unused_mut)]
+    let mut engine = Engine::new(policy, key, &seed, action)?;
+    let dir = models::model_dir();
     #[cfg(feature = "ner")]
-    if let Some((model, tokenizer, runtime)) = models::ner_files(&models::model_dir()) {
+    if let Some((model, tokenizer, runtime)) = models::ner_files(&dir) {
         let ner = veilq_core::ner::Ner::load(&veilq_core::ner::ModelFiles {
             model: &model,
             tokenizer: &tokenizer,
             runtime: &runtime,
         })?;
-        return Ok(engine.with_ner(std::sync::Arc::new(ner)));
+        engine = engine.with_ner(std::sync::Arc::new(ner));
     }
+    #[cfg(feature = "ocr")]
+    if let Some((det, rec, dict, runtime)) = models::ocr_files(&dir) {
+        let ocr = veilq_core::ocr::Ocr::load(&veilq_core::ocr::ModelFiles {
+            det: &det,
+            rec: &rec,
+            dict: &dict,
+            runtime: &runtime,
+        })?;
+        engine = engine.with_ocr(std::sync::Arc::new(ocr));
+    }
+    let _ = &dir;
     Ok(engine)
 }
 
@@ -384,6 +397,10 @@ fn models_command(command: ModelsCommand) -> anyhow::Result<Outcome> {
         }
         ModelsCommand::Install { detector, from } => {
             for f in pinned_files(&detector)? {
+                if dir.join(f.file).is_file() {
+                    println!("ok       {}", f.file);
+                    continue;
+                }
                 let src = from.join(f.name);
                 if !src.is_file() {
                     anyhow::bail!("{} is not in {}", f.name, from.display());

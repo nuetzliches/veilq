@@ -47,6 +47,10 @@ pub enum Format {
     Pptx,
     /// A mail (ADR-0020), read whole.
     Eml,
+    /// Images (ADR-0023), read whole; they need OCR.
+    Png,
+    Jpeg,
+    Webp,
 }
 
 impl Format {
@@ -64,6 +68,9 @@ impl Format {
             "xlsx" => Self::Xlsx,
             "pptx" => Self::Pptx,
             "eml" => Self::Eml,
+            "png" => Self::Png,
+            "jpg" | "jpeg" => Self::Jpeg,
+            "webp" => Self::Webp,
             other => return Err(Error::UnsupportedFormat(other.to_owned())),
         })
     }
@@ -99,13 +106,19 @@ impl Format {
             Self::Xlsx => "xlsx",
             Self::Pptx => "pptx",
             Self::Eml => "eml",
+            Self::Png => "png",
+            Self::Jpeg => "jpeg",
+            Self::Webp => "webp",
         }
     }
 
     /// Whether the format is read whole as bytes ([`Engine::run_bytes`]),
     /// not streamed as text.
     pub fn is_container(self) -> bool {
-        matches!(self, Self::Docx | Self::Xlsx | Self::Pptx | Self::Eml)
+        !matches!(
+            self,
+            Self::Text | Self::Ndjson | Self::Json | Self::Csv { .. }
+        )
     }
 }
 
@@ -127,6 +140,8 @@ pub struct Engine {
     key: Option<PseudonymKey>,
     faker: Faker,
     action: Option<Action>,
+    #[cfg(feature = "ocr")]
+    ocr: Option<std::sync::Arc<crate::ocr::Ocr>>,
 }
 
 impl Engine {
@@ -156,6 +171,8 @@ impl Engine {
             key,
             faker: Faker::new(fake_seed),
             action,
+            #[cfg(feature = "ocr")]
+            ocr: None,
         })
     }
 
@@ -202,6 +219,7 @@ impl Engine {
         }
         let o = match format {
             Format::Eml => crate::mail::process(self, input, apply)?,
+            Format::Png | Format::Jpeg | Format::Webp => self.image(input, apply)?,
             _ => crate::office::process(self, input, apply)?,
         };
         let report = self.report(o.findings, o.review_reasons);
@@ -282,9 +300,7 @@ impl Engine {
                         self.emit(&pending, pending.len(), segments, &mut state, &mut output)?;
                         pending.len()
                     }
-                    Format::Docx | Format::Xlsx | Format::Pptx | Format::Eml => {
-                        unreachable!("refused above")
-                    }
+                    _ => unreachable!("refused above"),
                 };
                 pending.drain(..consumed);
             }
@@ -421,6 +437,33 @@ impl Engine {
         state.out_offset += out.len();
         state.line += chunk[..upto].bytes().filter(|b| *b == b'\n').count() as u64;
         Ok(())
+    }
+
+    /// Reads images with OCR (ADR-0023).
+    #[cfg(feature = "ocr")]
+    pub fn with_ocr(mut self, ocr: std::sync::Arc<crate::ocr::Ocr>) -> Self {
+        self.ocr = Some(ocr);
+        self
+    }
+
+    /// Whether images can be read.
+    pub fn has_ocr(&self) -> bool {
+        #[cfg(feature = "ocr")]
+        return self.ocr.is_some();
+        #[cfg(not(feature = "ocr"))]
+        false
+    }
+
+    /// An image, redacted (ADR-0023); without OCR an error (ADR-0003).
+    pub(crate) fn image(&self, input: &[u8], apply: bool) -> Result<crate::office::Outcome, Error> {
+        #[cfg(feature = "ocr")]
+        if let Some(ocr) = &self.ocr {
+            return crate::visual::image(self, ocr, input, apply);
+        }
+        let _ = (input, apply);
+        Err(Error::Format(
+            "images need OCR, which is not installed: `veilq models fetch ocr`".into(),
+        ))
     }
 
     /// Runs the NER model beside the patterns (ADR-0022).

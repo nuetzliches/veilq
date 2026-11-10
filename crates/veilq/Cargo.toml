@@ -25,9 +25,11 @@ veilq-core.workspace = true
 workspace = true
 
 [features]
-default = ["ui", "mcp", "ner"]
+default = ["ui", "mcp", "ner", "ocr"]
 # NER (ADR-0022): runs when `veilq models fetch ner` installed it.
 ner = ["veilq-core/ner"]
+# OCR (ADR-0023): runs when `veilq models fetch ocr` installed it.
+ocr = ["veilq-core/ocr"]
 # `veilq mcp`: the MCP server over stdio and HTTP (ADR-0016).
 mcp = ["dep:rmcp", "dep:axum", "dep:tokio", "dep:base64"]
 # `veilq ui`: the local web UI (ADR-0008). Embeds `ui/dist` when it was built.

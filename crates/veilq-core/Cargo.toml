@@ -16,6 +16,7 @@ age = "0.12"
 base64 = "0.23"
 flate2 = "1"
 hmac = "0.13.0"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["load-dynamic", "std"], optional = true }
 regex = "1.13.1"
 schemars = "1.2.3"
@@ -35,4 +36,8 @@ tempfile = "3.27.0"
 [features]
 # NER (ADR-0022): a GLiNER model in ONNX; ONNX Runtime is loaded at run time,
 # nothing is downloaded when veilq is built.
-ner = ["dep:ort", "dep:tokenizers"]
+ner = ["models", "dep:tokenizers"]
+# OCR (ADR-0023): PaddleOCR in ONNX for images, GIF and PDF pages.
+ocr = ["models"]
+# ONNX Runtime, loaded at run time.
+models = ["dep:ort"]
