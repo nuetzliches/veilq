@@ -335,6 +335,66 @@ pub(crate) const NOT_NAMES: &[&str] = &[
     "team",
 ];
 
+/// Stems of German words that mean a person or a group of people. German
+/// writes every noun with a capital, and NER calls a word that means a
+/// person one (`Kein Inhalt mit Personen.`). Each takes the endings in
+/// [`PERSON_NOUN_ENDINGS`] and may end a compound (`Kontaktperson`). Words
+/// that are common surnames as well (`Richter`, `Schüler`, `Bürger`,
+/// `Gast`) are left out: a name is not dropped to spare a false positive.
+const PERSON_NOUNS: &[&str] = &[
+    "person",
+    "mensch",
+    "leut",
+    "kind",
+    "eltern",
+    "gäste",
+    "zeug",
+    "partner",
+    "nachbar",
+    "kund",
+    "nehmer",
+    "geber",
+    "mieter",
+    "käufer",
+    "kläger",
+    "antragsteller",
+    "inhaber",
+    "eigentümer",
+    "bewerber",
+    "besucher",
+    "bewohner",
+    "einwohner",
+    "betreuer",
+    "vertreter",
+    "arbeiter",
+    "schuldner",
+    "gläubiger",
+    // Adjectives used as nouns.
+    "betroffen",
+    "beteiligt",
+    "beklagt",
+    "beschuldigt",
+    "angehörig",
+    "bevollmächtigt",
+    "teilnehmend",
+];
+
+/// The endings of [`PERSON_NOUNS`]: plural, feminine, case.
+const PERSON_NOUN_ENDINGS: &[&str] = &["", "e", "en", "er", "em", "n", "s", "in", "innen"];
+
+/// Whether `word` means a person or a group of people ([`PERSON_NOUNS`]),
+/// alone, inflected or at the end of a compound, or starts with `Personen`.
+pub(crate) fn person_noun(word: &str) -> bool {
+    let w = word.to_lowercase();
+    w.starts_with("personen")
+        || PERSON_NOUNS.iter().any(|stem| {
+            w.ends_with(stem)
+                || PERSON_NOUN_ENDINGS
+                    .iter()
+                    .any(|e| !e.is_empty() && w.strip_suffix(e).is_some_and(|s| s.ends_with(stem)))
+        })
+}
+
 /// Whether `span` is nothing but role, title and greeting words
 /// ([`NOT_NAMES`]): `Herr Doktor`, `Frau Kundin` name no person, whichever
 /// detector found them.
