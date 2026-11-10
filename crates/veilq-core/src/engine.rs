@@ -197,7 +197,7 @@ impl Engine {
         })
     }
 
-    fn action_for(&self, c: &Candidate) -> Action {
+    pub(crate) fn action_for(&self, c: &Candidate) -> Action {
         self.action
             .unwrap_or_else(|| self.detector.policy().action_for(&c.entity))
     }

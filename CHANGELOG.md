@@ -63,6 +63,14 @@ Notable changes per release. The format follows
   and `eval/gate-ner.toml`.
 - `veilq ui --token-file`: the token kept across starts (ADR-0021); under
   devstack an open tab survives a change going live. The UI explains a 401.
+- M4 (ADR-0023): images (PNG, JPEG, WebP) read with OCR (PaddleOCR in
+  ONNX, `veilq models fetch ocr`), each finding's characters filled black,
+  metadata removed by encoding anew; GIF frame by frame with boxes that
+  stay while their pixels stand still; PDF rendered with PDFium
+  (`veilq models fetch pdf`) into a new PDF of page images; pictures inside
+  Office files and mails redacted the same way. A region names its `part`.
+  The corpus has a screenshot, a form photo with EXIF, a screen recording
+  and a scanned letter; `veilq-eval check --ocr` measures them.
 - The UI chooses the action of a run (`mask`, `fake`, `remove`, and
   `pseudonymize` when a key is set) instead of the policy's, as `--action`
   does; a change runs the last source again.

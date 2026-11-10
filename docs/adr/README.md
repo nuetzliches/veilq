@@ -62,3 +62,4 @@ keep it to about a page.
 | [0020](0020-mail-headers-bodies-and-attachments-are-read-and-written-as-mime.md) | Mail headers, bodies and attachments are read and written as MIME | Accepted |
 | [0021](0021-the-ui-token-can-be-kept-in-a-file-across-starts.md) | The UI's token can be kept in a file across starts | Accepted |
 | [0022](0022-ner-is-gliner-in-onnx-optional-and-pinned.md) | NER is GLiNER in ONNX, optional and pinned | Accepted |
+| [0023](0023-pictures-are-read-with-ocr-and-redacted-with-black-boxes.md) | Pictures are read with OCR and redacted with black boxes | Accepted |

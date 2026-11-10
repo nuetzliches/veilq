@@ -34,6 +34,9 @@ use crate::ocr::{Line, Ocr, Rect};
 use crate::office::Outcome;
 
 const PAD: u32 = 2;
+
+/// Said when a policy asks for `pseudonymize` or `fake` in a picture.
+pub const BOXES_ONLY: &str = "in a picture every action is a black box: a pseudonym or a stand-in cannot be written into pixels faithfully";
 const ROUNDS: usize = 3;
 
 fn error(message: impl std::fmt::Display) -> Error {
@@ -179,6 +182,13 @@ pub fn redact_picture(
                 continue;
             }
             let bound = rects.iter().skip(1).fold(rects[0], |a, r| a.union(r));
+            if matches!(
+                engine.action_for(&c),
+                crate::Action::Pseudonymize | crate::Action::Fake
+            ) && !out.review_reasons.iter().any(|r| r == BOXES_ONLY)
+            {
+                out.review_reasons.push(BOXES_ONLY.into());
+            }
             out.findings.push(Finding {
                 entity: c.entity.clone(),
                 location: Location::Region {
