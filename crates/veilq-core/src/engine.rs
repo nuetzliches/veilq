@@ -358,7 +358,7 @@ impl Engine {
             if starts.len() > CARRY_LINES {
                 cut = starts[starts.len() - CARRY_LINES];
                 // A finding across the cut goes whole into the next chunk.
-                for f in self.detector.findings(chunk, "")? {
+                for f in self.findings(chunk, "")? {
                     if f.start < cut && f.end > cut {
                         cut = chunk[..f.start].rfind('\n').map_or(0, |i| i + 1);
                     }
@@ -545,7 +545,19 @@ impl Engine {
 
     /// The findings in `text`, decided (for formats beside this module).
     pub(crate) fn findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
-        self.detector.findings(text, context)
+        // veilq's own placeholders (`<PERSON>`, `[PERSON:0a1b2c3d]`,
+        // ADR-0001) are no personal data: what lies inside one is dropped, so
+        // a model that reads `<PERSON>` as a name changes nothing.
+        static PLACEHOLDER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(r"<[A-Z][A-Z0-9_]*>|\[[A-Z][A-Z0-9_]*:[0-9a-f]{8}\]")
+                .expect("a valid regex")
+        });
+        let mut found = self.detector.findings(text, context)?;
+        if text.contains(['<', '[']) {
+            let spans: Vec<Range<usize>> = PLACEHOLDER.find_iter(text).map(|m| m.range()).collect();
+            found.retain(|c| !spans.iter().any(|s| s.start <= c.start && c.end <= s.end));
+        }
+        Ok(found)
     }
 
     /// `text` cut into pieces: what stays (`false`) and each finding's
@@ -1177,6 +1189,22 @@ mod tests {
 
     fn engine() -> Engine {
         Engine::new(&Policy::default(), None, b"seed", None).unwrap()
+    }
+
+    #[test]
+    fn a_placeholder_is_never_a_finding() {
+        // A model reads `<PERSON>` as a name; redacting a redacted text again
+        // turned `<DATE_OF_BIRTH>` into `<PERSON>`. Placeholders are veilq's
+        // own output (ADR-0001), not personal data.
+        let policy = Policy::parse(
+            "version = 1\n[[patterns]]\nname = \"caps\"\nentity = \"PERSON\"\nregex = '[A-Z]{3,}(?:_[A-Z]+)?'\n",
+        )
+        .unwrap();
+        let e = Engine::new(&policy, None, b"s", None).unwrap();
+        let text = "geb. <DATE_OF_BIRTH>, Kunde [PERSON:0a1b2c3d], <PERSON>";
+        assert!(e.findings(text, "").unwrap().is_empty());
+        let found = e.findings("Kunde MEIER", "").unwrap();
+        assert_eq!(found.len(), 1);
     }
 
     #[test]
