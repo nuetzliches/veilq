@@ -6,6 +6,15 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A release has `veilq.exe` on its own too, beside the zip: a double click
+  without unpacking, always at `releases/latest/download/veilq.exe`.
+- A landing page for people who do not use a command line,
+  nuetzliches.github.io/veilq: the download for their system, a
+  screenshot, four steps to start.
+- The README starts with the same: download, screenshot, four steps.
+
 ## [0.1.3] - 2026-11-11
 
 ### Changed
