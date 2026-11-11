@@ -64,4 +64,9 @@ ignore = [
     # Unmaintained; in veilq-eval only (the corpus generator draws its text
     # with ab_glyph), not in veilq.
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser: veilq-eval's corpus generator only" },
+    # Unmaintained proc macro of glib/gtk, which tao and wry use on Linux
+    # only; veilq uses them on Windows only (ADR-0029), so it is in no build
+    # veilq ships. cargo-deny lists their Linux dependencies once they are
+    # in the graph for Windows.
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: gtk's macros, Linux side of tao/wry that veilq does not build" },
 ]
