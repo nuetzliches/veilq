@@ -70,3 +70,4 @@ keep it to about a page.
 | [0028](0028-a-user-policy-edited-in-the-ui-and-folders-redacted-whole.md) | A user policy, edited in the UI, and folders redacted whole | Accepted |
 | [0029](0029-veilq-shows-its-ui-in-a-window-of-its-own.md) | veilq shows its UI in a window of its own | Accepted |
 | [0030](0030-a-gif-frame-is-read-where-it-changed.md) | A GIF frame is read where it changed | Accepted |
+| [0031](0031-a-click-starts-veilq-without-a-console-window.md) | A click starts veilq without a console window | Accepted |

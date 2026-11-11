@@ -6,6 +6,13 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A click on the pinned veilq (or its Start menu entry) opened a terminal
+  beside veilq's window, with Windows Terminal as the default terminal. Its
+  manifest now tells Windows to make no console for such a start; where
+  Windows ignores that, veilq starts itself again without one (ADR-0031).
+
 ### Changed
 
 - A GIF frame is read only in bands around the rows that changed against

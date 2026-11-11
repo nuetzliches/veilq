@@ -172,6 +172,11 @@ enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// What a double click starts, without a console window: veilq starts
+    /// itself so where Windows gave the click one (ADR-0031).
+    #[cfg(feature = "ui")]
+    #[command(hide = true)]
+    Desktop,
     /// Remove what setup installed for this user: shortcuts, the PATH
     /// entry, the entry in "Installed apps" and the program (ADR-0027).
     #[cfg(feature = "ui")]
@@ -261,6 +266,9 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
     let Some(command) = cli.command else {
         #[cfg(feature = "ui")]
         if desktop::double_clicked() {
+            if desktop::handed_on() {
+                return Ok(Outcome::Clean);
+            }
             return start_desktop();
         }
         use clap::CommandFactory;
@@ -382,6 +390,8 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
             Ok(Outcome::Clean)
         }
         #[cfg(feature = "ui")]
+        Command::Desktop => start_desktop(),
+        #[cfg(feature = "ui")]
         Command::Uninstall { models } => {
             desktop::uninstall(&desktop::Uninstall { models })?;
             println!("veilq is removed for this user; its folder goes once this window closes.");
@@ -434,8 +444,7 @@ fn start_desktop() -> anyhow::Result<Outcome> {
         ui::run(options)
     })();
     if let Err(e) = result {
-        eprintln!("error: {e:#}\n\nPress Enter to close.");
-        let _ = std::io::stdin().read_line(&mut String::new());
+        desktop::report_error(&format!("veilq could not start:\n\n{e:#}"));
         return Ok(Outcome::Error);
     }
     Ok(Outcome::Clean)

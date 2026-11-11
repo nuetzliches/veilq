@@ -19,9 +19,31 @@ mod windows;
 /// from a shell: on Windows, the console was made for this process alone.
 pub fn double_clicked() -> bool {
     #[cfg(windows)]
-    return windows::console_is_own();
+    return windows::console_processes() <= 1;
     #[cfg(not(windows))]
     false
+}
+
+/// For a double click: false when the start went on here (no console
+/// window was made, the manifest's policy, ADR-0031); true when this one
+/// has a console window of its own and has started veilq again without
+/// one, so this process should end.
+pub fn handed_on() -> bool {
+    #[cfg(windows)]
+    if windows::console_processes() == 1 && windows::relaunch_without_console(&["desktop"]).is_ok()
+    {
+        return true;
+    }
+    false
+}
+
+/// Says why a double-click veilq did not start: in a message box on
+/// Windows, where it has no console; on the console elsewhere.
+pub fn report_error(message: &str) {
+    #[cfg(windows)]
+    windows::error_box(message);
+    #[cfg(not(windows))]
+    eprintln!("{message}");
 }
 
 /// veilq's own directory for the user: the token, the running instance.
