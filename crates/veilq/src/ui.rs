@@ -996,7 +996,7 @@ mod tests {
     fn an_unsettled_picture_is_a_conflict_the_ui_can_resolve() {
         let f = Failure::from(Error::Unsettled {
             entity: "PERSON".into(),
-            at: "97×24 at 142,228".into(),
+            at: "97x24 at 142,228".into(),
             rounds: 6,
         });
         assert_eq!(f.0, StatusCode::CONFLICT);
