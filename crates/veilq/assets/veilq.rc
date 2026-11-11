@@ -1,2 +1,4 @@
-// The program icon of veilq.exe (scripts/icon.py draws veilq.ico).
+// The program icon of veilq.exe (scripts/icon.py draws veilq.ico) and its
+// manifest (no console window when started from the Explorer, ADR-0031).
 1 ICON "veilq.ico"
+1 24 "veilq.manifest"

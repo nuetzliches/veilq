@@ -2,8 +2,8 @@
 //! and the entry in "Installed apps". All of it is the user's own (HKCU,
 //! the user's Start menu): no administrator rights.
 //!
-//! The four calls into the Windows API are the only `unsafe` code in
-//! veilq (ADR-0027); each says why it is sound.
+//! The five calls into the Windows API are the only `unsafe` code in
+//! veilq (ADR-0027, ADR-0029, ADR-0031); each says why it is sound.
 #![allow(unsafe_code)]
 
 use std::path::{Path, PathBuf};
@@ -13,20 +13,55 @@ use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, RegType};
 
 const UNINSTALL: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\veilq";
 
-/// Whether this process is the only one on its console: the Explorer made
-/// the console for it (a double click, a shortcut). From a shell, the shell
-/// shares it.
-pub fn console_is_own() -> bool {
+/// How many processes share this process's console: 0 when it has none
+/// (the manifest's `consoleAllocationPolicy` kept the Explorer from making
+/// one, ADR-0031), 1 when the Explorer made one for it alone (a Windows
+/// that does not know the policy), more when a shell shares its own.
+pub fn console_processes() -> u32 {
     let mut ids = [0u32; 2];
     // SAFETY: `ids` is a valid, writable buffer of the length passed; the
-    // call writes at most that many process ids and returns their count.
-    let n = unsafe {
+    // call writes at most that many process ids and returns their count
+    // (0 without a console).
+    unsafe {
         windows_sys::Win32::System::Console::GetConsoleProcessList(
             ids.as_mut_ptr(),
             ids.len() as u32,
         )
-    };
-    n == 1
+    }
+}
+
+/// Starts this program again with `args`, without a console window: a
+/// Windows that ignores the manifest gave the first start one, and Windows
+/// Terminal keeps it open whatever is hidden.
+pub fn relaunch_without_console(args: &[&str]) -> std::io::Result<()> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    std::process::Command::new(std::env::current_exe()?)
+        .args(args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    Ok(())
+}
+
+/// Shows `message` in a Windows message box: a veilq without a console has
+/// nowhere else to say why it did not start.
+pub fn error_box(message: &str) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
+    let text: Vec<u16> = message.encode_utf16().chain([0]).collect();
+    let title: Vec<u16> = "veilq".encode_utf16().chain([0]).collect();
+    // SAFETY: both strings are NUL-terminated UTF-16 that outlive the call;
+    // no owner window (null), so the box is modal to nothing.
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            text.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONERROR,
+        );
+    }
 }
 
 /// Hides this process's console window, if it has one.
