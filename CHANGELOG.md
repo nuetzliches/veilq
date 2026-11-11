@@ -6,6 +6,17 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A user's name in a path (`C:\Users\lena.vogt\…`, `/home/lvogt/…`) stayed,
+  in a screenshot of a window's title or a settings line too. A home
+  directory's name is now a name, unless it is an account the system makes
+  (`Public`, `Default`, `root`).
+- A product's logo in a screenshot was blacked out as a name: NER took a
+  word with a capital inside (`PowerShell`) for a person. Such a word,
+  with four letters or more before the capital, is no name for NER now;
+  `McDonald` and `DeVries` still are.
+
 ## [0.1.6] - 2026-11-11
 
 ### Fixed
