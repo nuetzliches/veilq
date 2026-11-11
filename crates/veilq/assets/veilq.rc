@@ -1,0 +1,2 @@
+// The program icon of veilq.exe (scripts/icon.py draws veilq.ico).
+1 ICON "veilq.ico"

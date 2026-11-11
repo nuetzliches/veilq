@@ -7,6 +7,7 @@ import FileBrowser from '@/components/FileBrowser.vue';
 import FindingsTable from '@/components/FindingsTable.vue';
 import ImagePane from '@/components/ImagePane.vue';
 import ImageViewer, { type Pictures } from '@/components/ImageViewer.vue';
+import SettingsPane from '@/components/SettingsPane.vue';
 import { pastedName } from '@/lib/paste';
 
 type Kind = Source['kind'];
@@ -48,6 +49,23 @@ const pdf = computed(() => {
   const r = result.value;
   return r?.input_pages && r.output_pages ? r : null;
 });
+
+/** The settings page is open. */
+const settings = ref(false);
+let heartbeat: ReturnType<typeof setInterval> | undefined;
+
+async function loadInfo() {
+  try {
+    info.value = await api.info();
+    infoError.value = null;
+  } catch (e) {
+    infoError.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+function onKeyDown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && settings.value && !viewer.value) settings.value = false;
+}
 
 /** The side the viewer shows, or none. */
 const viewer = ref<'input' | 'output' | null>(null);
@@ -224,14 +242,26 @@ function downloadOutput() {
 
 onMounted(async () => {
   window.addEventListener('paste', onPaste);
-  try {
-    info.value = await api.info();
-  } catch (e) {
-    infoError.value = e instanceof Error ? e.message : String(e);
+  window.addEventListener('keydown', onKeyDown);
+  await loadInfo();
+  if (info.value?.desktop) {
+    // A double click started veilq: it ends once this window has been gone a while.
+    void api.ping().catch(() => {});
+    heartbeat = setInterval(() => void api.ping().catch(() => {}), 20_000);
+    // The first start opens setup, until veilq is installed.
+    if (info.value.setup && !sessionStorage.getItem('veilq-setup-shown')) {
+      sessionStorage.setItem('veilq-setup-shown', '1');
+      const status = await api.setup().catch(() => null);
+      if (status && !status.installed) settings.value = true;
+    }
   }
 });
 
-onBeforeUnmount(() => window.removeEventListener('paste', onPaste));
+onBeforeUnmount(() => {
+  window.removeEventListener('paste', onPaste);
+  window.removeEventListener('keydown', onKeyDown);
+  clearInterval(heartbeat);
+});
 </script>
 
 <template>
@@ -256,6 +286,8 @@ onBeforeUnmount(() => window.removeEventListener('paste', onPaste));
         </div>
         <div><dt>version</dt><dd class="mono">{{ info.version }}</dd></div>
       </dl>
+      <span class="spacer" />
+      <button v-if="info" class="small" title="Setup, models" @click="settings = true">Settings</button>
       <p v-else-if="infoError" class="meta error">{{ infoError }}</p>
     </header>
 
@@ -457,6 +489,8 @@ onBeforeUnmount(() => window.removeEventListener('paste', onPaste));
       @hover="hovered = $event"
       @close="viewer = null"
     />
+
+    <SettingsPane v-if="settings && info" :api="api" :info="info" @close="settings = false" @changed="loadInfo" />
 
     <section class="report">
       <div v-if="result?.report.review_required" class="review">

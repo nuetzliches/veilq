@@ -8,6 +8,15 @@ Notable changes per release. The format follows
 
 ### Added
 
+- A double click on `veilq` (Windows) opens the web UI in its own window
+  and ends a few minutes after the window closed; a second double click
+  opens the running one (ADR-0027).
+- Settings in the web UI: setup for the user (copy to
+  `%LOCALAPPDATA%\Programs\veilq`, Start menu, desktop, `PATH`, "Installed
+  apps"), the models with download and progress, and "Quit veilq".
+  `veilq uninstall` removes what setup made.
+- `veilq.exe` has an icon.
+
 - `veilq redact --unverified` and the web UI's "Generate anyway" (ADR-0026):
   a picture whose verify rounds do not settle is written with the last
   round's findings filled too, and the report asks for a review.
