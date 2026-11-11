@@ -6,6 +6,13 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A user's name in a path (`C:\Users\lena.vogt\…`, `/home/lvogt/…`) stayed,
+  in a screenshot of a window's title or a settings line too. A home
+  directory's name is now a name, unless it is an account the system makes
+  (`Public`, `Default`, `root`).
+
 ## [0.1.6] - 2026-11-11
 
 ### Fixed

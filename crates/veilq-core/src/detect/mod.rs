@@ -218,7 +218,11 @@ impl Detector {
     /// rule does not find a phone number in its digits.
     pub fn findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
         let mut kept = self.candidates(text, context)?;
-        kept.retain(|c| c.entity.as_str() != "PERSON" || !only_role_words(&text[c.start..c.end]));
+        kept.retain(|c| {
+            c.entity.as_str() != "PERSON"
+                || !(only_role_words(&text[c.start..c.end])
+                    || ACCOUNTS.contains(&text[c.start..c.end].to_lowercase().as_str()))
+        });
         kept.sort_by(|a, b| {
             (b.end - b.start)
                 .cmp(&(a.end - a.start))
@@ -314,6 +318,24 @@ fn can_be_birth_date(value: &str) -> bool {
     matches!(year, Some(y) if (1900..=year_now.saturating_sub(10)).contains(&y))
         && validate::date(value)
 }
+
+/// The accounts a system makes, whose home directory names no person.
+const ACCOUNTS: &[&str] = &[
+    "public",
+    "default",
+    "defaultuser0",
+    "administrator",
+    "admin",
+    "guest",
+    "gast",
+    "root",
+    "runner",
+    "runneradmin",
+    "user",
+    "shared",
+    "%username%",
+    "$user",
+];
 
 /// Words a span of only these is not a name.
 pub(crate) const NOT_NAMES: &[&str] = &[
@@ -630,6 +652,40 @@ mod tests {
             "ADDRESS",
             "Lindenweg 12, 28195 Bremen"
         ));
+    }
+
+    #[test]
+    fn a_home_directory_names_its_user() {
+        for (text, value) in [
+            (
+                r"root C:\Users\jonas.brandt  policy built-in",
+                "jonas.brandt",
+            ),
+            (
+                r"C:\Users\JBrandt\AppData\Roaming\veilq\veilq.toml",
+                "JBrandt",
+            ),
+            ("open /home/mira/notes.txt", "mira"),
+            ("path=/Users/mira.albers/Desktop", "mira.albers"),
+        ] {
+            assert!(
+                found(text, "PERSON", value),
+                "{text}: {:?}",
+                findings(text, "")
+            );
+        }
+        // The accounts a system makes are nobody.
+        for text in [
+            r"C:\Users\Public\Documents",
+            r"C:\Users\Default\AppData",
+            "/home/runner/work",
+        ] {
+            assert!(
+                !findings(text, "").iter().any(|(e, _)| e == "PERSON"),
+                "{text}: {:?}",
+                findings(text, "")
+            );
+        }
     }
 
     #[test]
