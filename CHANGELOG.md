@@ -6,6 +6,8 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-11-11
+
 ### Fixed
 
 - A name in a screenshot of a Word document with its formatting marks shown
