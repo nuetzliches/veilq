@@ -4,7 +4,8 @@ import type { Finding } from '@/api';
 
 // An image beside its redacted twin: each finding of the image itself (a
 // region without a part) is a frame over it, on both sides; a PDF's page
-// shows the findings of its `page`.
+// shows the findings of its `page`. `zoom` is for the viewer: `fit` keeps
+// the image inside the window, a number scales its natural size.
 const props = defineProps<{
   data: string;
   mediaType: string;
@@ -12,8 +13,9 @@ const props = defineProps<{
   hovered: number | null;
   side: 'input' | 'output';
   page?: number;
+  zoom?: 'fit' | number;
 }>();
-const emit = defineEmits<{ hover: [index: number | null] }>();
+const emit = defineEmits<{ hover: [index: number | null]; open: [] }>();
 
 const size = ref<{ w: number; h: number } | null>(null);
 const src = computed(() => `data:${props.mediaType};base64,${props.data}`);
@@ -41,6 +43,10 @@ const boxes = computed(() => {
   });
 });
 
+const imgStyle = computed(() =>
+  typeof props.zoom === 'number' && size.value ? { width: `${size.value.w * props.zoom}px` } : undefined,
+);
+
 function onLoad(e: Event) {
   const img = e.target as HTMLImageElement;
   size.value = { w: img.naturalWidth, h: img.naturalHeight };
@@ -48,10 +54,10 @@ function onLoad(e: Event) {
 </script>
 
 <template>
-  <div class="pane-image" :class="side">
+  <div class="pane-image" :class="[side, { fit: zoom === 'fit', scaled: typeof zoom === 'number' }]">
     <p v-if="page" class="page">Page {{ page }}</p>
-    <div class="frame">
-      <img :src="src" alt="" @load="onLoad" />
+    <div class="frame" @dblclick="emit('open')">
+      <img :src="src" alt="" :style="imgStyle" draggable="false" @load="onLoad" />
       <span
         v-for="b in boxes"
         :key="b.i"
@@ -85,6 +91,14 @@ img {
   max-width: 100%;
   height: auto;
   border: 1px solid var(--border);
+}
+.fit img {
+  max-height: calc(100vh - 120px);
+  width: auto;
+}
+.scaled .frame,
+.scaled img {
+  max-width: none;
 }
 .box {
   position: absolute;
