@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { Api, Info, ModelComponent, Models, SetupStatus, UpdateCheck } from '@/api';
+import FolderPicker from '@/components/FolderPicker.vue';
+import RulesCard from '@/components/RulesCard.vue';
 
 // Settings (ADR-0027): setup for this user (install, Start menu, desktop,
 // PATH), the models, and quitting a veilq a double click started.
@@ -16,6 +18,19 @@ const done = ref<string | null>(null);
 const removeModels = ref(false);
 const ended = ref<string | null>(null);
 const update = ref<UpdateCheck | null>(null);
+const picking = ref(false);
+const root = ref(props.info.root);
+
+async function chooseRoot(path: string) {
+  picking.value = false;
+  error.value = null;
+  try {
+    root.value = (await props.api.setRoot(path)).root;
+    emit('changed');
+  } catch (e) {
+    error.value = message(e);
+  }
+}
 const checking = ref(false);
 let poll: ReturnType<typeof setInterval> | undefined;
 
@@ -174,6 +189,28 @@ onBeforeUnmount(() => clearInterval(poll));
             <button :disabled="busy" @click="uninstall">Uninstall veilq</button>
           </details>
         </section>
+
+        <section class="card">
+          <h3>Folder</h3>
+          <p class="hint">
+            The File tab opens files under this folder, and the Folder tab redacts folders in it.
+            <template v-if="info.desktop">veilq keeps it for its next start.</template>
+          </p>
+          <div class="row">
+            <span class="mono">{{ root }}</span>
+            <button class="small" @click="picking = true">Choose …</button>
+          </div>
+        </section>
+        <FolderPicker
+          v-if="picking"
+          :api="api"
+          title="The folder veilq reads"
+          :start="root"
+          @pick="chooseRoot"
+          @close="picking = false"
+        />
+
+        <RulesCard :api="api" @saved="emit('changed')" />
 
         <section class="card">
           <h3>Models</h3>

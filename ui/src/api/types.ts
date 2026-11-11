@@ -47,6 +47,70 @@ export interface SetupStatus {
   on_path: boolean;
 }
 
+/** A policy as `veilq.toml` holds it (schema/policy.schema.json); the form edits part of it. */
+export interface PolicyPattern {
+  name: string;
+  entity: string;
+  regex: string;
+  confidence?: number;
+  context?: { words: string[]; boost?: number; window?: number };
+  validate?: string;
+}
+
+export interface Policy {
+  version: number;
+  defaults: { action: string; min_confidence: number };
+  locales: string[];
+  entities: Record<string, { action?: string; min_confidence?: number }>;
+  patterns: PolicyPattern[];
+  allow: { values: string[]; patterns: string[] };
+  [other: string]: unknown;
+}
+
+export interface PolicyView {
+  /** The policy in use and where it came from. */
+  source: string;
+  user_file: string | null;
+  /** The user's file is the policy in use (no project's veilq.toml comes first). */
+  user_in_use: boolean;
+  policy: Policy;
+  entities: string[];
+  locales: string[];
+  actions: string[];
+  validators: string[];
+}
+
+export interface PolicyTried {
+  toml: string;
+  output?: string;
+  findings?: string[];
+}
+
+export interface Folders {
+  path: string;
+  parent: string | null;
+  folders: { name: string; path: string }[];
+}
+
+export interface BatchFile {
+  path: string;
+  findings?: number;
+  types?: string[];
+  review?: boolean;
+  error?: string;
+}
+
+export interface Batch {
+  source: string;
+  target: string;
+  total: number;
+  done: number;
+  current: string | null;
+  running: boolean;
+  cancelled: boolean;
+  files: BatchFile[];
+}
+
 /** The update check (ADR-0027): only when asked. */
 export interface UpdateCheck {
   current: string;
@@ -151,6 +215,16 @@ export interface Api {
   models(): Promise<Models>;
   /** Starts a download; `models()` shows how far it is. */
   fetchModel(name: string): Promise<void>;
+  policy(): Promise<PolicyView>;
+  /** Checks the policy and tries it on a sample, with the patterns alone. */
+  tryPolicy(policy: Policy, sample?: string): Promise<PolicyTried>;
+  /** Writes the user's policy; `in_use`: runs use it now. */
+  savePolicy(policy: Policy): Promise<{ path: string; in_use: boolean }>;
+  folders(path: string): Promise<Folders>;
+  setRoot(path: string): Promise<{ root: string }>;
+  batch(): Promise<Batch | null>;
+  startBatch(request: { source: string; target: string; action?: string; unverified?: boolean }): Promise<Batch>;
+  cancelBatch(): Promise<void>;
   /** Asks GitHub for the newest release; nothing else is sent. */
   checkUpdate(): Promise<UpdateCheck>;
   /** Installs it where veilq runs and starts it; this veilq ends. */

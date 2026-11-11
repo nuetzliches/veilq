@@ -4,6 +4,7 @@ import { ApiError, createApi, type Info, type Redaction, type Source } from '@/a
 import BrandMark from '@/components/BrandMark.vue';
 import ComparePane from '@/components/ComparePane.vue';
 import FileBrowser from '@/components/FileBrowser.vue';
+import FolderRun from '@/components/FolderRun.vue';
 import FindingsTable from '@/components/FindingsTable.vue';
 import ImagePane from '@/components/ImagePane.vue';
 import ImageViewer, { type Pictures } from '@/components/ImageViewer.vue';
@@ -11,7 +12,8 @@ import SettingsPane from '@/components/SettingsPane.vue';
 import { copyablePicture, copyIsOurs, pngBlob } from '@/lib/clipboard';
 import { pastedName } from '@/lib/paste';
 
-type Kind = Source['kind'];
+/** A source of one run, or a whole folder. */
+type Kind = Source['kind'] | 'folder';
 
 const api = createApi();
 const info = ref<Info | null>(null);
@@ -89,6 +91,7 @@ const tabs: { kind: Kind; label: string }[] = [
   { kind: 'text', label: 'Text' },
   { kind: 'upload', label: 'Upload' },
   { kind: 'file', label: 'File' },
+  { kind: 'folder', label: 'Folder' },
 ];
 
 async function run(source: Source, name: string | null, unverified = false) {
@@ -181,11 +184,6 @@ function toBase64(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
-}
-
-function onDrop(event: DragEvent) {
-  dragging.value = false;
-  void upload(event.dataTransfer?.files[0]);
 }
 
 /**
@@ -350,26 +348,34 @@ onBeforeUnmount(() => {
       </section>
 
       <section v-else-if="kind === 'upload'" class="source">
-        <label
-          class="drop"
-          :class="{ over: dragging }"
-          @dragover.prevent="dragging = true"
-          @dragleave="dragging = false"
-          @drop.prevent="onDrop"
-        >
+        <label class="pick">
           <input type="file" @change="onPick" />
-          <strong>Drop a file</strong>
-          <span>or click to choose one, or paste an image with <kbd>Ctrl+V</kbd>. It is sent to veilq on this machine only.</span>
+          <span>Choose a file …</span>
         </label>
-        <p class="hint">Text, logs, CSV, JSON, Word, Excel, PowerPoint, mails, images (PNG, JPEG, WebP, GIF) and PDF. Images and PDF need OCR (`veilq models fetch ocr`, for PDF also `pdf`); without it they are refused, not passed through.</p>
+        <p class="hint">
+          Or drop one on the input pane, or paste a screenshot or a copied file with <kbd>Ctrl+V</kbd>. It is sent to
+          veilq on this machine only.
+        </p>
+        <p class="hint">Text, logs, CSV, JSON, Word, Excel, PowerPoint, mails, images (PNG, JPEG, WebP, GIF) and PDF. Images and PDF need OCR (Settings → Models, or `veilq models fetch ocr`, for PDF also `pdf`); without it they are refused, not passed through.</p>
       </section>
 
-      <section v-else class="source browser">
+      <section v-else-if="kind === 'file'" class="source browser">
         <FileBrowser :api="api" :selected="selectedFile" @select="selectFile" />
+      </section>
+
+      <section v-else class="source">
+        <p class="hint">
+          Redact every file under a folder into a new one. The folder must be under
+          <span class="mono">{{ info?.root }}</span> (Settings changes it).
+        </p>
       </section>
     </aside>
 
-    <main class="compare">
+    <main v-if="kind === 'folder' && info" class="folder">
+      <FolderRun :api="api" :info="info" :action="action" />
+    </main>
+
+    <main v-else class="compare">
       <section class="pane">
         <header class="pane-head">
           <h2>Input</h2>
@@ -556,7 +562,7 @@ onBeforeUnmount(() => {
 
     <SettingsPane v-if="settings && info" :api="api" :info="info" @close="settings = false" @changed="loadInfo" />
 
-    <section class="report">
+    <section v-if="kind !== 'folder'" class="report">
       <div v-if="result?.report.review_required" class="review">
         <strong>Review required.</strong>
         <span v-for="(r, i) in result.report.review_reasons ?? []" :key="i">{{ r }}</span>
@@ -669,24 +675,28 @@ onBeforeUnmount(() => {
   color: var(--text-muted);
   font-size: 12.5px;
 }
-.drop {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-5) var(--space-3);
-  border: 1.5px dashed var(--border-strong);
-  border-radius: var(--radius);
-  text-align: center;
+.pick {
+  display: inline-flex;
+  justify-content: center;
+  padding: 6px var(--space-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 500;
   cursor: pointer;
-  font-size: 13px;
-  color: var(--text-2);
 }
-.drop.over {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+.pick:hover {
+  background: var(--accent-hover);
 }
-.drop input {
+.pick input {
   display: none;
+}
+.folder {
+  grid-row: 2 / span 2;
+  grid-column: 2;
+  min-height: 0;
+  background: var(--bg);
 }
 .compare {
   grid-area: main;

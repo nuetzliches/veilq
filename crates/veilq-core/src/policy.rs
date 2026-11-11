@@ -292,8 +292,17 @@ impl std::fmt::Display for Source {
 impl Policy {
     /// The policy for a run in `cwd`: `explicit` if given (it must exist),
     /// else `veilq.toml` in `cwd`, else in the root of `cwd`'s git
-    /// repository, else the built-in defaults.
+    /// repository, else the user's ([`user_file`], ADR-0028), else the
+    /// built-in defaults.
     pub fn discover(explicit: Option<&Path>, cwd: &Path) -> Result<(Self, Source), Error> {
+        Self::discover_in(explicit, cwd, user_file().as_deref())
+    }
+
+    fn discover_in(
+        explicit: Option<&Path>,
+        cwd: &Path,
+        user: Option<&Path>,
+    ) -> Result<(Self, Source), Error> {
         if let Some(path) = explicit {
             if !path.is_file() {
                 return Err(Error::PolicyNotFound(path.to_path_buf()));
@@ -304,6 +313,7 @@ impl Policy {
         if let Some(root) = git_root(cwd) {
             candidates.push(root.join(FILE_NAME));
         }
+        candidates.extend(user.map(Path::to_path_buf));
         for path in candidates {
             if path.is_file() {
                 return Ok((Self::load(&path)?, Source::File(path)));
@@ -321,6 +331,11 @@ impl Policy {
             path: path.to_path_buf(),
             message,
         })
+    }
+
+    /// The policy as a `veilq.toml` would hold it.
+    pub fn to_toml(&self) -> Result<String, String> {
+        toml::to_string_pretty(self).map_err(|e| e.to_string())
     }
 
     pub fn parse(text: &str) -> Result<Self, String> {
@@ -420,6 +435,27 @@ fn check_confidence(key: &str, value: f32) -> Result<(), String> {
 
 /// The nearest directory at or above `dir` with a `.git` entry (a directory,
 /// or a file in a worktree).
+/// The user's own policy (ADR-0028), used where no project has one:
+/// `%APPDATA%\veilq\veilq.toml` on Windows, `~/Library/Application
+/// Support/veilq/veilq.toml` on macOS, else
+/// `$XDG_CONFIG_HOME/veilq/veilq.toml` or `~/.config/veilq/veilq.toml`.
+/// `VEILQ_USER_POLICY` names another file.
+pub fn user_file() -> Option<PathBuf> {
+    if let Some(p) = std::env::var_os("VEILQ_USER_POLICY") {
+        return Some(PathBuf::from(p));
+    }
+    let base = if cfg!(windows) {
+        std::env::var_os("APPDATA").map(PathBuf::from)
+    } else if cfg!(target_os = "macos") {
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support"))
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+    };
+    base.map(|b| b.join("veilq").join(FILE_NAME))
+}
+
 fn git_root(dir: &Path) -> Option<PathBuf> {
     dir.ancestors()
         .find(|d| d.join(".git").exists())
@@ -515,30 +551,67 @@ key_env = "VEILQ_KEY"
     }
 
     #[test]
+    fn the_user_policy_comes_after_the_project() {
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::create_dir(repo.path().join(".git")).unwrap();
+        let user = repo.path().join("user.toml");
+        let (_, source) = Policy::discover_in(None, repo.path(), Some(&user)).unwrap();
+        assert_eq!(source, Source::BuiltIn, "a user file that is not there");
+        std::fs::write(&user, "version = 1").unwrap();
+        let (_, source) = Policy::discover_in(None, repo.path(), Some(&user)).unwrap();
+        assert_eq!(source, Source::File(user.clone()));
+        std::fs::write(repo.path().join(FILE_NAME), "version = 1").unwrap();
+        let (_, source) = Policy::discover_in(None, repo.path(), Some(&user)).unwrap();
+        assert_eq!(source, Source::File(repo.path().join(FILE_NAME)));
+    }
+
+    #[test]
+    fn a_policy_written_as_toml_reads_the_same() {
+        let text = r#"
+version = 1
+locales = ["de"]
+[defaults]
+action = "fake"
+min_confidence = 0.8
+[entities.PHONE_NUMBER]
+action = "remove"
+[[patterns]]
+name = "customer-no"
+entity = "CUSTOMER_NUMBER"
+regex = 'KD-\d{6}'
+[allow]
+values = ["Muster GmbH"]
+"#;
+        let policy = Policy::parse(text).unwrap();
+        let again = Policy::parse(&policy.to_toml().unwrap()).unwrap();
+        assert_eq!(policy, again);
+    }
+
+    #[test]
     fn discovery_looks_in_cwd_then_git_root_only() {
         let repo = tempfile::tempdir().unwrap();
         std::fs::create_dir(repo.path().join(".git")).unwrap();
         let sub = repo.path().join("a/b");
         std::fs::create_dir_all(&sub).unwrap();
 
-        let (_, source) = Policy::discover(None, &sub).unwrap();
+        let (_, source) = Policy::discover_in(None, &sub, None).unwrap();
         assert_eq!(source, Source::BuiltIn);
 
         // A file between cwd and the root is not found.
         std::fs::write(repo.path().join("a").join(FILE_NAME), "version = 1").unwrap();
-        let (_, source) = Policy::discover(None, &sub).unwrap();
+        let (_, source) = Policy::discover_in(None, &sub, None).unwrap();
         assert_eq!(source, Source::BuiltIn);
 
         std::fs::write(repo.path().join(FILE_NAME), "version = 1").unwrap();
-        let (_, source) = Policy::discover(None, &sub).unwrap();
+        let (_, source) = Policy::discover_in(None, &sub, None).unwrap();
         assert_eq!(source, Source::File(repo.path().join(FILE_NAME)));
 
         std::fs::write(sub.join(FILE_NAME), "version = 1").unwrap();
-        let (_, source) = Policy::discover(None, &sub).unwrap();
+        let (_, source) = Policy::discover_in(None, &sub, None).unwrap();
         assert_eq!(source, Source::File(sub.join(FILE_NAME)));
 
         assert!(matches!(
-            Policy::discover(Some(&repo.path().join("missing.toml")), &sub),
+            Policy::discover_in(Some(&repo.path().join("missing.toml")), &sub, None),
             Err(Error::PolicyNotFound(_))
         ));
     }
