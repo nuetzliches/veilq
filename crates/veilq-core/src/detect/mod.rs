@@ -369,6 +369,15 @@ const PERSON_NOUNS: &[&str] = &[
     "arbeiter",
     "schuldner",
     "gläubiger",
+    "mitglied",
+    "empfänger",
+    "absender",
+    "nutzer",
+    "anwender",
+    "kolleg",
+    "verfasser",
+    "verwalter",
+    "ersteller",
     // Adjectives used as nouns.
     "betroffen",
     "beteiligt",
@@ -380,7 +389,9 @@ const PERSON_NOUNS: &[&str] = &[
 ];
 
 /// The endings of [`PERSON_NOUNS`]: plural, feminine, case.
-const PERSON_NOUN_ENDINGS: &[&str] = &["", "e", "en", "er", "em", "n", "s", "in", "innen"];
+const PERSON_NOUN_ENDINGS: &[&str] = &[
+    "", "e", "en", "er", "ern", "em", "es", "n", "s", "in", "innen",
+];
 
 /// Whether `word` means a person or a group of people ([`PERSON_NOUNS`]),
 /// alone, inflected or at the end of a compound, or starts with `Personen`.
@@ -531,6 +542,43 @@ mod tests {
             "Mira Albers"
         ));
         assert!(!found("name=Projekt", "PERSON", "Projekt"));
+    }
+
+    #[test]
+    fn a_cut_address_is_still_one() {
+        // A screen cuts a long value (`mira.albers@exampl…`), and OCR does
+        // not always read the dots: the name before `@` is personal all the
+        // same.
+        for (text, value) in [
+            ("mira.albers@exampl", "mira.albers@exampl"),
+            ("Konto: mira.albers@exampl…", "mira.albers@exampl"),
+            ("mira.albers@example.c", "mira.albers@example.c"),
+            ("Login root@buildhost-3 ok", "root@buildhost-3"),
+            (
+                "Kontakt: mira.albers@example.com.",
+                "mira.albers@example.com",
+            ),
+        ] {
+            assert!(
+                found(text, "EMAIL_ADDRESS", value),
+                "{text}: {:?}",
+                findings(text, "")
+            );
+        }
+        // A package's version or tag and an image's digest are no address.
+        for text in [
+            "npm i lodash@latest vue@next react@18.3.1",
+            "FROM node@sha256:4f2a9c",
+            "uses: actions/checkout@v4 and Swatinem/rust-cache@d1527c8f67ef",
+            "a = x@y",
+            "Hallo @jonas, siehe @media",
+        ] {
+            assert!(
+                findings(text, "").is_empty(),
+                "{text}: {:?}",
+                findings(text, "")
+            );
+        }
     }
 
     #[test]

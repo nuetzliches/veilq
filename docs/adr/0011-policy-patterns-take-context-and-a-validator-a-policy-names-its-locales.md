@@ -1,6 +1,6 @@
 # ADR-0011: Policy patterns take context and a validator; a policy names its locales
 
-- **Status:** Accepted (card M1, point 3, approved 2026-11-09)
+- **Status:** Accepted (card M1, point 3, approved 2026-11-09); amended by [ADR-0025](0025-an-address-cut-short-is-still-an-address.md) (`email_host`)
 - **Date:** 2026-11-09
 - **Deciders:** project owner
 - **Related:** [ADR-0004](0004-the-policy-is-veilq-toml-in-the-current-directory-or-the-git-root.md), [ADR-0010](0010-built-in-patterns-are-locale-packs-in-the-policy-format.md), [ADR-0012](0012-a-failed-check-lowers-the-confidence-it-does-not-drop-the-finding.md)
@@ -24,7 +24,7 @@ and `confidence`:
   case-insensitively; a word that starts with a letter or digit must start a
   word in the text.
 - `validate`: a named check (`iban`, `luhn`, `tax_id_de`, `ssn_de`,
-  `id_card_de`, `date`, `ipv4`, `kfz_de`, `ssn_us`).
+  `id_card_de`, `date`, `ipv4`, `kfz_de`, `ssn_us`, `email_host`).
 - A group named `pii` in the regex: only that group is the finding, the rest
   of the match is context it needs (`Frau (?P<pii>Albers)`).
 
