@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { createApi, type Info, type Redaction, type Source } from '@/api';
+import BrandMark from '@/components/BrandMark.vue';
 import ComparePane from '@/components/ComparePane.vue';
 import FileBrowser from '@/components/FileBrowser.vue';
 import FindingsTable from '@/components/FindingsTable.vue';
@@ -228,7 +229,7 @@ onBeforeUnmount(() => window.removeEventListener('paste', onPaste));
   <div class="app">
     <header class="topbar">
       <div class="brand">
-        <img src="/favicon.svg" alt="" width="22" height="22" />
+        <BrandMark />
         <span>veilq</span>
         <span v-if="api.mock" class="badge warn" title="An in-browser fake with synthetic data, not veilq">mock</span>
       </div>

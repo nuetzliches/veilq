@@ -6,6 +6,12 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- A new mark: lines of text, the middle one blacked out. In the web UI it
+  turns over on hover to the nut of the nuts family, and the favicon turns
+  with it.
+
 ## [0.1.1] - 2026-11-11
 
 ### Added
