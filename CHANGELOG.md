@@ -6,6 +6,8 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-11-11
+
 ### Added
 
 - A release has `veilq.exe` on its own too, beside the zip: a double click
