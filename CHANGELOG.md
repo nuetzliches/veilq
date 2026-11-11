@@ -19,6 +19,11 @@ Notable changes per release. The format follows
 
 ### Changed
 
+- Releases are ready to be signed (ADR-0035): macOS binaries with a
+  Developer ID and notarized, once the release environment holds the keys
+  and the switch is on; Windows gets its signing step with the choice of a
+  provider. Until then a release's notes say which platform is not signed,
+  and the README says how to check a signature.
 - The UI is one working surface for people without a command line
   (ADR-0033): the input takes typed or pasted text, a dropped file and a
   screenshot alike, with no tabs to choose first; the findings open in a

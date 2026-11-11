@@ -84,6 +84,14 @@ a build provenance attestation:
 gh attestation verify veilq-x86_64-unknown-linux-gnu.tar.gz --repo nuetzliches/veilq
 ```
 
+**Signatures** (ADR-0035): a signed release says so in its notes. A signature
+says that nuetzliches' release workflow built the file from the tag, the same
+as the attestation, in a form Windows and macOS read; it is no review of the
+code. To check one: on Windows `Get-AuthenticodeSignature veilq.exe` (status
+`Valid`), on macOS `codesign --verify --strict --verbose=2 veilq` and
+`spctl --assess --type execute -v veilq`. Until a platform is signed, its
+release notes say so and SmartScreen or Gatekeeper ask once.
+
 **Updates** only when you ask: `veilq update` (`--check` only looks), or
 Settings → "Check for updates". It installs the newest release where veilq
 is, after checking it against the release's `SHA256SUMS`.
