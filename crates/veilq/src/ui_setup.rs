@@ -174,7 +174,7 @@ pub async fn fetch(
         })
         .and_then(|()| match &state.reload {
             Some(reload) => {
-                let engine = reload()?;
+                let engine = reload(&state.policy().0)?;
                 if let Ok(mut e) = state.engine.write() {
                     *e = engine;
                 }

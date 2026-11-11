@@ -16,6 +16,13 @@ Notable changes per release. The format follows
   apps"), the models with download and progress, and "Quit veilq".
   `veilq uninstall` removes what setup made.
 - `veilq.exe` has an icon.
+- A user policy (ADR-0028), found after a project's `veilq.toml`:
+  `%APPDATA%\veilq\veilq.toml` and the like. Settings edits it as a form:
+  action and confidence, languages, per type, never-personal values and
+  patterns, own patterns; tried on a sample, saved without a restart.
+- Settings chooses the folder the UI reads; the Folder tab redacts every
+  file under a folder into a new one, lists what it cannot read (never
+  copied) and writes `veilq-report.json`.
 - `veilq update` and Settings' "Check for updates": only when asked, the
   newest release from GitHub, checked against its `SHA256SUMS` and put
   where veilq runs; a veilq a double click started restarts into it.

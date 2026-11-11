@@ -25,13 +25,16 @@ use include_dir::{Dir, include_dir};
 use serde::{Deserialize, Serialize};
 use veilq_core::{Action, Engine, Error, Format, Policy, Report, root};
 
+#[path = "ui_settings.rs"]
+mod settings;
 #[path = "ui_setup.rs"]
 mod setup;
 
 static UI: Dir<'_> = include_dir!("$OUT_DIR/ui");
 
-/// Builds the engine again, after a model was installed from the UI.
-pub type Reload = Box<dyn Fn() -> anyhow::Result<Engine> + Send + Sync>;
+/// Builds the engine for a policy: after a model was installed or the
+/// user's policy saved from the UI.
+pub type Reload = Box<dyn Fn(&Policy) -> anyhow::Result<Engine> + Send + Sync>;
 
 /// A UI started by a double click ends this long after its window last
 /// said it is open (a background tab's timers run once a minute).
@@ -69,10 +72,10 @@ struct AppState {
     token: String,
     hosts: Vec<String>,
     origins: Vec<String>,
-    /// Canonical.
-    root: PathBuf,
-    policy: Policy,
-    policy_source: String,
+    /// Canonical; the settings page can choose another.
+    root: RwLock<PathBuf>,
+    /// The policy and where it came from; saving the user's replaces it.
+    policy: RwLock<(Policy, String)>,
     /// Replaced when a model is installed from the UI.
     engine: RwLock<Engine>,
     reload: Option<Reload>,
@@ -82,6 +85,8 @@ struct AppState {
     last_ping: Mutex<Instant>,
     /// Model downloads started from the UI, by component.
     jobs: Mutex<HashMap<String, setup::Job>>,
+    /// The folder run, while it runs and after.
+    batch: Mutex<Option<settings::BatchJob>>,
 }
 
 pub fn run(options: Options) -> anyhow::Result<()> {
@@ -116,8 +121,8 @@ async fn serve(options: Options) -> anyhow::Result<()> {
     let shown = options.proxy_port.unwrap_or(port);
     let url = format!("http://127.0.0.1:{shown}/#token={}", state.token);
     println!("veilq ui: {url}");
-    println!("root:     {}", display_path(&state.root));
-    println!("policy:   {}", state.policy_source);
+    println!("root:     {}", display_path(&state.root()));
+    println!("policy:   {}", state.policy().1);
     println!("Ctrl+C stops it.");
     let instance = crate::desktop::instance_file();
     if state.desktop {
@@ -187,16 +192,24 @@ impl AppState {
             token,
             origins: hosts.iter().map(|h| format!("http://{h}")).collect(),
             hosts,
-            root,
-            policy,
-            policy_source,
+            root: RwLock::new(root),
+            policy: RwLock::new((policy, policy_source)),
             engine: RwLock::new(engine),
             reload: None,
             desktop: false,
             shutdown: tokio::sync::Notify::new(),
             last_ping: Mutex::new(Instant::now()),
             jobs: Mutex::new(HashMap::new()),
+            batch: Mutex::new(None),
         }
+    }
+
+    fn root(&self) -> PathBuf {
+        read(&self.root)
+    }
+
+    fn policy(&self) -> (Policy, String) {
+        read(&self.policy)
     }
 
     /// The engine as it is now (a model installed from the UI replaces it).
@@ -206,6 +219,13 @@ impl AppState {
             .map(|e| e.clone())
             .unwrap_or_else(|p| p.into_inner().clone())
     }
+}
+
+/// A clone of what `lock` holds, also after a panic poisoned it.
+fn read<T: Clone>(lock: &RwLock<T>) -> T {
+    lock.read()
+        .map(|v| v.clone())
+        .unwrap_or_else(|p| p.into_inner().clone())
 }
 
 /// The port of `--origin`: an `http` URL on loopback, `http://127.0.0.1:4760`
@@ -241,6 +261,18 @@ fn router(state: Arc<AppState>) -> Router {
             get(setup::update_check).post(setup::update_install),
         )
         .route("/models", get(setup::models))
+        .route(
+            "/policy",
+            get(settings::policy_view).put(settings::policy_save),
+        )
+        .route("/policy/try", post(settings::policy_try))
+        .route("/folders", get(settings::folders))
+        .route("/root", axum::routing::put(settings::set_root))
+        .route(
+            "/batch",
+            get(settings::batch_status).post(settings::batch_start),
+        )
+        .route("/batch/cancel", post(settings::batch_cancel))
         .route("/models/{component}/fetch", post(setup::fetch))
         .layer(DefaultBodyLimit::max(MAX_BODY))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_token));
@@ -419,9 +451,9 @@ struct Info {
 async fn info(State(state): State<Arc<AppState>>) -> axum::Json<Info> {
     axum::Json(Info {
         version: env!("CARGO_PKG_VERSION"),
-        root: display_path(&state.root),
-        policy: state.policy_source.clone(),
-        default_action: state.policy.defaults.action.name(),
+        root: display_path(&state.root()),
+        policy: state.policy().1,
+        default_action: state.policy().0.defaults.action.name(),
         actions: [
             Action::Mask,
             Action::Fake,
@@ -461,7 +493,7 @@ struct Entry {
 }
 
 async fn files(State(state): State<Arc<AppState>>, Query(query): Query<FilesQuery>) -> Response {
-    match tokio::task::spawn_blocking(move || list(&state.root, &query.dir)).await {
+    match tokio::task::spawn_blocking(move || list(&state.root(), &query.dir)).await {
         Ok(Ok(listing)) => axum::Json(listing).into_response(),
         Ok(Err(e)) => Failure::from(e).into_response(),
         Err(e) => api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
@@ -553,7 +585,7 @@ async fn picture(
                 format!("{}: not an image or PDF", query.path),
             )
         })?;
-        let resolved = root::resolve_under(&state.root, path).map_err(Failure::from)?;
+        let resolved = root::resolve_under(&state.root(), path).map_err(Failure::from)?;
         let io = |source| {
             Failure::from(Error::Io {
                 path: PathBuf::from(&query.path),
@@ -683,7 +715,7 @@ fn redact_source(
         }
         Source::File { path } => {
             let resolved =
-                root::resolve_under(&state.root, Path::new(&path)).map_err(Failure::from)?;
+                root::resolve_under(&state.root(), Path::new(&path)).map_err(Failure::from)?;
             let size = resolved
                 .metadata()
                 .map_err(|source| {
@@ -1146,6 +1178,144 @@ mod tests {
         )
         .await;
         assert_eq!(info["desktop"], false);
+    }
+
+    fn json(method: &str, uri: &str, body: serde_json::Value) -> Request<Body> {
+        authed(method, uri)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_policy_is_tried_on_a_sample_and_a_bad_one_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let policy = serde_json::json!({
+            "version": 1,
+            "patterns": [{ "name": "customer-no", "entity": "CUSTOMER_NUMBER", "regex": r"KD-\d{6}" }],
+            "allow": { "values": ["Muster GmbH"] }
+        });
+        let (status, body) = send(
+            app(dir.path()),
+            json("POST", "/api/policy/try", serde_json::json!({ "policy": policy, "sample": "Kunde KD-482913 der Muster GmbH" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["output"], "Kunde <CUSTOMER_NUMBER> der Muster GmbH");
+        assert!(body["toml"].as_str().unwrap().contains("customer-no"));
+        let bad = serde_json::json!({ "version": 1, "patterns": [{ "name": "x", "entity": "X", "regex": "(" }] });
+        let (status, _) = send(
+            app(dir.path()),
+            json(
+                "POST",
+                "/api/policy/try",
+                serde_json::json!({ "policy": bad }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn a_folder_run_writes_beside_and_lists_what_it_cannot_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("in");
+        std::fs::create_dir_all(src.join("sub")).unwrap();
+        std::fs::write(src.join("a.txt"), "Mail an mira.albers@example.com").unwrap();
+        std::fs::write(
+            src.join("sub/b.csv"),
+            "name,tel\nMira Albers,0421 5550173\n",
+        )
+        .unwrap();
+        std::fs::write(src.join("c.bin"), [0u8, 159, 146, 150]).unwrap();
+        let target = dir.path().join("out");
+        let app = app(dir.path());
+        // Not inside the source.
+        let (status, _) = send(
+            app.clone(),
+            json("POST", "/api/batch", serde_json::json!({ "source": "in", "target": src.join("x").display().to_string() })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let (status, body) = send(
+            app.clone(),
+            json(
+                "POST",
+                "/api/batch",
+                serde_json::json!({ "source": "in", "target": target.display().to_string() }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["total"], 3);
+        let done = loop {
+            let (_, b) = send(
+                app.clone(),
+                authed("GET", "/api/batch").body(Body::empty()).unwrap(),
+            )
+            .await;
+            if b["running"] == false {
+                break b;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        };
+        assert_eq!(done["done"], 3);
+        let a = std::fs::read_to_string(target.join("a.txt")).unwrap();
+        assert_eq!(a, "Mail an <EMAIL_ADDRESS>");
+        assert!(target.join("sub/b.csv").is_file());
+        // Fail closed: what veilq cannot read is not copied.
+        assert!(!target.join("c.bin").exists());
+        let failed: Vec<_> = done["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["error"].is_string())
+            .collect();
+        assert_eq!(failed.len(), 1, "{done}");
+        assert_eq!(
+            failed[0]["error"], "unsupported format .bin",
+            "the path is in the line"
+        );
+        assert!(target.join("veilq-report.json").is_file());
+        // The target is not empty now: a second run there is refused.
+        let (status, _) = send(
+            app,
+            json(
+                "POST",
+                "/api/batch",
+                serde_json::json!({ "source": "in", "target": target.display().to_string() }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn folders_are_listed_by_name_only() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("Akten")).unwrap();
+        std::fs::write(dir.path().join("brief.txt"), "x").unwrap();
+        let uri = format!(
+            "/api/folders?path={}",
+            dir.path()
+                .display()
+                .to_string()
+                .replace('\\', "%5C")
+                .replace(':', "%3A")
+        );
+        let (status, body) = send(
+            app(dir.path()),
+            authed("GET", &uri).body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let names: Vec<&str> = body["folders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["Akten"]);
     }
 
     #[tokio::test]

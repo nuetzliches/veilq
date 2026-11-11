@@ -9,6 +9,10 @@ import {
   type SetupStatus,
   type Source,
   type UpdateCheck,
+  type Batch,
+  type Folders,
+  type PolicyTried,
+  type PolicyView,
 } from './types';
 
 const TOKEN_KEY = 'veilq-token';
@@ -60,6 +64,17 @@ export function httpApi(token: string): Api {
     models: () => call<Models>('/models'),
     fetchModel: async (name) => {
       await call<null>(`/models/${encodeURIComponent(name)}/fetch`, { method: 'POST' });
+    },
+    policy: () => call<PolicyView>('/policy'),
+    tryPolicy: (policy, sample) =>
+      call<PolicyTried>('/policy/try', { method: 'POST', body: JSON.stringify({ policy, sample }) }),
+    savePolicy: (policy) => call<{ path: string; in_use: boolean }>('/policy', { method: 'PUT', body: JSON.stringify({ policy }) }),
+    folders: (path) => call<Folders>(`/folders?path=${encodeURIComponent(path)}`),
+    setRoot: (path) => call<{ root: string }>('/root', { method: 'PUT', body: JSON.stringify({ path }) }),
+    batch: () => call<Batch | null>('/batch'),
+    startBatch: (request) => call<Batch>('/batch', { method: 'POST', body: JSON.stringify(request) }),
+    cancelBatch: async () => {
+      await call<null>('/batch/cancel', { method: 'POST' });
     },
     checkUpdate: () => call<UpdateCheck>('/update'),
     installUpdate: () => call<UpdateCheck>('/update', { method: 'POST' }),

@@ -63,6 +63,12 @@ gh attestation verify veilq-x86_64-unknown-linux-gnu.tar.gz --repo nuetzliches/v
 models. The file is not signed yet (#10): Windows asks once, "More info →
 Run anyway". Uninstall it in Settings or under "Installed apps".
 
+**Rules without a file:** Settings → Rules edits your own policy
+(`%APPDATA%\veilq\veilq.toml`, used wherever no project has a `veilq.toml`):
+what replaces a finding, values that are never personal data (your firm's
+name), your own patterns, tried on a sample first. The Folder tab redacts a
+whole folder into a new one.
+
 **Updates** only when you ask: Settings → "Check for updates", or `veilq
 update` (`--check` only looks). It installs the newest release where veilq
 is, after checking it against the release's `SHA256SUMS`.
