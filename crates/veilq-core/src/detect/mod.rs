@@ -231,11 +231,55 @@ impl Detector {
                 chosen.push(c);
             }
         }
+        self.birth_dates_beside_names(text, &mut chosen);
         chosen.retain(|c| {
             c.confidence >= round(self.threshold(&c.entity)) && !self.allowed(&text[c.start..c.end])
         });
         chosen.sort_by_key(|c| c.start);
         Ok(chosen)
+    }
+
+    /// A date that can be a birth date, beside a name, is one: a record's
+    /// header shows it with an icon, not a word (`Mira Albers  14.03.1987
+    /// 0421 …`). Beside: at most [`BESIDE`] bytes apart, on the same line or
+    /// at the start of the line right below the name (a picture's header puts
+    /// the name above its details); an icon read as a stray mark or two may
+    /// come before the date.
+    fn birth_dates_beside_names(&self, text: &str, chosen: &mut [Candidate]) {
+        const BESIDE: usize = 40;
+        let person = EntityType::new("PERSON").expect("a valid type");
+        let names: Vec<(usize, usize)> = chosen
+            .iter()
+            .filter(|c| c.entity == person && c.confidence >= round(self.threshold(&person)))
+            .map(|c| (c.start, c.end))
+            .collect();
+        if names.is_empty() {
+            return;
+        }
+        for c in chosen
+            .iter_mut()
+            .filter(|c| c.entity.as_str() == "DATE_OF_BIRTH")
+        {
+            let beside = names.iter().any(|&(s, e)| {
+                let gap = if e <= c.start {
+                    &text[e..c.start]
+                } else if c.end <= s {
+                    return s - c.end <= BESIDE && !text[c.end..s].contains('\n');
+                } else {
+                    return false;
+                };
+                if gap.len() > BESIDE {
+                    return false;
+                }
+                match gap.split_once('\n') {
+                    None => true,
+                    Some((_, below)) => !below.contains('\n') && below.trim().chars().count() <= 2,
+                }
+            });
+            if beside && can_be_birth_date(&text[c.start..c.end]) {
+                c.confidence = c.confidence.max(round(self.threshold(&c.entity)).max(0.75));
+            }
+        }
     }
 
     pub fn threshold(&self, entity: &EntityType) -> f32 {
@@ -254,6 +298,21 @@ impl Detector {
     pub fn policy(&self) -> &Policy {
         &self.policy
     }
+}
+
+/// Whether `value` is a valid date with a four-digit year at least ten years
+/// back: someone's birth date, not an appointment or a deadline.
+fn can_be_birth_date(value: &str) -> bool {
+    let year_now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| 1970 + d.as_secs() / 31_556_952)
+        .unwrap_or(2026);
+    let year = value
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|p| p.len() == 4)
+        .find_map(|p| p.parse::<u64>().ok());
+    matches!(year, Some(y) if (1900..=year_now.saturating_sub(10)).contains(&y))
+        && validate::date(value)
 }
 
 /// Words a span of only these is not a name.
@@ -542,6 +601,71 @@ mod tests {
             "Mira Albers"
         ));
         assert!(!found("name=Projekt", "PERSON", "Projekt"));
+    }
+
+    #[test]
+    fn an_address_without_a_street_word_is_known_by_its_postcode() {
+        // A record's header: the street has no -straße or -weg, the town
+        // has more than one word.
+        for (text, value) in [
+            (
+                "Mandantin  Am Anger 7, 15938 Lindau Ost-Heide  Status",
+                "Am Anger 7, 15938 Lindau Ost-Heide",
+            ),
+            ("Am Markt 4, 28195 Bremen", "Am Markt 4, 28195 Bremen"),
+            (
+                "Lindenweg 12, 15806 Zossen Ortsteil Wünsdorf",
+                "Lindenweg 12, 15806 Zossen Ortsteil Wünsdorf",
+            ),
+        ] {
+            assert!(
+                found(text, "ADDRESS", value),
+                "{text}: {:?}",
+                findings(text, "")
+            );
+        }
+        // A town on the next line is not part of the address.
+        assert!(found(
+            "Lindenweg 12, 28195 Bremen\nTelefon folgt",
+            "ADDRESS",
+            "Lindenweg 12, 28195 Bremen"
+        ));
+    }
+
+    #[test]
+    fn a_date_beside_a_name_is_a_birth_date() {
+        // A record's header shows the date of birth with an icon, no word.
+        assert!(found(
+            "Herr Jonas Brandt  14.03.1987  0421 5550173",
+            "DATE_OF_BIRTH",
+            "14.03.1987"
+        ));
+        assert!(found(
+            "14.03.1987 Frau Mira Albers",
+            "DATE_OF_BIRTH",
+            "14.03.1987"
+        ));
+        // The name above, the date at the start of the line below.
+        assert!(found(
+            "Frau Mira Albers\n14.03.1987  0421 5550173",
+            "DATE_OF_BIRTH",
+            "14.03.1987"
+        ));
+        // A date without a name, a name further away or a date inside the
+        // next line's sentence, a date too recent to be someone's birth
+        // date: none of them.
+        for text in [
+            "Rechnung vom 14.03.1987, Betrag 12,00 EUR",
+            "Herr Jonas Brandt\n\n\nTermin am 14.03.1987",
+            "Herr Jonas Brandt\nTermin am 14.03.1987",
+            "Termin mit Herrn Brandt am 14.03.2026",
+        ] {
+            assert!(
+                !findings(text, "").iter().any(|(e, _)| e == "DATE_OF_BIRTH"),
+                "{text}: {:?}",
+                findings(text, "")
+            );
+        }
     }
 
     #[test]

@@ -13,6 +13,12 @@ Notable changes per release. The format follows
   one word with the text before it. A picture's text is read a second time
   with such marks as spaces (only `-` between letters and `·` right between
   two words, so a separator in a letterhead stays).
+- A date of birth in a record's header (shown with an icon, no word such as
+  `geb.`) stayed: a valid date at least ten years back, beside a found name
+  or at the start of the line below it, is now a birth date.
+- An address whose street has no street word (`Am Anger 7, 15938 Lindau
+  Ost-Heide`) was not found: a street, a number, a comma and a postcode
+  make one now, and a town may have up to three words.
 
 ### Changed
 

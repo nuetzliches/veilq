@@ -24,8 +24,18 @@ confidence = 0.8
 [[patterns]]
 name = "address"
 entity = "ADDRESS"
-regex = '\b\p{Lu}[\p{L}.\-]*?(?:straße|strasse|str\.|weg|gasse|platz|allee|ring|damm|ufer|steig|pfad|chaussee|markt|graben|wall|hof|berg|feld|garten)\s+\d{1,4}\s?[a-zA-Z]?(?:\s?-\s?\d{1,4})?(?:,\s*|[ \t]*\r?\n[ \t]*|\s+)\d{5}\s+\p{Lu}[\p{L}\-]+(?:\s+(?:an der|am|im|in der)\s+\p{Lu}\p{L}+)?'
+regex = '\b\p{Lu}[\p{L}.\-]*?(?:straße|strasse|str\.|weg|gasse|platz|allee|ring|damm|ufer|steig|pfad|chaussee|markt|graben|wall|hof|berg|feld|garten)\s+\d{1,4}\s?[a-zA-Z]?(?:\s?-\s?\d{1,4})?(?:,\s*|[ \t]*\r?\n[ \t]*|\s+)\d{5}\s+\p{Lu}[\p{L}\-]+(?:\s+(?:an der|am|im|in der)\s+\p{Lu}\p{L}+)?(?: \p{Lu}[\p{L}\-]+){0,2}'
 confidence = 0.9
+
+# A street without a street word (`Alte Mühle 3`, `Am Markt 4`), known by
+# its number, a comma and a postcode: `Am Anger 7, 15938 Lindau
+# Ost-Heide`. Up to three words each side, single spaces only: a
+# picture's row joins its lines with two, and the next line is not the town.
+[[patterns]]
+name = "address-postcode"
+entity = "ADDRESS"
+regex = '\b\p{Lu}[\p{L}.\-]*(?: \p{Lu}[\p{L}.\-]*){0,2} \d{1,4} ?[a-zA-Z]?, ?\d{5} \p{Lu}[\p{L}\-]+(?: \p{Lu}[\p{L}\-]+){0,2}'
+confidence = 0.85
 
 # A street and number alone, when the text says it is an address.
 [[patterns]]
