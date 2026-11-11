@@ -68,6 +68,23 @@ export const en = {
 
   'findings.title': 'Findings',
   'findings.confidenceTitle': 'How sure veilq is (found by {detector})',
+  'findings.explain': 'What veilq read',
+  'findings.explainTitle': 'Runs again and shows what veilq read and why it decided, with the values in clear',
+
+  'explain.warning': 'Shows the values in clear. For a look on this machine; do not copy it into a ticket or a mail.',
+  'explain.context': 'Read with: {context}',
+  'explain.nothing': 'Nothing here looked like personal data.',
+  'explain.raised': 'raised: a date beside a name',
+  'explain.near': 'just below the threshold',
+  'explain.score': '{confidence} % (needs {threshold} %), {detector}',
+  'verdict.kept': 'found',
+  'verdict.below_threshold': 'below the threshold',
+  'verdict.allowed': 'allowed by a rule',
+  'verdict.overlap': 'inside a longer find',
+  'verdict.role_words': 'only role words',
+  'verdict.account': 'a system account',
+  'verdict.brand_word': 'a product name',
+  'verdict.placeholder': 'a placeholder',
 
   'where.span': 'line {line}, column {column}',
   'where.cell': 'row {row}, column {column}',

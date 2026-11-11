@@ -192,6 +192,40 @@ export interface Redaction {
   input_pages?: string[];
   output_pages?: string[];
   page_count?: number;
+  /** What veilq read and why it decided, when asked for (ADR-0034); the values in clear. */
+  explain?: Reading[];
+}
+
+/** One text veilq read (a line, a cell, a picture's OCR line) and every candidate in it. */
+export interface Reading {
+  text: string;
+  /** What stood before the text and was read as its context. */
+  context?: string;
+  candidates: Explained[];
+}
+
+export type Verdict =
+  | 'kept'
+  | 'below_threshold'
+  | 'allowed'
+  | 'overlap'
+  | 'role_words'
+  | 'account'
+  | 'brand_word'
+  | 'placeholder';
+
+/** A candidate in a reading, with the policy's verdict on it. */
+export interface Explained {
+  start: number;
+  end: number;
+  value: string;
+  entity: string;
+  detector: string;
+  confidence: number;
+  threshold: number;
+  verdict: Verdict;
+  /** A birth date beside a name lifted its confidence. */
+  raised?: boolean;
 }
 
 export interface Picture {
@@ -213,7 +247,7 @@ export interface Api {
    * `unverified`: a picture whose verify rounds do not settle (409) is
    * written anyway, with the last round's findings filled, for a review.
    */
-  redact(source: Source, action?: string, unverified?: boolean): Promise<Redaction>;
+  redact(source: Source, action?: string, unverified?: boolean, explain?: boolean): Promise<Redaction>;
   setup(): Promise<SetupStatus>;
   install(request: SetupRequest): Promise<SetupStatus>;
   /** Removes setup's work; veilq ends, and its folder goes after it. */

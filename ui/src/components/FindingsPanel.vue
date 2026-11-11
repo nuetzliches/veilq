@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { Finding } from '@/api';
+import type { Finding, Reading } from '@/api';
+import ExplainList from '@/components/ExplainList.vue';
 import { plural, t } from '@/lib/i18n';
 import { describeLocation, entityLabel } from '@/lib/labels';
 
@@ -7,8 +8,9 @@ import { describeLocation, entityLabel } from '@/lib/labels';
 // report, so a number points at the same place in the input, the output and
 // the list. The steps to check a redaction (#18, #34) go here too, below the
 // findings, ordered by how far data leaves the machine.
-defineProps<{ findings: Finding[]; hovered: number | null }>();
-const emit = defineEmits<{ hover: [index: number | null]; close: [] }>();
+// Below them, on request, what veilq read and why it decided (ADR-0034).
+defineProps<{ findings: Finding[]; hovered: number | null; readings?: Reading[] | null; busy?: boolean }>();
+const emit = defineEmits<{ hover: [index: number | null]; close: []; explain: [] }>();
 </script>
 
 <template>
@@ -19,25 +21,33 @@ const emit = defineEmits<{ hover: [index: number | null]; close: [] }>();
       <span class="spacer" />
       <button class="small" :aria-label="t('common.close')" @click="emit('close')">×</button>
     </header>
-    <ol v-if="findings.length" class="list">
-      <li
-        v-for="(f, i) in findings"
-        :key="i"
-        :class="{ hot: hovered === i }"
-        @mouseenter="emit('hover', i)"
-        @mouseleave="emit('hover', null)"
-      >
-        <span class="num">{{ i + 1 }}</span>
-        <div class="what">
-          <strong>{{ entityLabel(f.entity) }}</strong>
-          <span>{{ describeLocation(f.location) }}</span>
-        </div>
-        <span class="sure" :title="t('findings.confidenceTitle', { detector: f.detector })">
-          {{ Math.round(f.confidence * 100) }} %
-        </span>
-      </li>
-    </ol>
-    <p v-else class="none">{{ t('output.nothingFound') }}</p>
+    <div class="scroll">
+      <ol v-if="findings.length" class="list">
+        <li
+          v-for="(f, i) in findings"
+          :key="i"
+          :class="{ hot: hovered === i }"
+          @mouseenter="emit('hover', i)"
+          @mouseleave="emit('hover', null)"
+        >
+          <span class="num">{{ i + 1 }}</span>
+          <div class="what">
+            <strong>{{ entityLabel(f.entity) }}</strong>
+            <span>{{ describeLocation(f.location) }}</span>
+          </div>
+          <span class="sure" :title="t('findings.confidenceTitle', { detector: f.detector })">
+            {{ Math.round(f.confidence * 100) }} %
+          </span>
+        </li>
+      </ol>
+      <p v-else class="none">{{ t('output.nothingFound') }}</p>
+      <ExplainList v-if="readings" :readings="readings" />
+      <p v-else class="more">
+        <button class="small" :disabled="busy" :title="t('findings.explainTitle')" @click="emit('explain')">
+          {{ t('findings.explain') }}
+        </button>
+      </p>
+    </div>
   </aside>
 </template>
 
@@ -70,9 +80,15 @@ h2 {
 .spacer {
   flex: 1;
 }
-.list {
+.scroll {
   flex: 1;
   overflow: auto;
+}
+.more {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+}
+.list {
   margin: 0;
   padding: var(--space-1) 0;
   list-style: none;
