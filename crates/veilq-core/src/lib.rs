@@ -34,7 +34,7 @@ pub mod visual;
 pub mod xml;
 
 pub use action::Action;
-pub use engine::{Engine, Format, Redacted};
+pub use engine::{Engine, Explain, Explained, Format, Reading, Redacted};
 pub use error::Error;
 pub use finding::{EntityType, Finding, Location, Report};
 pub use outcome::Outcome;

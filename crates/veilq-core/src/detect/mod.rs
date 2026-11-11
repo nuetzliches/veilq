@@ -60,6 +60,38 @@ pub struct Candidate {
     pub detector: String,
 }
 
+/// What the policy decided on a candidate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Verdict {
+    /// A finding.
+    Kept,
+    /// Below its type's threshold.
+    BelowThreshold,
+    /// The allow lists name it.
+    Allowed,
+    /// A longer or more confident candidate claims its span.
+    Overlap,
+    /// A name of nothing but role, title and greeting words.
+    RoleWords,
+    /// An account a system makes (`Public`, `root`).
+    Account,
+    /// One word with a capital inside, which NER took for a name.
+    BrandWord,
+    /// Inside one of veilq's own placeholders.
+    Placeholder,
+}
+
+/// A candidate, the policy's verdict on it and the threshold it was held
+/// to; `raised` when a birth date beside a name lifted its confidence.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Decision {
+    pub candidate: Candidate,
+    pub verdict: Verdict,
+    pub threshold: f32,
+    pub raised: bool,
+}
+
 #[derive(Clone)]
 struct Rule {
     detector: String,
@@ -217,13 +249,38 @@ impl Detector {
     /// (an IBAN with a wrong checksum) still claims its span, so that a short
     /// rule does not find a phone number in its digits.
     pub fn findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
-        let mut kept = self.candidates(text, context)?;
-        kept.retain(|c| {
-            c.entity.as_str() != "PERSON"
-                || !(only_role_words(&text[c.start..c.end])
-                    || ACCOUNTS.contains(&text[c.start..c.end].to_lowercase().as_str())
-                    || (c.detector == "ner" && brand_word(&text[c.start..c.end])))
-        });
+        Ok(self
+            .decide(text, context)?
+            .into_iter()
+            .filter(|d| d.verdict == Verdict::Kept)
+            .map(|d| d.candidate)
+            .collect())
+    }
+
+    /// Every candidate in `text` with what [`findings`](Self::findings)
+    /// decided on it and why, sorted by position: what `scan --explain`
+    /// shows (#40). The candidates kept are exactly the findings.
+    pub fn decide(&self, text: &str, context: &str) -> Result<Vec<Decision>, Error> {
+        let mut out = Vec::new();
+        let mut kept = Vec::new();
+        for c in self.candidates(text, context)? {
+            let value = &text[c.start..c.end];
+            let dropped = if c.entity.as_str() != "PERSON" {
+                None
+            } else if only_role_words(value) {
+                Some(Verdict::RoleWords)
+            } else if ACCOUNTS.contains(&value.to_lowercase().as_str()) {
+                Some(Verdict::Account)
+            } else if c.detector == "ner" && brand_word(value) {
+                Some(Verdict::BrandWord)
+            } else {
+                None
+            };
+            match dropped {
+                Some(verdict) => out.push(self.decision(c, verdict, false)),
+                None => kept.push(c),
+            }
+        }
         kept.sort_by(|a, b| {
             (b.end - b.start)
                 .cmp(&(a.end - a.start))
@@ -234,14 +291,34 @@ impl Detector {
         for c in kept {
             if chosen.iter().all(|k| c.end <= k.start || c.start >= k.end) {
                 chosen.push(c);
+            } else {
+                out.push(self.decision(c, Verdict::Overlap, false));
             }
         }
+        let before: Vec<f32> = chosen.iter().map(|c| c.confidence).collect();
         self.birth_dates_beside_names(text, &mut chosen);
-        chosen.retain(|c| {
-            c.confidence >= round(self.threshold(&c.entity)) && !self.allowed(&text[c.start..c.end])
-        });
-        chosen.sort_by_key(|c| c.start);
-        Ok(chosen)
+        for (c, before) in chosen.into_iter().zip(before) {
+            let raised = c.confidence > before;
+            let verdict = if c.confidence < round(self.threshold(&c.entity)) {
+                Verdict::BelowThreshold
+            } else if self.allowed(&text[c.start..c.end]) {
+                Verdict::Allowed
+            } else {
+                Verdict::Kept
+            };
+            out.push(self.decision(c, verdict, raised));
+        }
+        out.sort_by_key(|d| (d.candidate.start, d.candidate.end));
+        Ok(out)
+    }
+
+    fn decision(&self, candidate: Candidate, verdict: Verdict, raised: bool) -> Decision {
+        Decision {
+            threshold: round(self.threshold(&candidate.entity)),
+            candidate,
+            verdict,
+            raised,
+        }
     }
 
     /// A date that can be a birth date, beside a name, is one: a record's
