@@ -122,7 +122,10 @@ OCR an image is an error; without NER the report says `review_required`.
 
 - **`veilq scan <path>`** lists findings (type, place, detector,
   confidence), never the values; `--sarif` for code scanning. Exit code 1
-  when something was found, 2 on an error.
+  when something was found, 2 on an error. `--explain` adds, on standard
+  error, what veilq read (a picture's OCR lines too) and every candidate
+  with its detector, confidence, threshold and verdict: why something was
+  found or left. It shows the values; keep it on your own machine.
 - **`veilq redact <path>`** writes the redacted input (`-o`, default
   standard output) and, with `--report`, the report as JSON. Actions:
   `mask` (default, `<PERSON>`), `pseudonymize` (`[PERSON:3f2a9c1e]`, keyed),

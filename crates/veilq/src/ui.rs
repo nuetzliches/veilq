@@ -747,6 +747,10 @@ struct RedactRequest {
     /// review, as `--unverified` does (ADR-0026).
     #[serde(default)]
     unverified: bool,
+    /// Also return what veilq read and why it decided (ADR-0034): the
+    /// values in clear, for this machine's UI only.
+    #[serde(default)]
+    explain: bool,
 }
 
 #[derive(Serialize)]
@@ -780,6 +784,9 @@ struct RedactResponse {
     output_pages: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     page_count: Option<usize>,
+    /// What veilq read and why it decided, when asked for (ADR-0034).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    explain: Option<Vec<veilq_core::Reading>>,
 }
 
 /// The media type of a picture format.
@@ -807,7 +814,16 @@ async fn redact(
                 .map_err(Failure::from)?,
         }
         .with_unverified(request.unverified);
-        redact_source(&state, &engine, request.source)
+        if !request.explain {
+            return redact_source(&state, &engine, request.source);
+        }
+        let explanation = veilq_core::Explain::new();
+        let engine = engine.with_explain(explanation.clone());
+        let mut response = redact_source(&state, &engine, request.source)?;
+        let mut readings = explanation.take();
+        readings.dedup();
+        response.explain = Some(readings);
+        Ok(response)
     })
     .await;
     match result {
@@ -905,6 +921,7 @@ fn redact_source(
             input_pages,
             output_pages,
             page_count,
+            explain: None,
         });
     }
     // Fail closed: what veilq cannot read is an error, not a pass-through.
@@ -929,6 +946,7 @@ fn redact_source(
         input_pages: None,
         output_pages: None,
         page_count: None,
+        explain: None,
     })
 }
 
@@ -1546,6 +1564,33 @@ mod tests {
         assert_eq!(body["input_spans"][1], serde_json::json!([29, 41]));
         assert_eq!(body["output_spans"][0], serde_json::json!([6, 14]));
         assert_eq!(body["report"]["findings"][0]["entity"], "PERSON");
+        assert!(body.get("explain").is_none(), "only when asked for");
+    }
+
+    #[tokio::test]
+    async fn the_explanation_comes_only_when_asked_for() {
+        let dir = tempfile::tempdir().unwrap();
+        let body = serde_json::json!({
+            "source": { "kind": "text", "text": "Hallo Erika Mustermann, Tel. 0421 5550173" },
+            "explain": true,
+        });
+        let (status, body) = send(
+            app(dir.path()),
+            authed("POST", "/api/redact")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["output"], "Hallo <PERSON>, Tel. <PHONE_NUMBER>");
+        let candidates = body["explain"][0]["candidates"].as_array().unwrap();
+        assert!(
+            candidates
+                .iter()
+                .any(|c| c["value"] == "0421 5550173" && c["verdict"] == "kept"),
+            "{candidates:?}"
+        );
     }
 
     #[tokio::test]

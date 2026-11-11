@@ -8,6 +8,7 @@ use veilq_core::{Action, Engine, Format, Outcome, Policy, PseudonymKey, Report, 
 
 #[cfg(feature = "ui")]
 mod desktop;
+mod explain;
 mod fetch;
 #[cfg(feature = "mcp")]
 mod mcp;
@@ -46,6 +47,14 @@ enum Command {
         /// SARIF 2.1.0, for code scanning.
         #[arg(long)]
         sarif: bool,
+        /// Also say what veilq read and why it decided as it did: per text it
+        /// read (a line, a cell, a picture's OCR line) every candidate with
+        /// its detector, confidence, threshold and verdict. On standard
+        /// error, beside the report; with `--json` one JSON line per text
+        /// (unstable). It holds the values in clear: for a look on your own
+        /// machine, not for a log or a ticket.
+        #[arg(long, conflicts_with = "sarif")]
+        explain: bool,
     },
     /// Write the input with its personal data replaced. Exit code 1 when
     /// something was replaced.
@@ -281,7 +290,8 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
             input,
             json,
             sarif,
-        } => scan(&path, &input, json, sarif),
+            explain,
+        } => scan(&path, &input, json, sarif, explain),
         Command::Redact {
             path,
             output,
@@ -643,9 +653,19 @@ fn files_under(dir: &Path, out: &mut Vec<PathBuf>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn scan(path: &Path, input: &InputArgs, json: bool, sarif: bool) -> anyhow::Result<Outcome> {
+fn scan(
+    path: &Path,
+    input: &InputArgs,
+    json: bool,
+    sarif: bool,
+    explain: bool,
+) -> anyhow::Result<Outcome> {
     let (policy, _) = load_policy(input.policy.as_deref())?;
-    let engine = engine(&policy, None)?;
+    let explanation = veilq_core::Explain::new();
+    let mut engine = engine(&policy, None)?;
+    if explain {
+        engine = engine.with_explain(explanation.clone());
+    }
     let dir = !is_stdin(path) && path.is_dir();
     let files = if dir {
         let mut files = Vec::new();
@@ -661,6 +681,7 @@ fn scan(path: &Path, input: &InputArgs, json: bool, sarif: bool) -> anyhow::Resu
         .map(|f| format_of(f, input.format.as_deref()))
         .collect::<anyhow::Result<Vec<_>>>()?;
     let mut results: Vec<(String, Report)> = Vec::new();
+    let mut readings = Vec::new();
     for (file, format) in files.iter().zip(formats) {
         let run = run_any(&engine, open(file)?, None, format)
             .with_context(|| file.display().to_string())?;
@@ -669,7 +690,13 @@ fn scan(path: &Path, input: &InputArgs, json: bool, sarif: bool) -> anyhow::Resu
         } else {
             file.display().to_string()
         };
+        if explain {
+            readings.push((name.clone(), explanation.take()));
+        }
         results.push((name, run.report));
+    }
+    if explain {
+        explain::write(&mut std::io::stderr().lock(), &readings, json)?;
     }
     let total: usize = results.iter().map(|(_, r)| r.findings.len()).sum();
     let stdout = &mut std::io::stdout().lock();
