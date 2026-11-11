@@ -185,11 +185,6 @@ function toBase64(file: File): Promise<string> {
   });
 }
 
-function onDrop(event: DragEvent) {
-  dragging.value = false;
-  void upload(event.dataTransfer?.files[0]);
-}
-
 /**
  * Ctrl+V with a file or an image in the clipboard (a screenshot) uploads it,
  * as a drop would. Text pasted into an editable field stays plain pasting.
@@ -352,18 +347,15 @@ onBeforeUnmount(() => {
       </section>
 
       <section v-else-if="kind === 'upload'" class="source">
-        <label
-          class="drop"
-          :class="{ over: dragging }"
-          @dragover.prevent="dragging = true"
-          @dragleave="dragging = false"
-          @drop.prevent="onDrop"
-        >
+        <label class="pick">
           <input type="file" @change="onPick" />
-          <strong>Drop a file</strong>
-          <span>or click to choose one, or paste an image with <kbd>Ctrl+V</kbd>. It is sent to veilq on this machine only.</span>
+          <span>Choose a file …</span>
         </label>
-        <p class="hint">Text, logs, CSV, JSON, Word, Excel, PowerPoint, mails, images (PNG, JPEG, WebP, GIF) and PDF. Images and PDF need OCR (`veilq models fetch ocr`, for PDF also `pdf`); without it they are refused, not passed through.</p>
+        <p class="hint">
+          Or drop one on the input pane, or paste a screenshot or a copied file with <kbd>Ctrl+V</kbd>. It is sent to
+          veilq on this machine only.
+        </p>
+        <p class="hint">Text, logs, CSV, JSON, Word, Excel, PowerPoint, mails, images (PNG, JPEG, WebP, GIF) and PDF. Images and PDF need OCR (Settings → Models, or `veilq models fetch ocr`, for PDF also `pdf`); without it they are refused, not passed through.</p>
       </section>
 
       <section v-else-if="kind === 'file'" class="source browser">
@@ -682,23 +674,21 @@ onBeforeUnmount(() => {
   color: var(--text-muted);
   font-size: 12.5px;
 }
-.drop {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-5) var(--space-3);
-  border: 1.5px dashed var(--border-strong);
-  border-radius: var(--radius);
-  text-align: center;
+.pick {
+  display: inline-flex;
+  justify-content: center;
+  padding: 6px var(--space-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 500;
   cursor: pointer;
-  font-size: 13px;
-  color: var(--text-2);
 }
-.drop.over {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+.pick:hover {
+  background: var(--accent-hover);
 }
-.drop input {
+.pick input {
   display: none;
 }
 .folder {
