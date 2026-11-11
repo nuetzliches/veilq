@@ -160,6 +160,12 @@ export function mockApi(): Api {
     async fetchModel() {
       throw new ApiError(422, 'the mock downloads nothing');
     },
+    async checkUpdate() {
+      return { current: 'mock', latest: 'mock', newer: false, url: 'https://github.com/nuetzliches/veilq/releases' };
+    },
+    async installUpdate() {
+      throw new ApiError(422, 'the mock updates nothing');
+    },
     async quit() {},
     async ping() {},
     async redact(source: Source) {

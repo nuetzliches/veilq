@@ -47,6 +47,16 @@ export interface SetupStatus {
   on_path: boolean;
 }
 
+/** The update check (ADR-0027): only when asked. */
+export interface UpdateCheck {
+  current: string;
+  latest: string;
+  newer: boolean;
+  url: string;
+  /** This platform's archive in that release, if it has one. */
+  archive?: string;
+}
+
 export interface SetupRequest {
   start_menu: boolean;
   desktop: boolean;
@@ -141,6 +151,10 @@ export interface Api {
   models(): Promise<Models>;
   /** Starts a download; `models()` shows how far it is. */
   fetchModel(name: string): Promise<void>;
+  /** Asks GitHub for the newest release; nothing else is sent. */
+  checkUpdate(): Promise<UpdateCheck>;
+  /** Installs it where veilq runs and starts it; this veilq ends. */
+  installUpdate(): Promise<UpdateCheck>;
   /** Ends veilq. */
   quit(): Promise<void>;
   /** A desktop window says it is open. */

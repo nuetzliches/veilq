@@ -18,6 +18,11 @@ fn copy(from: &Path, to: &Path) {
 }
 
 fn main() {
+    // The target, as the release names its archives (`veilq update`).
+    println!(
+        "cargo:rustc-env=VEILQ_TARGET={}",
+        std::env::var("TARGET").unwrap()
+    );
     // The program icon, for the Explorer, the Start menu and the taskbar.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         println!("cargo:rerun-if-changed=assets/veilq.rc");

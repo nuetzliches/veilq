@@ -16,6 +16,9 @@ Notable changes per release. The format follows
   apps"), the models with download and progress, and "Quit veilq".
   `veilq uninstall` removes what setup made.
 - `veilq.exe` has an icon.
+- `veilq update` and Settings' "Check for updates": only when asked, the
+  newest release from GitHub, checked against its `SHA256SUMS` and put
+  where veilq runs; a veilq a double click started restarts into it.
 - The web UI copies the redacted output with Ctrl+C when nothing is
   selected, an image as a picture (PNG), text as text; the Copy button too.
   The empty panes say how to drop, paste and copy, and the input pane takes

@@ -191,3 +191,39 @@ pub async fn fetch(
     });
     StatusCode::ACCEPTED.into_response()
 }
+
+/// Whether a newer release is out: GitHub's API is asked, nothing else is
+/// sent (ADR-0027, point 6).
+pub async fn update_check() -> Response {
+    match tokio::task::spawn_blocking(crate::update::check).await {
+        Ok(Ok(found)) => axum::Json(found).into_response(),
+        Ok(Err(e)) => api_error(StatusCode::BAD_GATEWAY, format!("{e:#}")),
+        Err(e) => api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}
+
+/// Installs the newest release where this program is and starts it; this
+/// server ends. Only for a veilq a double click started: a `veilq ui` of a
+/// shell (or of a build tool) is updated with `veilq update`.
+pub async fn update_install(State(state): State<Arc<AppState>>) -> Response {
+    if !state.desktop {
+        return api_error(
+            StatusCode::CONFLICT,
+            "this veilq runs from a shell: update it with `veilq update`",
+        );
+    }
+    match tokio::task::spawn_blocking(|| {
+        let (found, program) = crate::update::install_latest()?;
+        crate::update::restart(&program)?;
+        anyhow::Ok(found)
+    })
+    .await
+    {
+        Ok(Ok(found)) => {
+            state.shutdown.notify_one();
+            axum::Json(found).into_response()
+        }
+        Ok(Err(e)) => api_error(StatusCode::UNPROCESSABLE_ENTITY, format!("{e:#}")),
+        Err(e) => api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}

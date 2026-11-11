@@ -63,6 +63,10 @@ gh attestation verify veilq-x86_64-unknown-linux-gnu.tar.gz --repo nuetzliches/v
 models. The file is not signed yet (#10): Windows asks once, "More info →
 Run anyway". Uninstall it in Settings or under "Installed apps".
 
+**Updates** only when you ask: Settings → "Check for updates", or `veilq
+update` (`--check` only looks). It installs the newest release where veilq
+is, after checking it against the release's `SHA256SUMS`.
+
 Or build it: `cargo install --locked --git https://github.com/nuetzliches/veilq veilq`
 (Rust 1.98 or later; the web UI is embedded when `ui/dist` was built first,
 `npm ci && npm run build` in `ui/`).
