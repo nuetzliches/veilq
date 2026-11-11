@@ -1,6 +1,6 @@
 # ADR-0023: Pictures are read with OCR and redacted with black boxes
 
-- **Status:** Accepted (card M4, points 1 to 7, approved 2026-11-10); amends [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md) and [ADR-0019](0019-office-files-are-edited-in-place-every-part-read.md); amended by [ADR-0026](0026-a-picture-is-filled-until-a-round-finds-nothing-new.md) (rounds)
+- **Status:** Accepted (card M4, points 1 to 7, approved 2026-11-10); amends [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md) and [ADR-0019](0019-office-files-are-edited-in-place-every-part-read.md); amended by [ADR-0026](0026-a-picture-is-filled-until-a-round-finds-nothing-new.md) (rounds) and [ADR-0030](0030-a-gif-frame-is-read-where-it-changed.md) (GIF)
 - **Date:** 2026-11-10
 - **Deciders:** project owner
 - **Related:** plan M4, [ADR-0022](0022-ner-is-gliner-in-onnx-optional-and-pinned.md), [ADR-0013](0013-a-synthetic-corpus-with-truth-and-golden-outputs-gates-recall.md)
@@ -34,7 +34,8 @@ renderer: both are code and data veilq loads, not code it ships.
   `METADATA` finding over the whole picture.
 - **GIF:** frame by frame. A box stays in the following frames while its
   pixels stand still; a frame equal to the one before is not read again;
-  every frame that changed is read and verified.
+  every frame that changed is read and verified (since ADR-0030 only
+  where it changed).
 - **PDF:** every page rendered at 200 dpi with PDFium (BSD-3-Clause, the
   `bblanchon/pdfium-binaries` build **chromium/8125**, the API
   `pdfium-render` 0.9.5 binds), pinned per platform as the component `pdf`

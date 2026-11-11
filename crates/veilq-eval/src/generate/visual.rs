@@ -161,12 +161,24 @@ fn app_frame(c: &mut Canvas, user: &Person) {
 
 /// A customer's record in the application.
 fn record(c: &mut Canvas, r: &mut Rng, n: u64, p: &Person, x: &Lookalikes) {
+    let rows = record_rows(r, p);
+    record_of(c, n, p, &rows, x);
+}
+
+/// A customer's record with the rows given, so it can be drawn again alike.
+fn record_of(
+    c: &mut Canvas,
+    n: u64,
+    p: &Person,
+    rows: &[(&'static str, &'static str, String)],
+    x: &Lookalikes,
+) {
     let end = c.lit(196.0, 60.0, 19.0, &format!("Kunde #{n} – "), INK);
     c.pii("PERSON", end, 60.0, 19.0, &p.name(), INK);
-    for (i, (label, entity, value)) in record_rows(r, p).into_iter().enumerate() {
+    for (i, (label, entity, value)) in rows.iter().enumerate() {
         let y = 104.0 + 32.0 * i as f32;
         c.lit(210.0, y, 15.0, label, MUTED);
-        c.pii(entity, 360.0, y, 15.0, &value, INK);
+        c.pii(entity, 360.0, y, 15.0, value, INK);
     }
     let h = c.img.height() as f32;
     c.lit(
@@ -325,6 +337,132 @@ pub(super) fn recording_gif(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
                     Delay::from_numer_denom_ms(800, 1),
                 ))
                 .expect("a GIF frame");
+        }
+    }
+    (out, truth)
+}
+
+/// A state of the long recording's screen.
+enum Screen {
+    /// The list of customers, scrolled down by this many rows.
+    List(usize),
+    /// The first customer's record: how much of the note is typed, whether
+    /// a second mail address is pasted, whether the phone number is new.
+    Record {
+        typed: usize,
+        mail: bool,
+        phone: bool,
+    },
+}
+
+/// A long screen recording at 1920x1080, as a recorder writes it: one
+/// palette, so what stands still keeps its pixels. A pointer moves, a clock
+/// in the top bar ticks, a list scrolls, a record opens, a note is typed, a
+/// mail address is pasted and a phone number replaced. A value is in the
+/// truth of a frame only where its ink changed against the frame before:
+/// where it stands still, its box from the frame before stays.
+pub(super) fn long_recording_gif(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
+    let user = Person::de(r);
+    let people: Vec<Person> = (0..40).map(|_| Person::de(r)).collect();
+    let x = Lookalikes::new(r);
+    let rows = record_rows(r, &people[0]);
+    let mut changed_rows = rows.clone();
+    changed_rows[2].2 = Person::de(r).phone;
+    let mail = Person::de(r).email;
+    let note = "Rückruf vereinbart, Unterlagen folgen per Post";
+    let mut script: Vec<(Screen, (u32, u32))> = Vec::new();
+    for i in 0..30 {
+        script.push((Screen::List(0), (600 + 24 * i, 300 + 9 * i)));
+    }
+    for s in 1..=4 {
+        script.push((Screen::List(3 * s), (1300, 570)));
+    }
+    let record = |typed, mail, phone| Screen::Record { typed, mail, phone };
+    for typed in 0..=note.chars().count() {
+        script.push((record(typed, false, false), (900, 470)));
+    }
+    let all = note.chars().count();
+    for i in 0..20 {
+        script.push((record(all, true, false), (900 + 30 * i, 520)));
+    }
+    for i in 0..20 {
+        script.push((record(all, true, true), (1500, 520 + 20 * i)));
+    }
+    let mut truth = Vec::new();
+    let mut prev: Option<RgbImage> = None;
+    let mut out = Vec::new();
+    {
+        let mut encoder = GifEncoder::new_with_speed(&mut out, 10);
+        encoder.set_repeat(Repeat::Infinite).expect("a GIF");
+        for (i, (screen, (px, py))) in script.into_iter().enumerate() {
+            let n = i as u64 + 1;
+            let mut c = Canvas::new(1920, 1080, [244, 245, 248]);
+            c.frame = Some(n);
+            app_frame(&mut c, &user);
+            c.lit(
+                960.0,
+                14.0,
+                14.0,
+                &format!("Sitzung 00:{:02}:{:02}", i / 60, i % 60),
+                [200, 206, 220],
+            );
+            match screen {
+                Screen::List(skip) => list(&mut c, &people[skip..skip + 24]),
+                Screen::Record {
+                    typed,
+                    mail: pasted,
+                    phone,
+                } => {
+                    record_of(
+                        &mut c,
+                        1,
+                        &people[0],
+                        if phone { &changed_rows } else { &rows },
+                        &x,
+                    );
+                    c.lit(210.0, 400.0, 15.0, "Notiz", MUTED);
+                    let typed: String = note.chars().take(typed).collect();
+                    c.lit(360.0, 400.0, 15.0, &typed, INK);
+                    if pasted {
+                        c.lit(210.0, 432.0, 15.0, "E-Mail privat", MUTED);
+                        c.pii("EMAIL_ADDRESS", 360.0, 432.0, 15.0, &mail, INK);
+                    }
+                }
+            }
+            pointer(&mut c, px, py);
+            // One palette: 6 levels a channel, 216 colours, so the encoder
+            // keeps every pixel as it is.
+            for p in c.img.pixels_mut() {
+                for v in p.0.iter_mut() {
+                    *v = ((u32::from(*v) + 25) / 51 * 51) as u8;
+                }
+            }
+            let fresh = |t: &Truth| match (&prev, &t.location) {
+                (
+                    Some(before),
+                    Location::Region {
+                        x,
+                        y,
+                        width,
+                        height,
+                        ..
+                    },
+                ) => (*y..y + height).any(|yy| {
+                    (*x..x + width).any(|xx| before.get_pixel(xx, yy) != c.img.get_pixel(xx, yy))
+                }),
+                _ => true,
+            };
+            truth.extend(c.truth.iter().filter(|t| fresh(t)).cloned());
+            let rgba: RgbaImage = image::DynamicImage::ImageRgb8(c.img.clone()).to_rgba8();
+            encoder
+                .encode_frame(Frame::from_parts(
+                    rgba,
+                    0,
+                    0,
+                    Delay::from_numer_denom_ms(100, 1),
+                ))
+                .expect("a GIF frame");
+            prev = Some(c.img);
         }
     }
     (out, truth)

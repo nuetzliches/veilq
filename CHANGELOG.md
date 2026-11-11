@@ -6,6 +6,13 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- A GIF frame is read only in bands around the rows that changed against
+  the frame before, and whole when those come to more than half of it
+  (ADR-0030, #12): a synthetic 131-frame recording at 1920x1080 is
+  redacted in 39 s instead of 56 s. `veilq-eval recording` writes it.
+
 ## [0.1.4] - 2026-11-11
 
 ### Added

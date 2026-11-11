@@ -11,9 +11,10 @@
 //!
 //! A GIF is read frame by frame. A box stays filled in the following frames
 //! as long as its pixels do not change there, so a value that stands still
-//! is not visible for a frame because OCR missed it once; every frame that
-//! changed is read and verified on its own. Unchanged frames are not read
-//! again.
+//! is not visible for a frame because OCR missed it once. Unchanged frames
+//! are not read again; a frame that changed is read only in bands as wide
+//! as the frame around the rows that changed, and whole when those come to
+//! more than half of it (ADR-0030).
 //!
 //! The output is encoded anew, so EXIF, XMP and text chunks are gone; when
 //! the input had EXIF (camera, time, often GPS), the report has a `METADATA`
@@ -186,12 +187,56 @@ pub fn redact_picture(
     apply: bool,
     out: &mut Outcome,
 ) -> Result<Vec<Rect>, Error> {
+    settle(engine, ocr, img, frame, apply, out, Band::WHOLE)?
+        .ok_or_else(|| error("a whole picture has no edge a line could be cut at"))
+}
+
+/// Where a picture being read is a band of a larger one: its top row there,
+/// and whether rows above or below it were left out (a line there may be
+/// cut by the band's edge).
+#[derive(Clone, Copy)]
+struct Band {
+    top: u32,
+    open_above: bool,
+    open_below: bool,
+}
+
+impl Band {
+    const WHOLE: Band = Band {
+        top: 0,
+        open_above: false,
+        open_below: false,
+    };
+}
+
+/// How close to an open edge a line's box may come before it counts as cut.
+const EDGE: u32 = 2;
+
+/// [`redact_picture`] on `img`, a band of a picture: the findings are
+/// reported where they are in the picture, the boxes returned are in the
+/// band. `None` when OCR reads a line at an edge of the band that was left
+/// out: the line may be cut there, and the band must be read larger.
+fn settle(
+    engine: &Engine,
+    ocr: &Ocr,
+    img: &mut RgbaImage,
+    frame: Option<u64>,
+    apply: bool,
+    out: &mut Outcome,
+    band: Band,
+) -> Result<Option<Vec<Rect>>, Error> {
     let (w, h) = img.dimensions();
     let mut filled: Vec<Rect> = Vec::new();
     for round in 1..=ROUNDS {
         let before = out.findings.len();
         let rgb = DynamicImage::ImageRgba8(img.clone()).to_rgb8();
         let lines = ocr.read(&rgb)?;
+        if lines.iter().any(|l| {
+            (band.open_above && l.rect.y <= EDGE)
+                || (band.open_below && l.rect.bottom() + EDGE >= h)
+        }) {
+            return Ok(None);
+        }
         let p = page(&lines);
         // The page as one text, and each line with its neighbours as context.
         let mut candidates: Vec<(crate::detect::Candidate, Vec<Rect>)> = Vec::new();
@@ -229,7 +274,7 @@ pub fn redact_picture(
                     part: None,
                     frame,
                     x: bound.x,
-                    y: bound.y,
+                    y: bound.y + band.top,
                     width: bound.w,
                     height: bound.h,
                 },
@@ -240,7 +285,7 @@ pub fn redact_picture(
             new.extend(rects);
         }
         if new.is_empty() || !apply {
-            return Ok(filled);
+            return Ok(Some(filled));
         }
         let last = round == ROUNDS;
         if last && !engine.unverified() {
@@ -268,7 +313,7 @@ pub fn redact_picture(
             ));
         }
     }
-    Ok(filled)
+    Ok(Some(filled))
 }
 
 /// The format of an image file, from its bytes.
@@ -289,6 +334,107 @@ fn outcome() -> Outcome {
 fn changed(a: &RgbaImage, b: &RgbaImage, r: &Rect) -> bool {
     (r.y..r.bottom().min(a.height()))
         .any(|y| (r.x..r.right().min(a.width())).any(|x| a.get_pixel(x, y) != b.get_pixel(x, y)))
+}
+
+/// Rows read around a changed row, above and below, at least: a label above
+/// a value, the rest of a line that changed in part (#12).
+const MARGIN: u32 = 64;
+
+/// The bands of rows, top to bottom, where `b` differs from `a`, each
+/// `margin` rows wider on both sides, the overlapping ones joined. A band is
+/// as wide as the picture, so a label left of a value is in it.
+fn changed_bands(a: &RgbaImage, b: &RgbaImage, margin: u32) -> Vec<(u32, u32)> {
+    let (w, h) = a.dimensions();
+    let row = 4 * w as usize;
+    let mut out = Vec::new();
+    for (y, (ra, rb)) in (0u32..).zip(a.as_raw().chunks(row).zip(b.as_raw().chunks(row))) {
+        if ra != rb {
+            out.push((y.saturating_sub(margin), (y + 1 + margin).min(h)));
+        }
+    }
+    joined(out)
+}
+
+/// Bands sorted and those that overlap or touch joined.
+fn joined(mut bands: Vec<(u32, u32)>) -> Vec<(u32, u32)> {
+    bands.sort_unstable();
+    let mut out: Vec<(u32, u32)> = Vec::new();
+    for (top, bottom) in bands {
+        match out.last_mut() {
+            Some(last) if top <= last.1 => last.1 = last.1.max(bottom),
+            _ => out.push((top, bottom)),
+        }
+    }
+    out
+}
+
+/// Whether bands of this many rows are worth reading on their own: above
+/// half the picture (a scroll, a new page), reading it whole costs no more.
+fn too_much(bands: &[(u32, u32)], height: u32) -> bool {
+    2 * bands.iter().map(|(t, b)| b - t).sum::<u32>() > height
+}
+
+/// A GIF frame that changed against the one before, read only in the bands
+/// where its pixels changed (#12). A band whose edge cuts a line OCR reads
+/// is read again, larger; when the bands come to more than half the frame,
+/// it is read whole. Outside the bands every box of the frame before stays,
+/// as its pixels stand still. The boxes returned are in the frame.
+#[allow(clippy::too_many_arguments)]
+fn redact_changed(
+    engine: &Engine,
+    ocr: &Ocr,
+    before: &RgbaImage,
+    after: &RgbaImage,
+    img: &mut RgbaImage,
+    frame: Option<u64>,
+    apply: bool,
+    out: &mut Outcome,
+) -> Result<Vec<Rect>, Error> {
+    let (w, h) = img.dimensions();
+    let margin = MARGIN.max(h / 20);
+    let mut bands = changed_bands(before, after, margin);
+    // Read each band on a copy; a band cut short starts the reading over, so
+    // nothing of a reading given up reaches the frame or the report.
+    let read = 'read: loop {
+        if too_much(&bands, h) {
+            return redact_picture(engine, ocr, img, frame, apply, out);
+        }
+        let mut read = Vec::new();
+        for (i, &(top, bottom)) in bands.iter().enumerate() {
+            let mut part = image::imageops::crop_imm(img, 0, top, w, bottom - top).to_image();
+            let mut found = outcome();
+            let band = Band {
+                top,
+                open_above: top > 0,
+                open_below: bottom < h,
+            };
+            match settle(engine, ocr, &mut part, frame, apply, &mut found, band)? {
+                Some(rects) => read.push((top, part, found, rects)),
+                None => {
+                    // Larger on the open sides; each time by `margin` at
+                    // least, so the bands come to the whole frame in the end.
+                    bands[i] = (top.saturating_sub(margin), (bottom + margin).min(h));
+                    bands = joined(bands);
+                    continue 'read;
+                }
+            }
+        }
+        break read;
+    };
+    let mut boxes = Vec::new();
+    for (top, part, found, rects) in read {
+        if apply {
+            image::imageops::replace(img, &part, 0, i64::from(top));
+        }
+        out.findings.extend(found.findings);
+        for r in found.review_reasons {
+            if !out.review_reasons.contains(&r) {
+                out.review_reasons.push(r);
+            }
+        }
+        boxes.extend(rects.into_iter().map(|r| Rect { y: r.y + top, ..r }));
+    }
+    Ok(boxes)
 }
 
 /// An animated GIF, frame by frame (frames counted from 1), encoded anew.
@@ -329,8 +475,13 @@ fn gif(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Outcome,
                         fill(&mut img, r);
                     }
                 }
-                let found =
-                    redact_picture(engine, ocr, &mut img, Some(i as u64 + 1), apply, &mut out)?;
+                let n = Some(i as u64 + 1);
+                let found = match &prev {
+                    Some((before, _)) => redact_changed(
+                        engine, ocr, before, &original, &mut img, n, apply, &mut out,
+                    )?,
+                    None => redact_picture(engine, ocr, &mut img, n, apply, &mut out)?,
+                };
                 boxes.extend(found);
                 img
             }
@@ -527,6 +678,32 @@ mod tests {
         };
         assert!(!changed(&a, &b, &still));
         assert!(changed(&a, &b, &moved));
+    }
+
+    #[test]
+    fn a_frame_is_read_in_bands_around_what_changed() {
+        let a = RgbaImage::from_pixel(50, 1000, Rgba([255, 255, 255, 255]));
+        let mut b = a.clone();
+        // A pointer near the top, a word typed lower down, a clock in the
+        // last row: three bands, as wide as the frame.
+        b.put_pixel(3, 10, Rgba([0, 0, 0, 255]));
+        b.put_pixel(40, 500, Rgba([0, 0, 0, 255]));
+        b.put_pixel(45, 505, Rgba([0, 0, 0, 255]));
+        b.put_pixel(0, 999, Rgba([0, 0, 0, 255]));
+        assert_eq!(
+            changed_bands(&a, &b, 64),
+            vec![(0, 75), (436, 570), (935, 1000)]
+        );
+        assert!(!too_much(&changed_bands(&a, &b, 64), 1000));
+        // Bands that come near each other are one.
+        assert_eq!(
+            joined(vec![(100, 200), (0, 50), (150, 300), (300, 310)]),
+            vec![(0, 50), (100, 310)]
+        );
+        // A scroll changes most rows: read whole.
+        let scrolled = RgbaImage::from_fn(50, 1000, |_, y| Rgba([(y % 7) as u8, 0, 0, 255]));
+        assert!(too_much(&changed_bands(&a, &scrolled, 64), 1000));
+        assert!(changed_bands(&a, &a, 64).is_empty());
     }
 
     #[test]

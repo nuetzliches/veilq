@@ -1213,6 +1213,27 @@ pub fn write(dir: &Path, seed: u64) -> anyhow::Result<usize> {
     Ok(docs.len())
 }
 
+/// Writes the long screen recording of `seed` under `dir`
+/// (`de/gif/long-recording-1.gif`): not part of the corpus, too slow for
+/// every check, but what reading only what changed is measured on (#12).
+pub fn write_recording(dir: &Path, seed: u64) -> anyhow::Result<()> {
+    let mut r = Rng::new(seed ^ 0x0C12_FACE_1000_0000);
+    let (content, findings) = visual::long_recording_gif(&mut r);
+    let path = dir.join("de/gif/long-recording-1.gif");
+    std::fs::create_dir_all(path.parent().unwrap())?;
+    std::fs::write(&path, content)?;
+    let truth = TruthFile {
+        version: 1,
+        seed,
+        findings,
+    };
+    std::fs::write(
+        truth_path(&path),
+        serde_json::to_string_pretty(&truth)? + "\n",
+    )?;
+    Ok(())
+}
+
 /// `letter-1.txt` -> `letter-1.txt.truth.json`.
 pub fn truth_path(doc: &Path) -> std::path::PathBuf {
     let mut name = doc.file_name().unwrap().to_os_string();

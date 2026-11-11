@@ -1,6 +1,7 @@
 //! `veilq-eval`: the synthetic corpus of veilq (ADR-0013).
 //!
 //! - `generate --seed <n> --out <dir>` writes a corpus with its truth.
+//! - `recording --seed <n> --out <dir>` writes a long screen recording.
 //! - `check <dir>` measures veilq against it, and against corpora of
 //!   held-out seeds generated on the fly; exit 1 when the gate
 //!   (`eval/gate.toml`) fails.
@@ -23,6 +24,14 @@ struct Cli {
 enum Command {
     /// Write the corpus of a seed.
     Generate {
+        #[arg(long)]
+        seed: u64,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Write a long screen recording (1920x1080, about 130 frames) with its
+    /// truth, outside the corpus: `check <out> --ocr` measures it.
+    Recording {
         #[arg(long)]
         seed: u64,
         #[arg(long)]
@@ -81,6 +90,11 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         Command::Generate { seed, out } => {
             let n = generate::write(&out, seed)?;
             println!("{n} documents written to {}", out.display());
+            Ok(true)
+        }
+        Command::Recording { seed, out } => {
+            generate::write_recording(&out, seed)?;
+            println!("a recording written to {}", out.display());
             Ok(true)
         }
         Command::Check {
