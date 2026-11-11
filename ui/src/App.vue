@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { createApi, type Info, type Redaction, type Source } from '@/api';
 import ComparePane from '@/components/ComparePane.vue';
 import FileBrowser from '@/components/FileBrowser.vue';
 import FindingsTable from '@/components/FindingsTable.vue';
 import ImagePane from '@/components/ImagePane.vue';
+import ImageViewer, { type Pictures } from '@/components/ImageViewer.vue';
+import { pastedName } from '@/lib/paste';
 
 type Kind = Source['kind'];
 
@@ -44,6 +46,23 @@ const pdf = computed(() => {
   return r?.input_pages && r.output_pages ? r : null;
 });
 
+/** The side the viewer shows, or none. */
+const viewer = ref<'input' | 'output' | null>(null);
+/** What each side shows as pictures, for the viewer. */
+const inputPictures = computed<Pictures | null>(() => {
+  if (image.value) return { pages: [image.value.input_base64!], mediaType: image.value.media_type!, paged: false };
+  if (pdf.value) return { pages: pdf.value.input_pages!, mediaType: 'image/png', paged: true };
+  if (!result.value && preview.value)
+    return { pages: preview.value.pages, mediaType: preview.value.mediaType, paged: !!preview.value.pageCount };
+  return null;
+});
+const outputPictures = computed<Pictures | null>(() => {
+  if (error.value) return null;
+  if (image.value) return { pages: [image.value.output_base64!], mediaType: image.value.media_type!, paged: false };
+  if (pdf.value) return { pages: pdf.value.output_pages!, mediaType: 'image/png', paged: true };
+  return null;
+});
+
 const tabs: { kind: Kind; label: string }[] = [
   { kind: 'text', label: 'Text' },
   { kind: 'upload', label: 'Upload' },
@@ -52,6 +71,7 @@ const tabs: { kind: Kind; label: string }[] = [
 
 async function run(source: Source, name: string | null) {
   busy.value = true;
+  viewer.value = null;
   error.value = null;
   result.value = null;
   hovered.value = null;
@@ -139,6 +159,25 @@ function onDrop(event: DragEvent) {
   void upload(event.dataTransfer?.files[0]);
 }
 
+/**
+ * Ctrl+V with a file or an image in the clipboard (a screenshot) uploads it,
+ * as a drop would. Text pasted into an editable field stays plain pasting.
+ */
+function onPaste(event: ClipboardEvent) {
+  const data = event.clipboardData;
+  const target = event.target as HTMLElement | null;
+  const editable = target?.closest('textarea, input, [contenteditable="true"]');
+  if (!data || (editable && data.types.includes('text/plain'))) return;
+  const file = Array.from(data.items)
+    .find((i) => i.kind === 'file')
+    ?.getAsFile();
+  if (!file) return;
+  event.preventDefault();
+  if (busy.value) return;
+  selectTab('upload');
+  void upload(new File([file], pastedName(file.name, file.type), { type: file.type }));
+}
+
 function onPick(event: Event) {
   const input = event.target as HTMLInputElement;
   void upload(input.files?.[0]);
@@ -174,12 +213,15 @@ function downloadOutput() {
 }
 
 onMounted(async () => {
+  window.addEventListener('paste', onPaste);
   try {
     info.value = await api.info();
   } catch (e) {
     infoError.value = e instanceof Error ? e.message : String(e);
   }
 });
+
+onBeforeUnmount(() => window.removeEventListener('paste', onPaste));
 </script>
 
 <template>
@@ -237,7 +279,7 @@ onMounted(async () => {
         >
           <input type="file" @change="onPick" />
           <strong>Drop a file</strong>
-          <span>or click to choose one. It is sent to veilq on this machine only.</span>
+          <span>or click to choose one, or paste an image with <kbd>Ctrl+V</kbd>. It is sent to veilq on this machine only.</span>
         </label>
         <p class="hint">Text, logs, CSV, JSON, Word, Excel, PowerPoint, mails, images (PNG, JPEG, WebP, GIF) and PDF. Images and PDF need OCR (`veilq models fetch ocr`, for PDF also `pdf`); without it they are refused, not passed through.</p>
       </section>
@@ -252,6 +294,8 @@ onMounted(async () => {
         <header class="pane-head">
           <h2>Input</h2>
           <span v-if="result?.name ?? sourceName" class="mono name">{{ result?.name ?? sourceName }}</span>
+          <span class="spacer" />
+          <button v-if="inputPictures" class="small" title="Zoom and fullscreen (or double-click the image)" @click="viewer = 'input'">Zoom</button>
         </header>
         <div class="pane-body">
           <textarea
@@ -271,6 +315,7 @@ onMounted(async () => {
             :findings="findings"
             :hovered="hovered"
             @hover="hovered = $event"
+            @open="viewer = 'input'"
           />
           <div v-else-if="pdf" class="pages">
             <ImagePane
@@ -283,6 +328,7 @@ onMounted(async () => {
               :findings="findings"
               :hovered="hovered"
               @hover="hovered = $event"
+              @open="viewer = 'input'"
             />
             <p v-if="(pdf.page_count ?? 0) > pdf.input_pages!.length" class="hint">
               Pages {{ pdf.input_pages!.length + 1 }} to {{ pdf.page_count }} are in the download.
@@ -319,6 +365,7 @@ onMounted(async () => {
               :page="preview.pageCount ? i + 1 : undefined"
               :findings="[]"
               :hovered="null"
+              @open="viewer = 'input'"
             />
           </div>
           <p v-else class="placeholder">{{ busy ? 'Reading …' : 'Choose a source on the left.' }}</p>
@@ -330,6 +377,7 @@ onMounted(async () => {
           <h2>Output</h2>
           <span v-if="result" class="count">{{ findings.length }} finding{{ findings.length === 1 ? '' : 's' }}</span>
           <span class="spacer" />
+          <button v-if="outputPictures" class="small" title="Zoom and fullscreen (or double-click the image)" @click="viewer = 'output'">Zoom</button>
           <button v-if="result && !result.output_base64" class="small" @click="copyOutput">{{ copied ? 'Copied' : 'Copy' }}</button>
           <button v-if="result" class="small" @click="downloadOutput">Download</button>
         </header>
@@ -346,6 +394,7 @@ onMounted(async () => {
             :findings="findings"
             :hovered="hovered"
             @hover="hovered = $event"
+            @open="viewer = 'output'"
           />
           <div v-else-if="pdf" class="pages">
             <ImagePane
@@ -358,6 +407,7 @@ onMounted(async () => {
               :findings="findings"
               :hovered="hovered"
               @hover="hovered = $event"
+              @open="viewer = 'output'"
             />
           </div>
           <div v-else-if="result?.output_base64" class="binary">
@@ -379,6 +429,17 @@ onMounted(async () => {
         </div>
       </section>
     </main>
+
+    <ImageViewer
+      v-if="viewer && (inputPictures || outputPictures)"
+      :input="inputPictures"
+      :output="outputPictures"
+      :side="viewer"
+      :findings="result ? findings : []"
+      :hovered="hovered"
+      @hover="hovered = $event"
+      @close="viewer = null"
+    />
 
     <section class="report">
       <div v-if="result?.report.review_required" class="review">
