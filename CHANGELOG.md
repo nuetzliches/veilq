@@ -6,6 +6,8 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-11-11
+
 ### Fixed
 
 - A user's name in a path (`C:\Users\lena.vogt\…`, `/home/lvogt/…`) stayed,
