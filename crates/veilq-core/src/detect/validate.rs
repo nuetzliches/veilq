@@ -14,6 +14,7 @@ pub const VALIDATORS: &[&str] = &[
     "ipv4",
     "kfz_de",
     "ssn_us",
+    "email_host",
 ];
 
 /// Whether `value` passes the check `name`. An unknown name never passes
@@ -29,6 +30,7 @@ pub fn check(name: &str, value: &str) -> bool {
         "ipv4" => ipv4(value),
         "kfz_de" => kfz_de(value),
         "ssn_us" => ssn_us(value),
+        "email_host" => email_host(value),
         _ => false,
     }
 }
@@ -280,6 +282,44 @@ pub fn ssn_us(value: &str) -> bool {
     area != 0 && area != 666 && area < 900 && group != 0 && serial != 0
 }
 
+/// What follows the `@` of an address can be a host: not a package's tag
+/// (`lodash@latest`), version (`actions/checkout@v4`) or commit
+/// (`rust-cache@d1527c8f`), nor a hash's name (`node@sha256:...`).
+pub fn email_host(value: &str) -> bool {
+    const TAGS: &[&str] = &[
+        "latest",
+        "next",
+        "beta",
+        "alpha",
+        "canary",
+        "rc",
+        "stable",
+        "dev",
+        "edge",
+        "nightly",
+        "experimental",
+        "insiders",
+        "main",
+        "master",
+        "head",
+        "md5",
+    ];
+    let Some((_, host)) = value.rsplit_once('@') else {
+        return false;
+    };
+    let host = host.to_lowercase();
+    let digest = host
+        .strip_prefix("sha")
+        .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()));
+    let version = host
+        .strip_prefix('v')
+        .is_some_and(|n| n.starts_with(|c: char| c.is_ascii_digit()));
+    let commit = host.len() >= 7
+        && host.chars().all(|c| c.is_ascii_hexdigit())
+        && host.chars().any(|c| c.is_ascii_digit());
+    !digest && !version && !commit && !TAGS.contains(&host.as_str())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -290,6 +330,16 @@ mod tests {
         assert!(iban("DE44500105175407324931"));
         assert!(!iban("DE89 3704 0044 0532 0130 01"));
         assert!(iban("GB82 WEST 1234 5698 7654 32"));
+        assert!(email_host("mira.albers@exampl"));
+        assert!(email_host("root@buildhost-3"));
+        assert!(!email_host("lodash@latest"));
+        assert!(!email_host("node@sha256"));
+        assert!(!email_host("actions/checkout@v4"));
+        assert!(!email_host(
+            "rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
+        ));
+        assert!(email_host("mira@vogt-kanzlei"));
+        assert!(email_host("mira@cafe"));
         assert!(luhn("4111 1111 1111 1111"));
         assert!(!luhn("4111 1111 1111 1112"));
         assert!(tax_id_de("57 381 942 656"));

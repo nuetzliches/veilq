@@ -131,6 +131,20 @@ fn boxes(p: &Page, start: usize, end: usize, width: u32, height: u32) -> Vec<Rec
     out.into_iter().map(|r| r.pad(PAD, width, height)).collect()
 }
 
+/// Whether `r` lies (nearly) inside one of `done`. Touching is not enough:
+/// a padded box reaches a few pixels into the line below it
+/// (`Jonas Brandt` above `jonas.brandt@exam…`), and the value there would
+/// stay visible.
+fn covered<'a>(r: &Rect, mut done: impl Iterator<Item = &'a Rect>) -> bool {
+    let area = u64::from(r.w) * u64::from(r.h);
+    done.any(|f| {
+        let w = r.right().min(f.right()).saturating_sub(r.x.max(f.x));
+        let h = r.bottom().min(f.bottom()).saturating_sub(r.y.max(f.y));
+        // Nine tenths: OCR reads a box a pixel or two off the second time.
+        10 * u64::from(w) * u64::from(h) >= 9 * area
+    })
+}
+
 fn fill(img: &mut RgbaImage, r: &Rect) {
     for y in r.y..r.bottom().min(img.height()) {
         for x in r.x..r.right().min(img.width()) {
@@ -174,11 +188,7 @@ pub fn redact_picture(
         let mut new: Vec<Rect> = Vec::new();
         for (c, rects) in candidates {
             // Found twice (page and line), or inside a box already filled.
-            if rects.is_empty()
-                || rects
-                    .iter()
-                    .all(|r| filled.iter().chain(&new).any(|f| f.intersects(r)))
-            {
+            if rects.is_empty() || rects.iter().all(|r| covered(r, filled.iter().chain(&new))) {
                 continue;
             }
             let bound = rects.iter().skip(1).fold(rects[0], |a, r| a.union(r));
@@ -417,6 +427,19 @@ mod tests {
                 h: 24
             }]
         );
+    }
+
+    #[test]
+    fn a_box_that_touches_a_value_does_not_cover_it() {
+        let r = |x, y, w, h| Rect { x, y, w, h };
+        // A name's padded box above, reaching 5 pixels into the address.
+        let name = r(51, 1328, 69, 25);
+        let address = r(54, 1348, 104, 19);
+        assert!(!covered(&address, [name].iter()));
+        // The same value found twice, or read a pixel off in the next round.
+        assert!(covered(&address, [address].iter()));
+        assert!(covered(&r(55, 1349, 104, 19), [address].iter()));
+        assert!(!covered(&address, std::iter::empty()));
     }
 
     #[test]

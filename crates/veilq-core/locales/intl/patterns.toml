@@ -9,6 +9,17 @@ entity = "EMAIL_ADDRESS"
 regex = '\b[\p{L}\d._%+-]+@[\p{L}\d-]+(?:\.[\p{L}\d-]+)*\.\p{L}{2,}\b'
 confidence = 0.95
 
+# An address without its top-level domain: a screen cut it
+# (`mira.albers@exampl…`), or a log names a user on a host. The name before
+# `@` is personal all the same. A package's tag (`lodash@latest`) or an
+# image's digest (`node@sha256:...`) fails `email_host`.
+[[patterns]]
+name = "email-cut"
+entity = "EMAIL_ADDRESS"
+regex = '\b[\p{L}\d._%+-]+@\p{L}[\p{L}\d-]+(?:\.[\p{L}\d-]+)*\b'
+confidence = 0.9
+validate = "email_host"
+
 [[patterns]]
 name = "iban"
 entity = "IBAN_CODE"

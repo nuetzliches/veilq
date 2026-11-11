@@ -365,6 +365,18 @@ mod tests {
             "Eltern",
             "Kinder",
             "Gäste",
+            "Mitglied",
+            "Mitglieds",
+            "Mitgliedes",
+            "Mitgliedern",
+            "Vereinsmitglied",
+            "Empfänger",
+            "Absenderin",
+            "Benutzer",
+            "Anwenderinnen",
+            "Kollegen",
+            "Verfasser",
+            "Kindern",
             "Betroffene Personen",
         ] {
             assert!(!can_be_name(span), "{span}");
