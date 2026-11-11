@@ -11,6 +11,31 @@ recordings: on your machine, in CI and as an MCP tool for any agent.
 > model, pictures are read by an optional OCR model. Video follows (M5); see
 > [docs/plan.md](docs/plan.md).
 
+## Without a command line
+
+**[Download veilq for Windows](https://github.com/nuetzliches/veilq/releases/latest/download/veilq.exe)**
+· [other systems](https://github.com/nuetzliches/veilq/releases/latest)
+· [nuetzliches.github.io/veilq](https://nuetzliches.github.io/veilq/)
+
+![veilq: a screenshot beside its redacted twin](docs/images/veilq-ui.png)
+
+1. **Double-click `veilq.exe`.** It is not signed yet (#10): Windows asks once.
+   Choose "More info", then "Run anyway".
+2. **Settings → Install** puts veilq into your Start menu (desktop shortcut and
+   `PATH` if you like), for you alone, without administrator rights.
+3. **Settings → Models** downloads what reads pictures (OCR, 45 MB) and finds
+   names without a title (NER, 600 MB). Text, Office files and mails need
+   neither.
+4. **Drop a file, paste a screenshot (Ctrl+V)** or pick one; copy the redacted
+   result with Ctrl+C or download it. The Folder tab redacts a whole folder.
+
+Everything runs on your computer: veilq uploads nothing. Settings → Rules
+holds your own rules (your firm's name is no person; a customer number is),
+Settings → "Check for updates" looks for a new version when you ask.
+Uninstall in Settings or under "Installed apps".
+
+## From a command line
+
 ```sh
 # CI gate: fail when a fixture contains personal data
 veilq scan tests/fixtures --sarif > veilq.sarif
@@ -57,20 +82,8 @@ a build provenance attestation:
 gh attestation verify veilq-x86_64-unknown-linux-gnu.tar.gz --repo nuetzliches/veilq
 ```
 
-**Without a command line (Windows):** unpack the zip and double-click
-`veilq.exe`. It opens in its own window; Settings installs it for you
-(Start menu, desktop, `PATH`; no administrator rights) and downloads the
-models. The file is not signed yet (#10): Windows asks once, "More info →
-Run anyway". Uninstall it in Settings or under "Installed apps".
-
-**Rules without a file:** Settings → Rules edits your own policy
-(`%APPDATA%\veilq\veilq.toml`, used wherever no project has a `veilq.toml`):
-what replaces a finding, values that are never personal data (your firm's
-name), your own patterns, tried on a sample first. The Folder tab redacts a
-whole folder into a new one.
-
-**Updates** only when you ask: Settings → "Check for updates", or `veilq
-update` (`--check` only looks). It installs the newest release where veilq
+**Updates** only when you ask: `veilq update` (`--check` only looks), or
+Settings → "Check for updates". It installs the newest release where veilq
 is, after checking it against the release's `SHA256SUMS`.
 
 Or build it: `cargo install --locked --git https://github.com/nuetzliches/veilq veilq`

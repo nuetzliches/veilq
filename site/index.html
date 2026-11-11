@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>veilq — redact personal data on your computer</title>
+<meta name="description" content="veilq finds and blacks out names, addresses, IBANs and more in text, documents, screenshots and PDFs. On your computer; nothing is uploaded.">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<style>
+  /* The tokens of the web UI (ui/src/styles.css): light by default, dark with the system. */
+  :root {
+    color-scheme: light;
+    --font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
+    --bg: #f4f5f8; --surface: #ffffff; --border: #e1e4ea; --text: #171a21; --text-2: #4a5161;
+    --muted: #6d7586; --accent: #3a6df0; --accent-hover: #2f5ed6; --accent-soft: #e8eefe;
+    --accent-text: #2350c7; --warn-soft: #fdf3dd; --warn-text: #94600a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #0f1115; --surface: #161a22; --border: #272e3a; --text: #e7eaf0; --text-2: #b8bfcc;
+      --muted: #8b94a5; --accent: #5b87f5; --accent-hover: #7099f7; --accent-soft: #1d2a4a;
+      --accent-text: #9db8fa; --warn-soft: #34280f; --warn-text: #e8b85a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 var(--font); }
+  main { max-width: 1040px; margin: 0 auto; padding: 48px 24px 64px; }
+  header { display: flex; align-items: center; gap: 14px; }
+  header img { width: 44px; height: 44px; }
+  header h1 { margin: 0; font-size: 30px; }
+  .tagline { font-size: 21px; color: var(--text-2); margin: 18px 0 28px; max-width: 46em; }
+  .download { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 10px; }
+  .button { display: inline-block; padding: 12px 22px; border-radius: 10px; background: var(--accent);
+    color: #fff; font-weight: 600; font-size: 17px; text-decoration: none; }
+  .button:hover { background: var(--accent-hover); }
+  .secondary { color: var(--accent-text); }
+  .note { color: var(--muted); font-size: 14px; margin: 6px 0 0; }
+  .shot { margin: 36px 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,.12); background: var(--surface); }
+  .shot img { display: block; width: 100%; height: auto; }
+  h2 { font-size: 22px; margin: 44px 0 14px; }
+  ol.steps { padding-left: 1.3em; display: grid; gap: 10px; }
+  ol.steps li { padding-left: 4px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+  .card h3 { margin: 0 0 6px; font-size: 16px; }
+  .card p { margin: 0; color: var(--text-2); font-size: 15px; }
+  .warn { background: var(--warn-soft); color: var(--warn-text); border-radius: 10px; padding: 12px 16px; font-size: 15px; }
+  code, pre { font-family: var(--mono); font-size: 14px; }
+  pre { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; overflow-x: auto; }
+  footer { margin-top: 56px; color: var(--muted); font-size: 14px; }
+  a { color: var(--accent-text); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="favicon.svg" alt="">
+    <h1>veilq</h1>
+  </header>
+  <p class="tagline">
+    Black out names, addresses, IBANs, phone numbers and more in text, Word, Excel, mails,
+    screenshots and PDFs — before you send them on. On your computer; nothing is uploaded.
+  </p>
+
+  <div class="download">
+    <a id="primary" class="button" href="https://github.com/nuetzliches/veilq/releases/latest/download/veilq.exe">Download veilq for Windows</a>
+    <a class="secondary" href="https://github.com/nuetzliches/veilq/releases/latest">All downloads</a>
+  </div>
+  <p id="version" class="note">The newest release from GitHub.</p>
+  <p id="other" class="note" hidden></p>
+
+  <div class="shot"><img src="veilq-ui.png" alt="veilq: a screenshot beside its redacted twin, each finding framed, the list of findings below" width="1440" height="800"></div>
+
+  <h2>Start in four steps</h2>
+  <ol class="steps">
+    <li><strong>Double-click <code>veilq.exe</code>.</strong> It opens in its own window.</li>
+    <li><strong>Settings → Install</strong> puts veilq into your Start menu, for you alone, without administrator rights.</li>
+    <li><strong>Settings → Models</strong> downloads what reads pictures and PDFs, and what finds names without a title.</li>
+    <li><strong>Drop a file or paste a screenshot (Ctrl+V)</strong>, then copy the redacted result (Ctrl+C) or download it. The Folder tab redacts a whole folder.</li>
+  </ol>
+  <p class="warn">
+    veilq is not signed yet. The first time, Windows says it protected your PC: choose
+    <strong>More info</strong>, then <strong>Run anyway</strong>.
+  </p>
+
+  <h2>What veilq promises</h2>
+  <div class="grid">
+    <div class="card"><h3>Nothing leaves your computer</h3><p>veilq makes no network call with your content. Models are downloaded once, when you ask, and checked against a checksum built into veilq.</p></div>
+    <div class="card"><h3>Fail closed</h3><p>What veilq cannot read is an error, never passed on unredacted. A picture is read again after it was blacked out.</p></div>
+    <div class="card"><h3>German first</h3><p>Names, addresses, IBANs (checked), tax and social security numbers, ID cards, licence plates, court file numbers, dates of birth. English too.</p></div>
+    <div class="card"><h3>Your own rules</h3><p>Your firm's name is no person, your customer number is personal: Settings → Rules, tried on a sample before it is saved.</p></div>
+  </div>
+
+  <h2>From a command line, in CI, for agents</h2>
+  <pre>veilq redact letter.docx -o letter.redacted.docx
+veilq scan tests/fixtures --sarif &gt; veilq.sarif
+veilq mcp            # an MCP server for any agent</pre>
+  <p>Everything else is in the <a href="https://github.com/nuetzliches/veilq#readme">README</a>; the decisions behind it in <a href="https://github.com/nuetzliches/veilq/tree/main/docs/adr">docs/adr</a>.</p>
+
+  <footer>
+    veilq is open source (MIT or Apache-2.0) · <a href="https://github.com/nuetzliches/veilq">github.com/nuetzliches/veilq</a>
+  </footer>
+</main>
+<script>
+  // The newest release's version, and the right download for this system.
+  // Without the API (offline, rate limit) the page stays as it is.
+  (async () => {
+    const platform = (navigator.userAgentData?.platform || navigator.userAgent || '').toLowerCase();
+    const mac = platform.includes('mac');
+    const linux = !mac && platform.includes('linux') && !platform.includes('android');
+    const other = document.getElementById('other');
+    const primary = document.getElementById('primary');
+    if (mac || linux) {
+      const arm = /arm|aarch64/.test(navigator.userAgent.toLowerCase());
+      const name = mac
+        ? `veilq-${arm ? 'aarch64' : 'x86_64'}-apple-darwin.tar.gz`
+        : `veilq-${arm ? 'aarch64' : 'x86_64'}-unknown-linux-gnu.tar.gz`;
+      primary.textContent = `Download veilq for ${mac ? 'macOS' : 'Linux'}`;
+      primary.href = `https://github.com/nuetzliches/veilq/releases/latest/download/${name}`;
+      other.hidden = false;
+      other.innerHTML = 'On this system veilq runs from a terminal for now: unpack it, then <code>./veilq ui</code>. A double-click app follows.';
+    }
+    try {
+      const r = await fetch('https://api.github.com/repos/nuetzliches/veilq/releases/latest');
+      if (!r.ok) return;
+      const release = await r.json();
+      const date = new Date(release.published_at).toLocaleDateString(undefined, { dateStyle: 'medium' });
+      document.getElementById('version').textContent = `veilq ${release.tag_name.replace(/^v/, '')}, released ${date}.`;
+    } catch { /* stays as it is */ }
+  })();
+</script>
+</body>
+</html>
