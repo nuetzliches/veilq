@@ -64,6 +64,8 @@ async function loadInfo() {
   } catch (e) {
     infoError.value = e instanceof Error ? e.message : String(e);
   }
+  // The models load beside the server: look again until they are there.
+  if (info.value?.loading) setTimeout(() => void loadInfo(), 1000);
 }
 
 function onKeyDown(event: KeyboardEvent) {
@@ -307,6 +309,13 @@ onBeforeUnmount(() => {
         <BrandMark />
         <span>veilq</span>
         <span v-if="api.mock" class="badge warn" title="An in-browser fake with synthetic data, not veilq">mock</span>
+        <span
+          v-if="info?.loading"
+          class="badge warn"
+          title="The models load beside the window; a redaction you start now waits for them"
+          >Loading models …</span
+        >
+        <span v-else-if="info?.load_error" class="badge danger" :title="info.load_error">Models did not load</span>
       </div>
       <dl v-if="info" class="meta">
         <div><dt>root</dt><dd class="mono">{{ info.root }}</dd></div>
@@ -850,6 +859,10 @@ onBeforeUnmount(() => {
 .badge.warn {
   background: var(--warn-soft);
   color: var(--warn-text);
+}
+.badge.danger {
+  background: var(--danger-soft);
+  color: var(--danger-text);
 }
 kbd {
   font-size: 11px;

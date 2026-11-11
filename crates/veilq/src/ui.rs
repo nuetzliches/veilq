@@ -36,6 +36,20 @@ static UI: Dir<'_> = include_dir!("$OUT_DIR/ui");
 /// user's policy saved from the UI.
 pub type Reload = Box<dyn Fn(&Policy) -> anyhow::Result<Engine> + Send + Sync>;
 
+/// Builds the engine with its models, once, beside the server (ADR-0032).
+pub type Load = Box<dyn FnOnce() -> anyhow::Result<Engine> + Send>;
+
+/// Whether the engine has its models yet.
+#[derive(Clone)]
+enum ModelState {
+    Ready,
+    Loading,
+    Failed(String),
+}
+
+/// How long a run waits for the models before it gives up.
+const LOAD_WAIT: Duration = Duration::from_secs(600);
+
 /// A UI started by a double click ends this long after its window last
 /// said it is open (a background tab's timers run once a minute).
 const IDLE: Duration = Duration::from_secs(180);
@@ -61,6 +75,10 @@ pub struct Options {
     pub policy: Policy,
     pub policy_source: String,
     pub engine: Engine,
+    /// Loads the models beside the server, which answers with `engine` (its
+    /// patterns) meanwhile; a run waits for them, it does not go without
+    /// (ADR-0032). `None`: `engine` is the one.
+    pub load: Option<Load>,
     /// Started by a double click (ADR-0027): the URL opens in an app
     /// window, the running instance is written down, and the server ends
     /// when its window has been gone for a while.
@@ -100,6 +118,8 @@ struct AppState {
     batch: Mutex<Option<settings::BatchJob>>,
     /// The window of veilq's own, brought to the front on request.
     focus: Option<Box<dyn Fn() + Send + Sync>>,
+    /// The models loading beside the server, and who waits for them.
+    loading: (Mutex<ModelState>, std::sync::Condvar),
 }
 
 pub fn run(options: Options) -> anyhow::Result<()> {
@@ -133,7 +153,30 @@ async fn serve(options: Options) -> anyhow::Result<()> {
         state.focus = Some(w.focus);
         w.ready
     });
+    if options.load.is_some() {
+        state.loading = (Mutex::new(ModelState::Loading), std::sync::Condvar::new());
+    }
     let state = Arc::new(state);
+    if let Some(load) = options.load {
+        let loader = state.clone();
+        std::thread::spawn(move || {
+            let result = load();
+            let (lock, ready) = &loader.loading;
+            let next = match result {
+                Ok(engine) => {
+                    if let Ok(mut e) = loader.engine.write() {
+                        *e = engine;
+                    }
+                    ModelState::Ready
+                }
+                Err(e) => ModelState::Failed(format!("{e:#}")),
+            };
+            if let Ok(mut s) = lock.lock() {
+                *s = next;
+            }
+            ready.notify_all();
+        });
+    }
 
     let shown = options.proxy_port.unwrap_or(port);
     let url = format!("http://127.0.0.1:{shown}/#token={}", state.token);
@@ -224,6 +267,7 @@ impl AppState {
             last_ping: Mutex::new(Instant::now()),
             jobs: Mutex::new(HashMap::new()),
             batch: Mutex::new(None),
+            loading: (Mutex::new(ModelState::Ready), std::sync::Condvar::new()),
         }
     }
 
@@ -233,6 +277,39 @@ impl AppState {
 
     fn policy(&self) -> (Policy, String) {
         read(&self.policy)
+    }
+
+    /// The engine with its models, for a run: waits while they load (a run
+    /// does not go with the patterns alone, ADR-0032). Blocking: call it
+    /// from a blocking task.
+    fn ready_engine(&self) -> Result<Engine, Failure> {
+        let (lock, ready) = &self.loading;
+        let state = lock
+            .lock()
+            .map_err(|_| Failure(StatusCode::INTERNAL_SERVER_ERROR, "a poisoned lock".into()))?;
+        let (state, timeout) = ready
+            .wait_timeout_while(state, LOAD_WAIT, |s| matches!(s, ModelState::Loading))
+            .map_err(|_| Failure(StatusCode::INTERNAL_SERVER_ERROR, "a poisoned lock".into()))?;
+        match &*state {
+            ModelState::Ready => Ok(self.engine()),
+            ModelState::Failed(e) => Err(Failure(
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("the models did not load: {e}"),
+            )),
+            ModelState::Loading if timeout.timed_out() => Err(Failure(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "the models are still loading".into(),
+            )),
+            ModelState::Loading => unreachable!("waited while loading"),
+        }
+    }
+
+    fn loading(&self) -> ModelState {
+        self.loading
+            .0
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or(ModelState::Ready)
     }
 
     /// The engine as it is now (a model installed from the UI replaces it).
@@ -472,6 +549,11 @@ struct Info {
     setup: bool,
     /// Shown in veilq's own window (ADR-0029): closing it ends veilq.
     window: bool,
+    /// The models are still loading: a run waits for them (ADR-0032).
+    loading: bool,
+    /// Why the models did not load.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    load_error: Option<String>,
 }
 
 async fn info(State(state): State<Arc<AppState>>) -> axum::Json<Info> {
@@ -493,6 +575,11 @@ async fn info(State(state): State<Arc<AppState>>) -> axum::Json<Info> {
         max_input: MAX_INPUT,
         desktop: state.desktop,
         window: state.focus.is_some(),
+        loading: matches!(state.loading(), ModelState::Loading),
+        load_error: match state.loading() {
+            ModelState::Failed(e) => Some(e),
+            _ => None,
+        },
         setup: cfg!(windows),
     })
 }
@@ -626,7 +713,7 @@ async fn picture(
         let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
         if format == Some(Format::Pdf) {
             let (pages, n) = state
-                .engine()
+                .ready_engine()?
                 .pdf_pages(&bytes, MAX_PAGES)
                 .map_err(Failure::from)?;
             return Ok(Picture {
@@ -713,8 +800,11 @@ async fn redact(
 ) -> Response {
     let result = tokio::task::spawn_blocking(move || {
         let engine = match request.action {
-            None => state.engine(),
-            Some(a) => state.engine().with_action(Some(a)).map_err(Failure::from)?,
+            None => state.ready_engine()?,
+            Some(a) => state
+                .ready_engine()?
+                .with_action(Some(a))
+                .map_err(Failure::from)?,
         }
         .with_unverified(request.unverified);
         redact_source(&state, &engine, request.source)
@@ -951,6 +1041,66 @@ mod tests {
             "built-in defaults".into(),
             Engine::new(&Policy::default(), None, b"test", None).unwrap(),
         )))
+    }
+
+    /// A server whose models are still loading, and its state to end that.
+    fn loading_app(root: &Path) -> (Router, Arc<AppState>) {
+        let mut state = AppState::new(
+            TOKEN.into(),
+            &[PORT, PROXY_PORT],
+            root.canonicalize().unwrap(),
+            Policy::default(),
+            "built-in defaults".into(),
+            Engine::new(&Policy::default(), None, b"test", None).unwrap(),
+        );
+        state.loading = (Mutex::new(ModelState::Loading), std::sync::Condvar::new());
+        let state = Arc::new(state);
+        (router(state.clone()), state)
+    }
+
+    fn finish_loading(state: &AppState, to: ModelState) {
+        *state.loading.0.lock().unwrap() = to;
+        state.loading.1.notify_all();
+    }
+
+    #[tokio::test]
+    async fn a_run_waits_for_the_models_and_never_goes_without_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let redact = || {
+            authed("POST", "/api/redact")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "source": { "kind": "text", "text": "Mail an mira.albers@example.com" } })
+                        .to_string(),
+                ))
+                .unwrap()
+        };
+        // Loading: the info says so, and a run waits until the models are there.
+        let (app, state) = loading_app(dir.path());
+        let (_, info) = send(
+            app.clone(),
+            authed("GET", "/api/info").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(info["loading"], true);
+        let waiter = tokio::spawn(send(app.clone(), redact()));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(
+            !waiter.is_finished(),
+            "a run went before the models were there"
+        );
+        finish_loading(&state, ModelState::Ready);
+        let (status, body) = waiter.await.unwrap();
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["output"], "Mail an <EMAIL_ADDRESS>");
+        // Failed: no run with the patterns alone, the reason instead.
+        let (app, state) = loading_app(dir.path());
+        finish_loading(&state, ModelState::Failed("NER: no such file".into()));
+        let (status, body) = send(app.clone(), redact()).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+        let (_, info) = send(app, authed("GET", "/api/info").body(Body::empty()).unwrap()).await;
+        assert_eq!(info["loading"], false);
+        assert!(info["load_error"].as_str().unwrap().contains("NER"));
     }
 
     fn request(method: &str, uri: &str) -> axum::http::request::Builder {

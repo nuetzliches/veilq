@@ -529,14 +529,9 @@ pub async fn batch_start(
             format!("{}: {e}", source.display()),
         );
     }
-    let engine = match request.action {
-        None => state.engine(),
-        Some(a) => match state.engine().with_action(Some(a)) {
-            Ok(e) => e,
-            Err(e) => return api_error(StatusCode::UNPROCESSABLE_ENTITY, e.to_string()),
-        },
-    }
-    .with_unverified(request.unverified);
+    // The engine is taken in the run's thread: it waits there for the
+    // models, not here (ADR-0032).
+    let (action, unverified) = (request.action, request.unverified);
     let cancel = Arc::new(AtomicBool::new(false));
     let initial = Batch {
         source: display_path(&source),
@@ -556,6 +551,28 @@ pub async fn batch_start(
     }
     let shared = state.clone();
     std::thread::spawn(move || {
+        let engine = shared.ready_engine().and_then(|e| match action {
+            None => Ok(e),
+            Some(a) => e.with_action(Some(a)).map_err(super::Failure::from),
+        });
+        let engine = match engine {
+            Ok(e) => e.with_unverified(unverified),
+            Err(super::Failure(_, e)) => {
+                if let Ok(mut job) = shared.batch.lock()
+                    && let Some(j) = job.as_mut()
+                {
+                    j.state.running = false;
+                    j.state.files.push(BatchFile {
+                        path: String::new(),
+                        findings: None,
+                        types: Vec::new(),
+                        review: false,
+                        error: Some(e),
+                    });
+                }
+                return;
+            }
+        };
         let update = |f: &dyn Fn(&mut Batch)| {
             if let Ok(mut job) = shared.batch.lock()
                 && let Some(j) = job.as_mut()
