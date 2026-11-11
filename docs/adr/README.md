@@ -66,3 +66,4 @@ keep it to about a page.
 | [0024](0024-a-body-carries-its-verdict-in-its-first-line.md) | A body carries its verdict in its first line | Accepted |
 | [0025](0025-an-address-cut-short-is-still-an-address.md) | An address cut short is still an address | Accepted |
 | [0026](0026-a-picture-is-filled-until-a-round-finds-nothing-new.md) | A picture is filled until a round finds nothing new | Accepted |
+| [0027](0027-a-double-click-opens-the-ui-and-setup-installs-for-the-user.md) | A double click opens the UI, and setup installs for the user | Accepted |

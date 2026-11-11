@@ -7,6 +7,8 @@ import FileBrowser from '@/components/FileBrowser.vue';
 import FindingsTable from '@/components/FindingsTable.vue';
 import ImagePane from '@/components/ImagePane.vue';
 import ImageViewer, { type Pictures } from '@/components/ImageViewer.vue';
+import SettingsPane from '@/components/SettingsPane.vue';
+import { copyablePicture, copyIsOurs, pngBlob } from '@/lib/clipboard';
 import { pastedName } from '@/lib/paste';
 
 type Kind = Source['kind'];
@@ -48,6 +50,23 @@ const pdf = computed(() => {
   const r = result.value;
   return r?.input_pages && r.output_pages ? r : null;
 });
+
+/** The settings page is open. */
+const settings = ref(false);
+let heartbeat: ReturnType<typeof setInterval> | undefined;
+
+async function loadInfo() {
+  try {
+    info.value = await api.info();
+    infoError.value = null;
+  } catch (e) {
+    infoError.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+function onKeyDown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && settings.value && !viewer.value) settings.value = false;
+}
 
 /** The side the viewer shows, or none. */
 const viewer = ref<'input' | 'output' | null>(null);
@@ -194,11 +213,46 @@ function onPick(event: Event) {
   input.value = '';
 }
 
+/** What Ctrl+C or Copy puts on the clipboard: the redacted text, or a still picture as PNG. */
+const copyable = computed(() => {
+  const r = result.value;
+  if (!r || error.value) return null;
+  if (image.value && copyablePicture(image.value.media_type!)) return 'picture';
+  return r.output_base64 ? null : 'text';
+});
+
 async function copyOutput() {
-  if (!result.value) return;
-  await navigator.clipboard.writeText(result.value.output);
-  copied.value = true;
-  setTimeout(() => (copied.value = false), 1200);
+  const r = result.value;
+  if (!r || !copyable.value) return;
+  try {
+    if (copyable.value === 'picture') {
+      // A promise in the item keeps the click's permission while the PNG is made.
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob(r.output_base64!, r.media_type!) })]);
+    } else {
+      await navigator.clipboard.writeText(r.output);
+    }
+    copied.value = true;
+    setTimeout(() => (copied.value = false), 1500);
+  } catch (e) {
+    error.value = `Copying failed: ${e instanceof Error ? e.message : String(e)}`;
+  }
+}
+
+/** Ctrl+C with nothing selected copies the output. */
+function onCopy(event: ClipboardEvent) {
+  if (!copyable.value || viewer.value || settings.value) return;
+  if (!copyIsOurs(event.target, window.getSelection()?.toString() ?? '')) return;
+  event.preventDefault();
+  void copyOutput();
+}
+
+/** A file dropped on the input pane, as on the drop field. */
+function onPaneDrop(event: DragEvent) {
+  dragging.value = false;
+  const file = event.dataTransfer?.files[0];
+  if (!file) return;
+  selectTab('upload');
+  void upload(file);
 }
 
 function redactedName(): string {
@@ -224,14 +278,28 @@ function downloadOutput() {
 
 onMounted(async () => {
   window.addEventListener('paste', onPaste);
-  try {
-    info.value = await api.info();
-  } catch (e) {
-    infoError.value = e instanceof Error ? e.message : String(e);
+  window.addEventListener('copy', onCopy);
+  window.addEventListener('keydown', onKeyDown);
+  await loadInfo();
+  if (info.value?.desktop) {
+    // A double click started veilq: it ends once this window has been gone a while.
+    void api.ping().catch(() => {});
+    heartbeat = setInterval(() => void api.ping().catch(() => {}), 20_000);
+    // The first start opens setup, until veilq is installed.
+    if (info.value.setup && !sessionStorage.getItem('veilq-setup-shown')) {
+      sessionStorage.setItem('veilq-setup-shown', '1');
+      const status = await api.setup().catch(() => null);
+      if (status && !status.installed) settings.value = true;
+    }
   }
 });
 
-onBeforeUnmount(() => window.removeEventListener('paste', onPaste));
+onBeforeUnmount(() => {
+  window.removeEventListener('paste', onPaste);
+  window.removeEventListener('copy', onCopy);
+  window.removeEventListener('keydown', onKeyDown);
+  clearInterval(heartbeat);
+});
 </script>
 
 <template>
@@ -256,6 +324,8 @@ onBeforeUnmount(() => window.removeEventListener('paste', onPaste));
         </div>
         <div><dt>version</dt><dd class="mono">{{ info.version }}</dd></div>
       </dl>
+      <span class="spacer" />
+      <button v-if="info" class="small" title="Setup, models" @click="settings = true">Settings</button>
       <p v-else-if="infoError" class="meta error">{{ infoError }}</p>
     </header>
 
@@ -378,7 +448,23 @@ onBeforeUnmount(() => window.removeEventListener('paste', onPaste));
               @open="viewer = 'input'"
             />
           </div>
-          <p v-else class="placeholder">{{ busy ? 'Reading …' : 'Choose a source on the left.' }}</p>
+          <div
+            v-else
+            class="empty"
+            :class="{ over: dragging }"
+            @dragover.prevent="dragging = true"
+            @dragleave="dragging = false"
+            @drop.prevent="onPaneDrop"
+          >
+            <template v-if="busy">
+              <strong>Reading …</strong>
+            </template>
+            <template v-else>
+              <strong>Drop a file here, or paste one</strong>
+              <span><kbd>Ctrl</kbd>+<kbd>V</kbd> pastes a screenshot or a copied file; the File tab opens one under the root.</span>
+              <span class="small">Text, logs, CSV, JSON, Word, Excel, PowerPoint, mails, images and PDF. Nothing leaves this machine.</span>
+            </template>
+          </div>
         </div>
       </section>
 
@@ -388,7 +474,9 @@ onBeforeUnmount(() => window.removeEventListener('paste', onPaste));
           <span v-if="result" class="count">{{ findings.length }} finding{{ findings.length === 1 ? '' : 's' }}</span>
           <span class="spacer" />
           <button v-if="outputPictures" class="small" title="Zoom and fullscreen (or double-click the image)" @click="viewer = 'output'">Zoom</button>
-          <button v-if="result && !result.output_base64" class="small" @click="copyOutput">{{ copied ? 'Copied' : 'Copy' }}</button>
+          <button v-if="copyable" class="small" title="Copy the redacted output (Ctrl+C with nothing selected)" @click="copyOutput">
+            {{ copied ? 'Copied' : 'Copy' }}
+          </button>
           <button v-if="result" class="small" @click="downloadOutput">Download</button>
         </header>
         <div class="pane-body">
@@ -442,7 +530,15 @@ onBeforeUnmount(() => window.removeEventListener('paste', onPaste));
             :hovered="hovered"
             @hover="hovered = $event"
           />
-          <p v-else class="placeholder">{{ busy ? 'Redacting …' : 'The redacted output appears here.' }}</p>
+          <div v-else class="empty">
+            <template v-if="busy">
+              <strong>Redacting …</strong>
+            </template>
+            <template v-else>
+              <strong>The redacted output appears here</strong>
+              <span><kbd>Ctrl</kbd>+<kbd>C</kbd> copies it (text, or an image as a picture), Download saves it.</span>
+            </template>
+          </div>
         </div>
       </section>
     </main>
@@ -457,6 +553,8 @@ onBeforeUnmount(() => window.removeEventListener('paste', onPaste));
       @hover="hovered = $event"
       @close="viewer = null"
     />
+
+    <SettingsPane v-if="settings && info" :api="api" :info="info" @close="settings = false" @changed="loadInfo" />
 
     <section class="report">
       <div v-if="result?.report.review_required" class="review">
@@ -651,6 +749,45 @@ onBeforeUnmount(() => window.removeEventListener('paste', onPaste));
   color: var(--text-faint);
   padding: var(--space-4);
   font-size: 13px;
+}
+.empty {
+  height: calc(100% - 2 * var(--space-4));
+  margin: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.empty strong {
+  color: var(--text-2);
+  font-size: 16px;
+  font-weight: 600;
+}
+.empty .small {
+  color: var(--text-faint);
+  font-size: 12px;
+  max-width: 42em;
+}
+.empty.over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.empty kbd {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 1px 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface-2);
+  opacity: 1;
+  margin: 0;
 }
 .binary {
   margin: var(--space-4);

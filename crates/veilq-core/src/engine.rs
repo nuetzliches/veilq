@@ -511,6 +511,19 @@ impl Engine {
         false
     }
 
+    /// Whether the NER model runs.
+    pub fn has_ner(&self) -> bool {
+        self.detector.has_ner()
+    }
+
+    /// Whether PDF pages can be rendered.
+    pub fn has_pdf(&self) -> bool {
+        #[cfg(feature = "pdf")]
+        return self.pdfium.is_some();
+        #[cfg(not(feature = "pdf"))]
+        false
+    }
+
     /// This engine with `action` overriding the policy's actions (`None`:
     /// the policy's), as `--action` does; `pseudonymize` needs a key.
     pub fn with_action(&self, action: Option<Action>) -> Result<Self, Error> {

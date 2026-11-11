@@ -6,21 +6,27 @@ use anyhow::Context as _;
 use clap::{Parser, Subcommand, ValueEnum};
 use veilq_core::{Action, Engine, Format, Outcome, Policy, PseudonymKey, Report, models};
 
+#[cfg(feature = "ui")]
+mod desktop;
+mod fetch;
 #[cfg(feature = "mcp")]
 mod mcp;
 mod sarif;
 #[cfg(feature = "ui")]
 mod ui;
+mod update;
 
 /// Find and redact personal data in text, documents, images and screen
 /// recordings.
 ///
 /// Exit codes: 0 nothing found, 1 personal data found, 2 error.
+///
+/// Started by a double click, veilq opens its web UI in a window (ADR-0027).
 #[derive(Parser)]
 #[command(name = "veilq", version)]
 struct Cli {
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -159,6 +165,21 @@ enum Command {
         #[arg(long)]
         policy: Option<PathBuf>,
     },
+    /// Check for a newer release, and install it where this program is
+    /// (only when asked; nothing but the request is sent, ADR-0027).
+    Update {
+        /// Only say whether there is a newer release.
+        #[arg(long)]
+        check: bool,
+    },
+    /// Remove what setup installed for this user: shortcuts, the PATH
+    /// entry, the entry in "Installed apps" and the program (ADR-0027).
+    #[cfg(feature = "ui")]
+    Uninstall {
+        /// Remove the downloaded models too.
+        #[arg(long)]
+        models: bool,
+    },
 }
 
 #[derive(clap::Args)]
@@ -236,7 +257,17 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> anyhow::Result<Outcome> {
-    match cli.command {
+    update::clean_up();
+    let Some(command) = cli.command else {
+        #[cfg(feature = "ui")]
+        if desktop::double_clicked() {
+            return start_desktop();
+        }
+        use clap::CommandFactory;
+        Cli::command().print_help()?;
+        return Ok(Outcome::Error);
+    };
+    match command {
         Command::Scan {
             path,
             input,
@@ -319,6 +350,7 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
         } => {
             let (policy, source) = load_policy(policy.as_deref())?;
             let engine = engine(&policy, None)?;
+            let reload = policy.clone();
             ui::run(ui::Options {
                 root: root.unwrap_or(std::env::current_dir()?),
                 port,
@@ -328,10 +360,75 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
                 policy,
                 policy_source: source.to_string(),
                 engine,
+                desktop: false,
+                reload: Some(Box::new(move || crate::engine(&reload, None))),
             })?;
             Ok(Outcome::Clean)
         }
+        Command::Update { check } => {
+            let found = update::check()?;
+            if !found.newer {
+                println!("veilq {} is the newest release", found.current);
+                return Ok(Outcome::Clean);
+            }
+            println!(
+                "veilq {} is out (this is {}): {}",
+                found.latest, found.current, found.url
+            );
+            if !check {
+                let (_, program) = update::install_latest()?;
+                println!("installed: {}", program.display());
+            }
+            Ok(Outcome::Clean)
+        }
+        #[cfg(feature = "ui")]
+        Command::Uninstall { models } => {
+            desktop::uninstall(&desktop::Uninstall { models })?;
+            println!("veilq is removed for this user; its folder goes once this window closes.");
+            Ok(Outcome::Clean)
+        }
     }
+}
+
+/// A double click: open the running UI, or start one in an app window
+/// that reads the user's home folder (ADR-0027). An error stays on screen
+/// until a key is pressed, since the console closes with the program.
+#[cfg(feature = "ui")]
+fn start_desktop() -> anyhow::Result<Outcome> {
+    if let Some(instance) = desktop::running_instance() {
+        desktop::open_app_window(&instance.url);
+        return Ok(Outcome::Clean);
+    }
+    let result = (|| -> anyhow::Result<()> {
+        let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+            .map(PathBuf::from)
+            .map_or_else(std::env::current_dir, Ok)?;
+        let (policy, source) = load_policy(None)?;
+        let engine = engine(&policy, None)?;
+        let reload = policy.clone();
+        ui::run(ui::Options {
+            root: home,
+            port: 0,
+            proxy_port: None,
+            token_file: Some(desktop::app_dir().join("ui-token")),
+            open: false,
+            policy,
+            policy_source: source.to_string(),
+            engine,
+            desktop: true,
+            reload: Some(Box::new(move || crate::engine(&reload, None))),
+        })
+    })();
+    if let Err(e) = result {
+        eprintln!(
+            "error: {e:#}
+
+Press Enter to close."
+        );
+        let _ = std::io::stdin().read_line(&mut String::new());
+        return Ok(Outcome::Error);
+    }
+    Ok(Outcome::Clean)
 }
 
 fn load_policy(explicit: Option<&Path>) -> anyhow::Result<(Policy, veilq_core::policy::Source)> {
@@ -411,30 +508,17 @@ fn models_command(command: ModelsCommand) -> anyhow::Result<Outcome> {
             Ok(Outcome::Clean)
         }
         ModelsCommand::Fetch { detector } => {
-            let files = pinned_files(&detector)?;
-            let downloads = dir.join(".downloads");
-            std::fs::create_dir_all(&downloads)?;
-            for f in files {
-                if dir.join(f.file).is_file() {
-                    println!("ok       {}", f.file);
-                    continue;
+            pinned_files(&detector)?;
+            let shown = std::sync::Mutex::new(String::new());
+            fetch::component(&detector, &dir, &|p| {
+                if let Ok(mut s) = shown.lock()
+                    && *s != p.file
+                {
+                    println!("fetching {} ({}/{})", p.file, p.index, p.of);
+                    s.clone_from(&p.file);
                 }
-                let tmp = downloads.join(f.name);
-                println!("fetching {}", f.url());
-                let status = std::process::Command::new("curl")
-                    .args(["-fsSL", "--proto", "=https", "--tlsv1.2", "-o"])
-                    .arg(&tmp)
-                    .arg(f.url())
-                    .status()
-                    .context("curl is needed to download (or use `veilq models install --from`)")?;
-                if !status.success() {
-                    let _ = std::fs::remove_file(&tmp);
-                    anyhow::bail!("{}: download failed ({status})", f.url());
-                }
-                let result = models::install(f, &tmp, &dir);
-                let _ = std::fs::remove_file(&tmp);
-                println!("ok       {}", result?.display());
-            }
+            })?;
+            println!("ok       {detector} in {}", dir.display());
             Ok(Outcome::Clean)
         }
         ModelsCommand::Install { detector, from } => {

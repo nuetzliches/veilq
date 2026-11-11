@@ -8,6 +8,22 @@ Notable changes per release. The format follows
 
 ### Added
 
+- A double click on `veilq` (Windows) opens the web UI in its own window
+  and ends a few minutes after the window closed; a second double click
+  opens the running one (ADR-0027).
+- Settings in the web UI: setup for the user (copy to
+  `%LOCALAPPDATA%\Programs\veilq`, Start menu, desktop, `PATH`, "Installed
+  apps"), the models with download and progress, and "Quit veilq".
+  `veilq uninstall` removes what setup made.
+- `veilq.exe` has an icon.
+- `veilq update` and Settings' "Check for updates": only when asked, the
+  newest release from GitHub, checked against its `SHA256SUMS` and put
+  where veilq runs; a veilq a double click started restarts into it.
+- The web UI copies the redacted output with Ctrl+C when nothing is
+  selected, an image as a picture (PNG), text as text; the Copy button too.
+  The empty panes say how to drop, paste and copy, and the input pane takes
+  a dropped file.
+
 - `veilq redact --unverified` and the web UI's "Generate anyway" (ADR-0026):
   a picture whose verify rounds do not settle is written with the last
   round's findings filled too, and the report asks for a review.

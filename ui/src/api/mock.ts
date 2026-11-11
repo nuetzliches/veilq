@@ -135,6 +135,39 @@ export function mockApi(): Api {
     async picture(path) {
       throw new ApiError(422, `${path}: the mock has no images`);
     },
+    async setup() {
+      return { available: false, exe: '/mock/veilq', install_dir: '/mock/bin', installed: false, runs_installed: false, start_menu: false, desktop: false, on_path: false };
+    },
+    async install() {
+      throw new ApiError(422, 'the mock installs nothing');
+    },
+    async uninstall() {
+      throw new ApiError(422, 'the mock uninstalls nothing');
+    },
+    async models() {
+      return {
+        dir: '/mock/models',
+        components: ['ner', 'ocr', 'pdf'].map((name) => ({
+          name,
+          about: `Mock: ${name}`,
+          installed: false,
+          available: true,
+          active: false,
+          files: [],
+        })),
+      };
+    },
+    async fetchModel() {
+      throw new ApiError(422, 'the mock downloads nothing');
+    },
+    async checkUpdate() {
+      return { current: 'mock', latest: 'mock', newer: false, url: 'https://github.com/nuetzliches/veilq/releases' };
+    },
+    async installUpdate() {
+      throw new ApiError(422, 'the mock updates nothing');
+    },
+    async quit() {},
+    async ping() {},
     async redact(source: Source) {
       switch (source.kind) {
         case 'text':

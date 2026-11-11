@@ -1,4 +1,15 @@
-import { ApiError, type Api, type Info, type Listing, type Picture, type Redaction, type Source } from './types';
+import {
+  ApiError,
+  type Api,
+  type Info,
+  type Listing,
+  type Models,
+  type Picture,
+  type Redaction,
+  type SetupStatus,
+  type Source,
+  type UpdateCheck,
+} from './types';
 
 const TOKEN_KEY = 'veilq-token';
 
@@ -41,5 +52,22 @@ export function httpApi(token: string): Api {
         method: 'POST',
         body: JSON.stringify({ source, action, unverified: unverified || undefined }),
       }),
+    setup: () => call<SetupStatus>('/setup'),
+    install: (request) => call<SetupStatus>('/setup', { method: 'POST', body: JSON.stringify(request) }),
+    uninstall: async (models) => {
+      await call<null>('/setup/uninstall', { method: 'POST', body: JSON.stringify({ models }) });
+    },
+    models: () => call<Models>('/models'),
+    fetchModel: async (name) => {
+      await call<null>(`/models/${encodeURIComponent(name)}/fetch`, { method: 'POST' });
+    },
+    checkUpdate: () => call<UpdateCheck>('/update'),
+    installUpdate: () => call<UpdateCheck>('/update', { method: 'POST' }),
+    quit: async () => {
+      await call<null>('/quit', { method: 'POST' });
+    },
+    ping: async () => {
+      await call<null>('/ping', { method: 'POST' });
+    },
   };
 }

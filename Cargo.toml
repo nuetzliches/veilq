@@ -16,7 +16,9 @@ clap = { version = "4", features = ["derive"] }
 veilq-core = { path = "crates/veilq-core" }
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# `deny`, not `forbid`: the desktop module's three Windows calls allow it
+# for themselves (ADR-0027).
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

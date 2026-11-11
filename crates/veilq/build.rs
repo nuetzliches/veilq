@@ -1,6 +1,7 @@
 //! Embeds the web UI (`ui/dist`, built with `npm run build` in `ui/`) for
-//! `veilq ui`. Without a build, a placeholder page says how to get one, so the
-//! Rust side builds without Node.
+//! `veilq ui`, and on Windows the program icon. Without a UI build, a
+//! placeholder page says how to get one, so the Rust side builds without
+//! Node.
 
 use std::path::Path;
 
@@ -17,6 +18,19 @@ fn copy(from: &Path, to: &Path) {
 }
 
 fn main() {
+    // The target, as the release names its archives (`veilq update`).
+    println!(
+        "cargo:rustc-env=VEILQ_TARGET={}",
+        std::env::var("TARGET").unwrap()
+    );
+    // The program icon, for the Explorer, the Start menu and the taskbar.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        println!("cargo:rerun-if-changed=assets/veilq.rc");
+        println!("cargo:rerun-if-changed=assets/veilq.ico");
+        embed_resource::compile("assets/veilq.rc", embed_resource::NONE)
+            .manifest_optional()
+            .unwrap();
+    }
     if std::env::var_os("CARGO_FEATURE_UI").is_none() {
         return;
     }
