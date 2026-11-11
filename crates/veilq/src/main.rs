@@ -350,7 +350,6 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
         } => {
             let (policy, source) = load_policy(policy.as_deref())?;
             let engine = engine(&policy, None)?;
-            let reload = policy.clone();
             ui::run(ui::Options {
                 root: root.unwrap_or(std::env::current_dir()?),
                 port,
@@ -361,7 +360,7 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
                 policy_source: source.to_string(),
                 engine,
                 desktop: false,
-                reload: Some(Box::new(move || crate::engine(&reload, None))),
+                reload: Some(Box::new(|p: &Policy| crate::engine(p, None))),
             })?;
             Ok(Outcome::Clean)
         }
@@ -403,9 +402,13 @@ fn start_desktop() -> anyhow::Result<Outcome> {
         let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
             .map(PathBuf::from)
             .map_or_else(std::env::current_dir, Ok)?;
+        // The folder chosen in Settings, while it is there.
+        let home = desktop::Settings::load()
+            .root
+            .filter(|r| r.is_dir())
+            .unwrap_or(home);
         let (policy, source) = load_policy(None)?;
         let engine = engine(&policy, None)?;
-        let reload = policy.clone();
         ui::run(ui::Options {
             root: home,
             port: 0,
@@ -416,7 +419,7 @@ fn start_desktop() -> anyhow::Result<Outcome> {
             policy_source: source.to_string(),
             engine,
             desktop: true,
-            reload: Some(Box::new(move || crate::engine(&reload, None))),
+            reload: Some(Box::new(|p: &Policy| crate::engine(p, None))),
         })
     })();
     if let Err(e) = result {

@@ -160,6 +160,44 @@ export function mockApi(): Api {
     async fetchModel() {
       throw new ApiError(422, 'the mock downloads nothing');
     },
+    async policy() {
+      return {
+        source: 'built-in defaults',
+        user_file: '/mock/veilq.toml',
+        user_in_use: true,
+        policy: {
+          version: 1,
+          defaults: { action: 'mask', min_confidence: 0.7 },
+          locales: ['de', 'en'],
+          entities: {},
+          patterns: [],
+          allow: { values: [], patterns: [] },
+        },
+        entities: ['EMAIL_ADDRESS', 'IBAN_CODE', 'PERSON', 'PHONE_NUMBER'],
+        locales: ['de', 'en'],
+        actions: ['mask', 'pseudonymize', 'fake', 'remove'],
+        validators: ['iban', 'luhn'],
+      };
+    },
+    async tryPolicy() {
+      return { toml: 'version = 1' };
+    },
+    async savePolicy() {
+      throw new ApiError(422, 'the mock saves nothing');
+    },
+    async folders() {
+      return { path: '', parent: null, folders: [] };
+    },
+    async setRoot() {
+      throw new ApiError(422, 'the mock has one root');
+    },
+    async batch() {
+      return null;
+    },
+    async startBatch() {
+      throw new ApiError(422, 'the mock redacts no folders');
+    },
+    async cancelBatch() {},
     async checkUpdate() {
       return { current: 'mock', latest: 'mock', newer: false, url: 'https://github.com/nuetzliches/veilq/releases' };
     },

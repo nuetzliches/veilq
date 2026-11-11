@@ -36,6 +36,35 @@ pub fn app_dir() -> PathBuf {
     base.unwrap_or_else(std::env::temp_dir).join("veilq")
 }
 
+/// What a double-click veilq keeps between starts: the folder it reads.
+#[derive(Default, Serialize, Deserialize)]
+pub struct Settings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<PathBuf>,
+}
+
+impl Settings {
+    fn file() -> PathBuf {
+        app_dir().join("settings.json")
+    }
+
+    pub fn load() -> Self {
+        std::fs::read_to_string(Self::file())
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn save(&self) -> anyhow::Result<()> {
+        let file = Self::file();
+        if let Some(dir) = file.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(file, serde_json::to_string_pretty(self)?)?;
+        Ok(())
+    }
+}
+
 /// The UI a double click started, so that the next one opens it instead of
 /// starting a second server.
 #[derive(Serialize, Deserialize)]
