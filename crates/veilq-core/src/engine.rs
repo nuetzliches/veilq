@@ -19,7 +19,7 @@ use std::io::{BufRead, Write};
 use std::ops::Range;
 use std::path::Path;
 
-use crate::detect::{Candidate, Detector};
+use crate::detect::{Candidate, Detector, Verdict};
 use crate::fake::Faker;
 use crate::finding::{Finding, Location, Report};
 use crate::mapping::Entry;
@@ -156,6 +156,78 @@ pub struct Redacted {
     pub output_spans: Vec<Range<usize>>,
 }
 
+/// Where an engine writes what it read and decided (`scan --explain`, #40):
+/// shared by the clones of one engine, so a picture's lines and a PDF's
+/// pages land in one list, in the order they were read.
+#[derive(Clone, Default)]
+pub struct Explain(std::sync::Arc<std::sync::Mutex<Vec<Reading>>>);
+
+impl Explain {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The readings so far; the list is emptied.
+    pub fn take(&self) -> Vec<Reading> {
+        std::mem::take(&mut *self.0.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+
+    fn record(&self, text: &str, context: &str, decisions: &[crate::detect::Decision]) {
+        let reading = Reading {
+            text: text.to_owned(),
+            context: context.to_owned(),
+            candidates: decisions
+                .iter()
+                .map(|d| Explained {
+                    start: d.candidate.start,
+                    end: d.candidate.end,
+                    value: text[d.candidate.start..d.candidate.end].to_owned(),
+                    entity: d.candidate.entity.as_str().to_owned(),
+                    detector: d.candidate.detector.clone(),
+                    confidence: d.candidate.confidence,
+                    threshold: d.threshold,
+                    verdict: d.verdict,
+                    raised: d.raised,
+                })
+                .collect(),
+        };
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(reading);
+    }
+}
+
+/// One text the detector read (a line, a cell, a picture's OCR line, a
+/// verify round's new text) and every candidate in it. Holds the values in
+/// clear: never part of a report.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Reading {
+    pub text: String,
+    /// What stood before the text and was read as its context (a column's
+    /// name, a picture's neighbouring lines).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub context: String,
+    pub candidates: Vec<Explained>,
+}
+
+/// A candidate in a [`Reading`], with the policy's verdict on it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Explained {
+    /// Byte offsets into the reading's text.
+    pub start: usize,
+    pub end: usize,
+    pub value: String,
+    pub entity: String,
+    pub detector: String,
+    pub confidence: f32,
+    pub threshold: f32,
+    pub verdict: Verdict,
+    /// A birth date beside a name lifted its confidence.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub raised: bool,
+}
+
 /// The pipeline of one run: detector, policy, key and faker.
 #[derive(Clone)]
 pub struct Engine {
@@ -168,6 +240,8 @@ pub struct Engine {
     /// A picture whose last verify round still found something is written
     /// with that filled too, for a review, instead of failing.
     unverified: bool,
+    /// Where each reading and its decisions go, for `scan --explain` (#40).
+    explain: Option<Explain>,
     #[cfg(feature = "ocr")]
     ocr: Option<std::sync::Arc<crate::ocr::Ocr>>,
     #[cfg(feature = "pdf")]
@@ -203,6 +277,7 @@ impl Engine {
             action,
             markdown: false,
             unverified: false,
+            explain: None,
             #[cfg(feature = "ocr")]
             ocr: None,
             #[cfg(feature = "pdf")]
@@ -434,8 +509,7 @@ impl Engine {
         let mut at = 0;
         for seg in segments {
             let mut found: Vec<Candidate> = self
-                .detector
-                .findings(&seg.text, &seg.context)?
+                .decided(&seg.text, &seg.context, false)?
                 .into_iter()
                 .filter(|c| seg.raw_of(c.start) < upto)
                 .collect();
@@ -544,6 +618,16 @@ impl Engine {
         engine
     }
 
+    /// This engine writing every text it reads, with each candidate and
+    /// the policy's verdict on it, to `explain`: what `scan --explain` shows
+    /// (#40). It changes nothing about what is found or replaced. The
+    /// readings hold the values in clear.
+    pub fn with_explain(&self, explain: Explain) -> Self {
+        let mut engine = self.clone();
+        engine.explain = Some(explain);
+        engine
+    }
+
     pub(crate) fn unverified(&self) -> bool {
         self.unverified
     }
@@ -621,19 +705,43 @@ impl Engine {
 
     /// The findings in `text`, decided (for formats beside this module).
     pub(crate) fn findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
-        // veilq's own placeholders (`<PERSON>`, `[PERSON:0a1b2c3d]`,
-        // ADR-0001) are no personal data: what lies inside one is dropped, so
-        // a model that reads `<PERSON>` as a name changes nothing.
+        self.decided(text, context, true)
+    }
+
+    /// The detector's findings in `text`, written to the explanation when
+    /// there is one; with `placeholders`, what lies inside one of veilq's
+    /// own placeholders (`<PERSON>`, `[PERSON:0a1b2c3d]`, ADR-0001) is
+    /// dropped, so a model that reads `<PERSON>` as a name changes nothing.
+    fn decided(
+        &self,
+        text: &str,
+        context: &str,
+        placeholders: bool,
+    ) -> Result<Vec<Candidate>, Error> {
         static PLACEHOLDER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
             regex::Regex::new(r"\\?<[A-Z][A-Z0-9_]*\\?>|\[[A-Z][A-Z0-9_]*:[0-9a-f]{8}\]")
                 .expect("a valid regex")
         });
-        let mut found = self.detector.findings(text, context)?;
-        if text.contains(['<', '[']) {
+        let mut decisions = self.detector.decide(text, context)?;
+        if placeholders && text.contains(['<', '[']) {
             let spans: Vec<Range<usize>> = PLACEHOLDER.find_iter(text).map(|m| m.range()).collect();
-            found.retain(|c| !spans.iter().any(|s| s.start <= c.start && c.end <= s.end));
+            for d in &mut decisions {
+                let c = &d.candidate;
+                if d.verdict == Verdict::Kept
+                    && spans.iter().any(|s| s.start <= c.start && c.end <= s.end)
+                {
+                    d.verdict = Verdict::Placeholder;
+                }
+            }
         }
-        Ok(found)
+        if let Some(explain) = &self.explain {
+            explain.record(text, context, &decisions);
+        }
+        Ok(decisions
+            .into_iter()
+            .filter(|d| d.verdict == Verdict::Kept)
+            .map(|d| d.candidate)
+            .collect())
     }
 
     /// `text` cut into pieces: what stays (`false`) and each finding's
@@ -732,7 +840,7 @@ impl Engine {
             new_at += p.len();
         }
         let mut out = Vec::new();
-        for f in self.detector.findings(&new, context)? {
+        for f in self.decided(&new, context, false)? {
             let Some((range, old)) = kept
                 .iter()
                 .find(|(r, _)| r.start <= f.start && f.end <= r.end)
@@ -1268,6 +1376,42 @@ mod tests {
 
     fn engine() -> Engine {
         Engine::new(&Policy::default(), None, b"seed", None).unwrap()
+    }
+
+    #[test]
+    fn an_explanation_changes_nothing_and_says_why() {
+        let text = "Sehr geehrte Frau Mira Albers, geb. 14.03.1987.\n\
+                    Wir bestätigen Ihnen hiermit gerne den Termin am 02.05.2026.\n\
+                    Ihr Zeichen: C:\\Users\\Public\\Dokumente\n";
+        let plain = engine().scan_str(text, Format::Text).unwrap();
+        let explain = Explain::new();
+        let explaining = engine().with_explain(explain.clone());
+        assert_eq!(explaining.scan_str(text, Format::Text).unwrap(), plain);
+        assert_eq!(
+            engine()
+                .with_explain(Explain::new())
+                .redact_str(text, Format::Text)
+                .unwrap(),
+            engine().redact_str(text, Format::Text).unwrap()
+        );
+        let readings = explain.take();
+        assert!(explain.take().is_empty(), "take empties the list");
+        let verdict = |value: &str| {
+            readings
+                .iter()
+                .flat_map(|r| &r.candidates)
+                .find(|c| c.value == value)
+                .map(|c| c.verdict)
+        };
+        assert_eq!(verdict("14.03.1987"), Some(Verdict::Kept));
+        assert_eq!(verdict("02.05.2026"), Some(Verdict::BelowThreshold));
+        assert_eq!(verdict("Public"), Some(Verdict::Account));
+        let kept = readings
+            .iter()
+            .flat_map(|r| &r.candidates)
+            .filter(|c| c.verdict == Verdict::Kept)
+            .count();
+        assert_eq!(kept, plain.report.findings.len());
     }
 
     #[test]

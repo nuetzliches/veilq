@@ -84,6 +84,14 @@ a build provenance attestation:
 gh attestation verify veilq-x86_64-unknown-linux-gnu.tar.gz --repo nuetzliches/veilq
 ```
 
+**Signatures** (ADR-0035): a signed release says so in its notes. A signature
+says that nuetzliches' release workflow built the file from the tag, the same
+as the attestation, in a form Windows and macOS read; it is no review of the
+code. To check one: on Windows `Get-AuthenticodeSignature veilq.exe` (status
+`Valid`), on macOS `codesign --verify --strict --verbose=2 veilq` and
+`spctl --assess --type execute -v veilq`. Until a platform is signed, its
+release notes say so and SmartScreen or Gatekeeper ask once.
+
 **Updates** only when you ask: `veilq update` (`--check` only looks), or
 Settings → "Check for updates". It installs the newest release where veilq
 is, after checking it against the release's `SHA256SUMS`.
@@ -124,7 +132,10 @@ OCR an image is an error; without NER the report says `review_required`.
 
 - **`veilq scan <path>`** lists findings (type, place, detector,
   confidence), never the values; `--sarif` for code scanning. Exit code 1
-  when something was found, 2 on an error.
+  when something was found, 2 on an error. `--explain` adds, on standard
+  error, what veilq read (a picture's OCR lines too) and every candidate
+  with its detector, confidence, threshold and verdict: why something was
+  found or left. It shows the values; keep it on your own machine.
 - **`veilq redact <path>`** writes the redacted input (`-o`, default
   standard output) and, with `--report`, the report as JSON. Actions:
   `mask` (default, `<PERSON>`), `pseudonymize` (`[PERSON:3f2a9c1e]`, keyed),

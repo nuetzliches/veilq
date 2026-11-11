@@ -6,8 +6,21 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `veilq scan --explain` says what veilq read and why it decided
+  (ADR-0034): per text read, a picture's OCR lines too, every candidate
+  with its detector, confidence, threshold and verdict (found, below
+  threshold, overlapped, a role word, a system account, a brand word, …).
+  On standard error, beside an unchanged report; it shows the values.
+
 ### Changed
 
+- Releases are ready to be signed (ADR-0035): macOS binaries with a
+  Developer ID and notarized, once the release environment holds the keys
+  and the switch is on; Windows gets its signing step with the choice of a
+  provider. Until then a release's notes say which platform is not signed,
+  and the README says how to check a signature.
 - The UI is one working surface for people without a command line
   (ADR-0033): the input takes typed or pasted text, a dropped file and a
   screenshot alike, with no tabs to choose first; the findings open in a
