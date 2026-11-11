@@ -56,10 +56,12 @@ enum Command {
         /// How many misses and false positives to list.
         #[arg(long, default_value_t = 40)]
         list: usize,
-        /// Corpora checked at the same time, each with its own engine;
-        /// default: half the cores (a model runs on several itself).
-        #[arg(long)]
-        jobs: Option<usize>,
+        /// Corpora checked at the same time, each with its own engine. With
+        /// models it pays only where cores are left over: a model runs on
+        /// every core itself (on a 4-core CI runner, 2 jobs took as long as
+        /// 1).
+        #[arg(long, default_value_t = 1)]
+        jobs: usize,
     },
 }
 
@@ -106,9 +108,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             }
             // The corpora are checked side by side, the results printed in
             // their order.
-            let jobs = jobs
-                .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get() / 2))
-                .clamp(1, runs.len());
+            let jobs = jobs.clamp(1, runs.len());
             let mut results = Vec::with_capacity(runs.len());
             for chunk in runs.chunks(jobs) {
                 let done: Vec<_> = std::thread::scope(|s| {
