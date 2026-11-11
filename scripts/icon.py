@@ -1,6 +1,7 @@
-"""Draws veilq's app icon (ui/public/favicon.svg, four rounded rectangles)
-as crates/veilq/assets/veilq.ico and veilq.png. Run it after changing the
-favicon: `python scripts/icon.py` (needs Pillow).
+"""Draws veilq's app icon as ui/public/favicon.svg has it (three lines of
+text on blue, the middle one blacked out) into crates/veilq/assets/veilq.ico
+and veilq.png. Run it after changing the favicon: `python scripts/icon.py`
+(needs Pillow).
 """
 
 from pathlib import Path
@@ -17,12 +18,13 @@ def draw() -> Image.Image:
     img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     d.rounded_rectangle((0, 0, S - 1, S - 1), radius=7 * U, fill="#3a6df0")
-    for x, y, w, alpha in [(7, 9, 18, 255), (7, 15, 10, 140), (7, 21, 14, 255)]:
-        bar = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-        ImageDraw.Draw(bar).rounded_rectangle(
-            (x * U, y * U, (x + w) * U, (y + 4) * U), radius=2 * U, fill=(255, 255, 255, alpha)
-        )
-        img = Image.alpha_composite(img, bar)
+    # x, y, width, height, corner radius, colour: as the favicon's rects.
+    for x, y, w, h, r, fill in [
+        (7, 8, 18, 3.5, 1.75, "#ffffff"),
+        (6, 14, 20, 5, 1, "#0f1115"),
+        (7, 21, 13, 3.5, 1.75, "#ffffff"),
+    ]:
+        d.rounded_rectangle((x * U, y * U, (x + w) * U, (y + h) * U), radius=r * U, fill=fill)
     return img
 
 
