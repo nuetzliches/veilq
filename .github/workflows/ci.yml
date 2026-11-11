@@ -52,18 +52,23 @@ jobs:
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
+      # One release cache for both eval jobs; eval-models, which builds the
+      # more of the two, saves it.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          shared-key: release
+          save-if: false
       - name: gate
         run: cargo run --release --locked -p veilq-eval -- check eval --held-out 7001,7002,7003,7004,7005 --list 0
 
   eval-models:
     # The same corpus with the pinned models (ADR-0022, ADR-0023): NER, OCR
     # and PDFium, fetched by veilq itself from their pinned URLs and checked
-    # against their SHA-256, cached by the pins (models.rs). The pictures of
-    # the corpus are read too; the gate is eval/gate-ner.toml. About 650 MB on
-    # a cache miss.
+    # against their SHA-256. They are cached by the pins alone (the URLs and
+    # checksums in models.rs), saved from main only: a pull request that
+    # changes other code in models.rs restores them and saves nothing. The
+    # pictures of the corpus are read too; the gate is eval/gate-ner.toml.
+    # The six corpora are checked two at a time.
     runs-on: ubuntu-latest
     env:
       VEILQ_MODEL_DIR: ${{ github.workspace }}/.models
@@ -74,19 +79,35 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
+          shared-key: release
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: pins
+        id: pins
+        shell: bash
+        run: |
+          pins=$(grep -E 'https://|sha256:|file:|name:|member:|target:' crates/veilq-core/src/models.rs | sha256sum | cut -c1-16)
+          echo "key=veilq-models-${{ runner.os }}-$pins" >> "$GITHUB_OUTPUT"
       - name: models cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: models
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .models
-          key: veilq-models-${{ runner.os }}-${{ hashFiles('crates/veilq-core/src/models.rs') }}
+          key: ${{ steps.pins.outputs.key }}
+      - name: build
+        run: cargo build --release --locked -p veilq -p veilq-eval
       - name: fetch models
-        run: |
-          cargo build --release --locked -p veilq
-          for m in ner ocr pdf; do target/release/veilq models fetch "$m"; done
-          target/release/veilq models list
+        if: steps.models.outputs.cache-hit != 'true'
+        run: for m in ner ocr pdf; do target/release/veilq models fetch "$m"; done
+      - name: save models
+        if: steps.models.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .models
+          key: ${{ steps.pins.outputs.key }}
       - name: gate
-        run: cargo run --release --locked -p veilq-eval -- check eval --ner --ocr --gate eval/gate-ner.toml --held-out 7001,7002,7003,7004,7005 --list 20
+        run: |
+          target/release/veilq models list
+          target/release/veilq-eval check eval --ner --ocr --gate eval/gate-ner.toml --held-out 7001,7002,7003,7004,7005 --list 20 --jobs 2
 
   ui:
     # The web UI (ui/) that `veilq ui` embeds: types, unit tests, build.
