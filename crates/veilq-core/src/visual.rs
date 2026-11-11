@@ -37,7 +37,30 @@ const PAD: u32 = 2;
 
 /// Said when a policy asks for `pseudonymize` or `fake` in a picture.
 pub const BOXES_ONLY: &str = "in a picture every action is a black box: a pseudonym or a stand-in cannot be written into pixels faithfully";
-const ROUNDS: usize = 3;
+/// Verify rounds at most: reading a filled picture again moves rows and
+/// labels, so a round can find what the one before did not (ADR-0026).
+const ROUNDS: usize = 6;
+
+/// Where a finding is, as the report and the messages say it.
+fn place(f: &Finding) -> String {
+    match &f.location {
+        Location::Region {
+            frame,
+            x,
+            y,
+            width,
+            height,
+            ..
+        } => {
+            let at = format!("{width}x{height} at {x},{y}");
+            match frame {
+                Some(n) => format!("{at} (frame or page {n})"),
+                None => at,
+            }
+        }
+        _ => String::new(),
+    }
+}
 
 fn error(message: impl std::fmt::Display) -> Error {
     Error::Format(message.to_string())
@@ -166,6 +189,7 @@ pub fn redact_picture(
     let (w, h) = img.dimensions();
     let mut filled: Vec<Rect> = Vec::new();
     for round in 1..=ROUNDS {
+        let before = out.findings.len();
         let rgb = DynamicImage::ImageRgba8(img.clone()).to_rgb8();
         let lines = ocr.read(&rgb)?;
         let p = page(&lines);
@@ -218,20 +242,31 @@ pub fn redact_picture(
         if new.is_empty() || !apply {
             return Ok(filled);
         }
-        if round == ROUNDS {
-            return Err(Error::Leftover {
-                entity: out
-                    .findings
-                    .last()
-                    .map(|f| f.entity.as_str().to_owned())
-                    .unwrap_or_default(),
-                detector: "ocr".into(),
+        let last = round == ROUNDS;
+        if last && !engine.unverified() {
+            let f = &out.findings[before];
+            return Err(Error::Unsettled {
+                entity: f.entity.as_str().to_owned(),
+                at: place(f),
+                rounds: ROUNDS,
             });
         }
         for r in &new {
             fill(img, r);
         }
         filled.extend(new);
+        if last {
+            let found = &out.findings[before..];
+            let more = match found.len() {
+                1 => String::new(),
+                n => format!(" and {} more", n - 1),
+            };
+            out.review_reasons.push(format!(
+                "the picture was written unverified: after {ROUNDS} rounds OCR still found {} at {}{more}; that is filled too, but the picture was not read again",
+                found[0].entity.as_str(),
+                place(&found[0]),
+            ));
+        }
     }
     Ok(filled)
 }
@@ -258,17 +293,25 @@ fn changed(a: &RgbaImage, b: &RgbaImage, r: &Rect) -> bool {
 
 /// An animated GIF, frame by frame (frames counted from 1), encoded anew.
 fn gif(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Outcome, Error> {
+    // Frame by frame, decoded and encoded as they come: a screen recording
+    // of a few hundred frames at 4K is tens of GB decoded at once.
     let frames = GifDecoder::new(Cursor::new(bytes))
         .map_err(error)?
-        .into_frames()
-        .collect_frames()
-        .map_err(error)?;
+        .into_frames();
     let mut out = outcome();
-    let mut redacted: Vec<Frame> = Vec::with_capacity(frames.len());
+    let mut buf = Vec::new();
+    let mut encoder = if apply {
+        let mut e = GifEncoder::new_with_speed(&mut buf, 10);
+        e.set_repeat(Repeat::Infinite).map_err(error)?;
+        Some(e)
+    } else {
+        None
+    };
     // The previous frame as decoded, as redacted, and its boxes.
     let mut prev: Option<(RgbaImage, RgbaImage)> = None;
     let mut boxes: Vec<Rect> = Vec::new();
-    for (i, frame) in frames.into_iter().enumerate() {
+    for (i, frame) in frames.enumerate() {
+        let frame = frame.map_err(error)?;
         let delay = frame.delay();
         let original = frame.into_buffer();
         let img = match &prev {
@@ -292,20 +335,14 @@ fn gif(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Outcome,
                 img
             }
         };
-        if apply {
-            redacted.push(Frame::from_parts(img.clone(), 0, 0, delay));
+        if let Some(e) = encoder.as_mut() {
+            e.encode_frame(Frame::from_parts(img.clone(), 0, 0, delay))
+                .map_err(error)?;
         }
         prev = Some((original, img));
     }
-    if apply {
-        let mut buf = Vec::new();
-        {
-            let mut encoder = GifEncoder::new_with_speed(&mut buf, 10);
-            encoder.set_repeat(Repeat::Infinite).map_err(error)?;
-            encoder.encode_frames(redacted).map_err(error)?;
-        }
-        out.output = buf;
-    }
+    drop(encoder);
+    out.output = buf;
     Ok(out)
 }
 
@@ -440,6 +477,35 @@ mod tests {
         assert!(covered(&address, [address].iter()));
         assert!(covered(&r(55, 1349, 104, 19), [address].iter()));
         assert!(!covered(&address, std::iter::empty()));
+    }
+
+    #[test]
+    fn an_unsettled_picture_says_where() {
+        let f = Finding {
+            entity: EntityType::new("PERSON").unwrap(),
+            location: Location::Region {
+                part: None,
+                frame: Some(3),
+                x: 142,
+                y: 228,
+                width: 97,
+                height: 24,
+            },
+            confidence: 0.8,
+            detector: "ner".into(),
+            pseudonym: None,
+        };
+        assert_eq!(place(&f), "97x24 at 142,228 (frame or page 3)");
+        let e = Error::Unsettled {
+            entity: "PERSON".into(),
+            at: place(&f),
+            rounds: ROUNDS,
+        };
+        let m = e.to_string();
+        assert!(
+            m.contains("PERSON at 97x24 at 142,228") && m.contains("--unverified"),
+            "{m}"
+        );
     }
 
     #[test]

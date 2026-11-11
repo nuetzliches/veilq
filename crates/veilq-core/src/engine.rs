@@ -165,6 +165,9 @@ pub struct Engine {
     action: Option<Action>,
     /// Writes `mask` as `\<TYPE\>` (the format `markdown`).
     markdown: bool,
+    /// A picture whose last verify round still found something is written
+    /// with that filled too, for a review, instead of failing.
+    unverified: bool,
     #[cfg(feature = "ocr")]
     ocr: Option<std::sync::Arc<crate::ocr::Ocr>>,
     #[cfg(feature = "pdf")]
@@ -199,6 +202,7 @@ impl Engine {
             faker: Faker::new(fake_seed),
             action,
             markdown: false,
+            unverified: false,
             #[cfg(feature = "ocr")]
             ocr: None,
             #[cfg(feature = "pdf")]
@@ -516,6 +520,19 @@ impl Engine {
         let mut engine = self.clone();
         engine.action = action;
         Ok(engine)
+    }
+
+    /// This engine writing a picture whose verify rounds did not settle,
+    /// with the last round's boxes filled too and a review asked for
+    /// (`--unverified`, ADR-0026), instead of failing.
+    pub fn with_unverified(&self, unverified: bool) -> Self {
+        let mut engine = self.clone();
+        engine.unverified = unverified;
+        engine
+    }
+
+    pub(crate) fn unverified(&self) -> bool {
+        self.unverified
     }
 
     /// Whether a pseudonym key is set: `pseudonymize` works.

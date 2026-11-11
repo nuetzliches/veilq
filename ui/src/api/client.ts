@@ -36,7 +36,10 @@ export function httpApi(token: string): Api {
     info: () => call<Info>('/info'),
     files: (dir) => call<Listing>(`/files?dir=${encodeURIComponent(dir)}`),
     picture: (path) => call<Picture>(`/picture?path=${encodeURIComponent(path)}`),
-    redact: (source: Source, action?: string) =>
-      call<Redaction>('/redact', { method: 'POST', body: JSON.stringify({ source, action }) }),
+    redact: (source: Source, action?: string, unverified?: boolean) =>
+      call<Redaction>('/redact', {
+        method: 'POST',
+        body: JSON.stringify({ source, action, unverified: unverified || undefined }),
+      }),
   };
 }

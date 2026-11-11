@@ -86,7 +86,11 @@ export interface Api {
   /** An image under the root as it is, shown while it is redacted. */
   picture(path: string): Promise<Picture>;
   /** `action`: overrides the policy's actions for this run. */
-  redact(source: Source, action?: string): Promise<Redaction>;
+  /**
+   * `unverified`: a picture whose verify rounds do not settle (409) is
+   * written anyway, with the last round's findings filled, for a review.
+   */
+  redact(source: Source, action?: string, unverified?: boolean): Promise<Redaction>;
 }
 
 export class ApiError extends Error {
