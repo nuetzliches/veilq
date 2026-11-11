@@ -14,6 +14,14 @@ Notable changes per release. The format follows
   threshold, overlapped, a role word, a system account, a brand word, …).
   On standard error, beside an unchanged report; it shows the values.
 
+### Changed
+
+- Releases are ready to be signed (ADR-0035): macOS binaries with a
+  Developer ID and notarized, once the release environment holds the keys
+  and the switch is on; Windows gets its signing step with the choice of a
+  provider. Until then a release's notes say which platform is not signed,
+  and the README says how to check a signature.
+
 ## [0.1.7] - 2026-11-11
 
 ### Fixed

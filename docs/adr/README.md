@@ -73,3 +73,4 @@ keep it to about a page.
 | [0031](0031-a-click-starts-veilq-without-a-console-window.md) | A click starts veilq without a console window | Accepted |
 | [0032](0032-the-ui-shows-at-once-and-a-run-waits-for-the-models.md) | The UI shows at once, and a run waits for the models | Accepted |
 | [0034](0034-scan-explains-what-it-read-and-why-it-decided.md) | `scan --explain` says what veilq read and why it decided | Accepted |
+| [0035](0035-a-release-is-signed-in-its-own-environment-once-switched-on.md) | A release is signed in its own environment, once switched on | Accepted |
