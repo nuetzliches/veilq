@@ -1,0 +1,65 @@
+name: cache-cleanup
+
+# GitHub keeps 10 GB of caches per repository and evicts the oldest beyond
+# that, so a run may find its cache gone. Every Cargo.lock or pin change
+# leaves the earlier generation behind (the Rust caches alone are about 3 GB
+# a generation), and a pull request's caches outlive it. This keeps, per
+# cache name and branch, only the newest, and drops the caches of pull
+# requests that are closed.
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: cache-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: delete superseded and orphaned caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$REPO/actions/caches?per_page=100" \
+            --jq '.actions_caches[] | [.id, .key, .ref, .last_accessed_at] | @tsv' > caches.tsv
+          echo "caches: $(wc -l < caches.tsv)"
+          # A pull request's ref is refs/pull/<n>/merge: closed, its caches go.
+          deleted=0
+          while IFS=$'\t' read -r id key ref accessed; do
+            if [[ "$ref" =~ ^refs/pull/([0-9]+)/ ]]; then
+              state=$(gh api "repos/$REPO/pulls/${BASH_REMATCH[1]}" --jq .state)
+              if [[ "$state" == closed ]]; then
+                { gh api -X DELETE "repos/$REPO/actions/caches/$id" > /dev/null 2>&1 && deleted=$((deleted + 1)); } || true
+              fi
+            fi
+          done < caches.tsv
+          # Per ref and name (the key without its last, hashed part), the
+          # newest stays. (A cache deleted above may come again: tolerated.)
+          sort -t$'\t' -k3,3 -k4,4r caches.tsv | awk -F'\t' '{
+            name = $2; sub(/-[^-]*$/, "", name)
+            group = $3 "\t" name
+            if (seen[group]++) print $1
+          }' > superseded.txt
+          while read -r id; do
+            { gh api -X DELETE "repos/$REPO/actions/caches/$id" > /dev/null 2>&1 && deleted=$((deleted + 1)); } || true
+          done < superseded.txt
+          echo "deleted: $deleted"
+          gh api "repos/$REPO/actions/cache/usage" --jq '"left: \(.active_caches_count) caches, \(.active_caches_size_in_bytes / 1048576 | floor) MB"'
