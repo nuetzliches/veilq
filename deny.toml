@@ -3,6 +3,16 @@
 
 [graph]
 all-features = true
+# The targets release.yml ships, and only those: a crate another platform
+# would pull in (wry's Android and Linux dependencies, where veilq does not
+# use wry) is not shipped and not checked.
+targets = [
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+]
 
 [licenses]
 confidence-threshold = 0.9
@@ -22,6 +32,10 @@ allow = [
     "CDLA-Permissive-2.0",
     "Unicode-3.0",
 ]
+# Not shipped: wry's Linux build pulls it in (dirs → dirs-sys), but veilq
+# uses wry on Windows only (ADR-0029); cargo-deny lists a crate's
+# dependencies for every target above once the crate is in the graph.
+exceptions = [{ name = "option-ext", allow = ["MPL-2.0"] }]
 
 [bans]
 multiple-versions = "allow"
