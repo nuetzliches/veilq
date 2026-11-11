@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import type { Finding } from '@/api';
+import { t } from '@/lib/i18n';
+import { entityLabel } from '@/lib/labels';
 
 // An image beside its redacted twin: each finding of the image itself (a
 // region without a part) is a frame over it, on both sides; a PDF's page
@@ -55,7 +57,7 @@ function onLoad(e: Event) {
 
 <template>
   <div class="pane-image" :class="[side, { fit: zoom === 'fit', scaled: typeof zoom === 'number' }]">
-    <p v-if="page" class="page">Page {{ page }}</p>
+    <p v-if="page" class="page">{{ t('pdf.page', { page }) }}</p>
     <div class="frame" @dblclick="emit('open')">
       <img :src="src" alt="" :style="imgStyle" draggable="false" @load="onLoad" />
       <span
@@ -64,7 +66,7 @@ function onLoad(e: Event) {
         class="box"
         :class="{ hot: hovered === b.i }"
         :style="b.style"
-        :title="`${b.entity} · ${b.detector}`"
+        :title="`${b.i + 1}. ${entityLabel(b.entity)}`"
         @mouseenter="emit('hover', b.i)"
         @mouseleave="emit('hover', null)"
       />

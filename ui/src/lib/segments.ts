@@ -1,5 +1,3 @@
-import type { Location } from '@/api';
-
 /** A piece of a text: plain, or the span of finding `finding`. */
 export interface Segment {
   text: string;
@@ -28,17 +26,6 @@ export function segments(text: string, spans: ([number, number] | null)[]): Segm
   }
   if (at < data.length || out.length === 0) out.push({ text: decoder.decode(data.subarray(at)) });
   return out;
-}
-
-export function describeLocation(location: Location): string {
-  switch (location.kind) {
-    case 'span':
-      return `${location.part ? `${location.part}, ` : ''}line ${location.line}, col ${location.column}`;
-    case 'cell':
-      return `${location.sheet ? `${location.sheet}, ` : ''}row ${location.row}, col ${location.column}`;
-    case 'region':
-      return `${location.part ? `${location.part}, ` : ''}${location.frame ? `page/frame ${location.frame}, ` : ''}${location.width}×${location.height} at ${location.x},${location.y}`;
-  }
 }
 
 export function formatSize(size: number): string {

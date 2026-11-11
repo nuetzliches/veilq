@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import type { Api, Folders } from '@/api';
+import { t } from '@/lib/i18n';
 
 // Choosing a folder of this machine: a browser cannot name one, so the
 // server lists folders (names only, no file is read) from the home folder,
@@ -31,26 +32,26 @@ onMounted(() => open(props.start ?? ''));
       <header>
         <h3>{{ title }}</h3>
         <span class="spacer" />
-        <button class="small" @click="emit('close')">Cancel</button>
+        <button class="small" @click="emit('close')">{{ t('common.cancel') }}</button>
       </header>
       <form class="path" @submit.prevent="open(typed)">
-        <input v-model="typed" class="mono" placeholder="A folder, e.g. C:\Users\…\Documents" />
-        <button class="small" type="submit">Go</button>
+        <input v-model="typed" class="mono" :placeholder="t('picker.placeholder')" />
+        <button class="small" type="submit">{{ t('picker.go') }}</button>
       </form>
       <p v-if="error" class="failure">{{ error }}</p>
       <ul v-if="listing" class="list">
         <li v-if="listing.path">
-          <button class="link" @click="open(listing.parent ?? '')">↑ {{ listing.parent ? 'Up' : 'Start' }}</button>
+          <button class="link" @click="open(listing.parent ?? '')">↑ {{ listing.parent ? t('picker.up') : t('picker.start') }}</button>
         </li>
         <li v-for="f in listing.folders" :key="f.path">
           <button class="link" @click="open(f.path)">📁 {{ f.name }}</button>
         </li>
-        <li v-if="!listing.folders.length" class="hint">No folders here.</li>
+        <li v-if="!listing.folders.length" class="hint">{{ t('picker.none') }}</li>
       </ul>
       <footer>
-        <span class="mono chosen">{{ listing?.path || 'Choose a starting point' }}</span>
+        <span class="mono chosen">{{ listing?.path || t('picker.startingPoint') }}</span>
         <button class="primary" :disabled="!listing?.path" @click="emit('pick', listing!.path)">
-          {{ action ?? 'Choose this folder' }}
+          {{ action ?? t('picker.choose') }}
         </button>
       </footer>
     </div>

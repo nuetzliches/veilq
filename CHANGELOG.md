@@ -21,6 +21,18 @@ Notable changes per release. The format follows
   and the switch is on; Windows gets its signing step with the choice of a
   provider. Until then a release's notes say which platform is not signed,
   and the README says how to check a signature.
+- The UI is one working surface for people without a command line
+  (ADR-0033): the input takes typed or pasted text, a dropped file and a
+  screenshot alike, with no tabs to choose first; the findings open in a
+  panel beside the output, numbered. Opening a file and redacting a folder
+  are in the Open menu; a folder outside the one veilq reads becomes that
+  folder. Root, rules in use and version moved to Settings → Advanced.
+- The UI speaks German where the system does, English otherwise; Settings
+  → General changes it.
+- The first start shows a welcome dialog (install, models); Settings is a
+  page of its own with General, Detection and Advanced.
+- A file refused for a missing model (OCR, PDFium, NER) offers to download
+  it where the refusal is shown, and runs again once it is there.
 
 ## [0.1.7] - 2026-11-11
 

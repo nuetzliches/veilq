@@ -21,18 +21,20 @@ recordings: on your machine, in CI and as an MCP tool for any agent.
 
 1. **Double-click `veilq.exe`.** It is not signed yet (#10): Windows asks once.
    Choose "More info", then "Run anyway".
-2. **Settings → Install** puts veilq into your Start menu (desktop shortcut and
-   `PATH` if you like), for you alone, without administrator rights.
-3. **Settings → Models** downloads what reads pictures (OCR, 45 MB) and finds
-   names without a title (NER, 600 MB). Text, Office files and mails need
-   neither.
-4. **Drop a file, paste a screenshot (Ctrl+V)** or pick one; copy the redacted
-   result with Ctrl+C or download it. The Folder tab redacts a whole folder.
+2. **The welcome dialog** puts veilq into your Start menu, for you alone,
+   without administrator rights, and downloads what reads pictures (OCR,
+   45 MB) and finds names without a title (NER, 600 MB). Text, Office files
+   and mails need neither; a picture without OCR offers it where it is
+   refused.
+3. **Type or paste text, drop a file, or paste a screenshot (Ctrl+V)**; copy
+   the redacted result with Ctrl+C or save it. **Open → Redact a folder**
+   redacts a whole folder.
 
-Everything runs on your computer: veilq uploads nothing. Settings → Rules
-holds your own rules (your firm's name is no person; a customer number is),
-Settings → "Check for updates" looks for a new version when you ask.
-Uninstall in Settings or under "Installed apps".
+Everything runs on your computer: veilq uploads nothing. The UI speaks
+German or English, as your system does. Settings → Detection holds your own
+rules (your firm's name is no person; a customer number is), Settings →
+General looks for a new version when you ask. Uninstall in Settings →
+Advanced or under "Installed apps".
 
 ## From a command line
 
