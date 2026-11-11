@@ -68,6 +68,10 @@ export const de: Record<MessageKey, string> = {
 
   'findings.title': 'Funde',
   'findings.confidenceTitle': 'Wie sicher veilq ist (gefunden von {detector})',
+  'findings.showTitle': 'Auf beiden Seiten zeigen (N: nächster, P: voriger)',
+  'findings.notShown': 'Nicht in der Vorschau',
+  'findings.notShownTitle': 'Diese Stelle können die Ansichten nicht zeigen: Sie liegt in einem Bild im Dokument, auf einer Seite hinter der Vorschau oder in einem Einzelbild eines GIFs. Prüfen Sie sie in der gespeicherten Datei.',
+  'pane.zoomLevelTitle': 'Zurück zur Ausgangsgröße',
   'findings.explain': 'Was veilq gelesen hat',
   'findings.explainTitle': 'Liest noch einmal und zeigt, was veilq gelesen und wie es entschieden hat, mit den Werten im Klartext',
 

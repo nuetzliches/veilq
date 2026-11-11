@@ -6,6 +6,17 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- In the UI, input and output are one view (ADR-0036): they share a zoom
+  and the place they show, for text, pictures and PDF pages alike; zoom in
+  the input's header or with Ctrl+wheel. A click on a finding in the list
+  shows it on both sides, a click on a mark or a frame selects it in the
+  list, N and P step through the findings. A finding the panes cannot show
+  (inside a picture in a document, on a page past the preview, in a GIF's
+  frames) is marked as not in the preview. The full-screen viewer opens on
+  the place the panes show, with their zoom.
+
 ## [0.1.8] - 2026-11-12
 
 ### Added

@@ -68,6 +68,10 @@ export const en = {
 
   'findings.title': 'Findings',
   'findings.confidenceTitle': 'How sure veilq is (found by {detector})',
+  'findings.showTitle': 'Show it in both panes (N: next, P: previous)',
+  'findings.notShown': 'Not in the preview',
+  'findings.notShownTitle': 'The panes cannot show this place: it is in a picture inside the document, on a page past the preview, or in a frame of a GIF. Check it in the saved file.',
+  'pane.zoomLevelTitle': 'Back to the starting size',
   'findings.explain': 'What veilq read',
   'findings.explainTitle': 'Runs again and shows what veilq read and why it decided, with the values in clear',
 
