@@ -35,6 +35,10 @@ export interface Info {
   setup?: boolean;
   /** Shown in veilq's own window: closing it ends veilq. */
   window?: boolean;
+  /** The models are still loading; a run waits for them (ADR-0032). */
+  loading?: boolean;
+  /** Why the models did not load. */
+  load_error?: string;
 }
 
 /** What setup shows (ADR-0027). */

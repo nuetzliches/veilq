@@ -6,6 +6,27 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A name in a screenshot of a Word document with its formatting marks shown
+  was not found: OCR reads the space marks as `-` or `·`, so the name was
+  one word with the text before it. A picture's text is read a second time
+  with such marks as spaces (only `-` between letters and `·` right between
+  two words, so a separator in a letterhead stays).
+- A date of birth in a record's header (shown with an icon, no word such as
+  `geb.`) stayed: a valid date at least ten years back, beside a found name
+  or at the start of the line below it, is now a birth date.
+- An address whose street has no street word (`Am Anger 7, 15938 Lindau
+  Ost-Heide`) was not found: a street, a number, a comma and a postcode
+  make one now, and a town may have up to three words.
+
+### Changed
+
+- The UI shows at once: the models load beside it (ADR-0032), and a run
+  started meanwhile waits for them; "Loading models …" says so. The window
+  of a double-click veilq opens after half a second instead of two and
+  more.
+
 ## [0.1.5] - 2026-11-11
 
 ### Fixed

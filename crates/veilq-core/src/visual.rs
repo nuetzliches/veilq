@@ -212,6 +212,79 @@ impl Band {
 /// How close to an open edge a line's box may come before it counts as cut.
 const EDGE: u32 = 2;
 
+/// `text` with the formatting marks of a word processor read as text taken
+/// for spaces: a space mark `·` anywhere, and a `-` between two letters
+/// (OCR reads the mark as one). Byte for byte as long as `text`, so a
+/// finding's range is the same in both and its boxes stay its own. `None`
+/// when there is nothing to change.
+fn unmarked(text: &str) -> Option<String> {
+    if !text.contains(['·', '-']) {
+        return None;
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut changed = false;
+    for (i, &c) in chars.iter().enumerate() {
+        let between = |f: fn(&char) -> bool| {
+            i > 0 && i + 1 < chars.len() && f(&chars[i - 1]) && f(&chars[i + 1])
+        };
+        let between_letters = between(|c| c.is_alphabetic());
+        // A space mark takes a space's place, so it sits right between two
+        // words; a separator (`Lindenweg 12 · 28195 Bremen`) has spaces
+        // around it and stays.
+        let between_words = between(|c| c.is_alphanumeric());
+        match c {
+            // Two bytes in UTF-8, two spaces.
+            '·' if between_words => {
+                out.push_str("  ");
+                changed = true;
+            }
+            '-' if between_letters => {
+                out.push(' ');
+                changed = true;
+            }
+            c => out.push(c),
+        }
+    }
+    debug_assert_eq!(out.len(), text.len());
+    changed.then_some(out)
+}
+
+/// What the detectors find in the lines OCR read: the page as one text,
+/// and each line with its neighbours as context; each with its boxes. A
+/// text that may hold a word processor's formatting marks (`Sven·Heid`,
+/// read as `Sven-Heid`) is read a second time with them as spaces: a
+/// joined name is not one word, and a finding of either reading is filled.
+fn candidates(
+    engine: &Engine,
+    lines: &[Line],
+    w: u32,
+    h: u32,
+) -> Result<Vec<(crate::detect::Candidate, Vec<Rect>)>, Error> {
+    let p = page(lines);
+    let mut out = Vec::new();
+    for text in std::iter::once(p.text.clone()).chain(unmarked(&p.text)) {
+        for c in engine.findings(&text, "")? {
+            let rects = boxes(&p, c.start, c.end, w, h);
+            out.push((c, rects));
+        }
+    }
+    for (i, line) in lines.iter().enumerate() {
+        let one = Page {
+            text: line.text.clone(),
+            chars: line.chars.clone(),
+        };
+        let context = neighbours(lines, i);
+        for text in std::iter::once(line.text.clone()).chain(unmarked(&line.text)) {
+            for c in engine.findings(&text, &context)? {
+                let rects = boxes(&one, c.start, c.end, w, h);
+                out.push((c, rects));
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// [`redact_picture`] on `img`, a band of a picture: the findings are
 /// reported where they are in the picture, the boxes returned are in the
 /// band. `None` when OCR reads a line at an edge of the band that was left
@@ -237,23 +310,7 @@ fn settle(
         }) {
             return Ok(None);
         }
-        let p = page(&lines);
-        // The page as one text, and each line with its neighbours as context.
-        let mut candidates: Vec<(crate::detect::Candidate, Vec<Rect>)> = Vec::new();
-        for c in engine.findings(&p.text, "")? {
-            let rects = boxes(&p, c.start, c.end, w, h);
-            candidates.push((c, rects));
-        }
-        for (i, line) in lines.iter().enumerate() {
-            let one = Page {
-                text: line.text.clone(),
-                chars: line.chars.clone(),
-            };
-            for c in engine.findings(&line.text, &neighbours(&lines, i))? {
-                let rects = boxes(&one, c.start, c.end, w, h);
-                candidates.push((c, rects));
-            }
-        }
+        let candidates = candidates(engine, &lines, w, h)?;
         let mut new: Vec<Rect> = Vec::new();
         for (c, rects) in candidates {
             // Found twice (page and line), or inside a box already filled.
@@ -614,6 +671,53 @@ mod tests {
                 w: 104,
                 h: 24
             }]
+        );
+    }
+
+    #[test]
+    fn formatting_marks_read_as_dashes_do_not_hide_a_name() {
+        // A Word screenshot with its formatting marks shown: OCR reads the
+        // space marks as `-` or `·` and a pilcrow as `l`.
+        let engine = Engine::new(&crate::Policy::default(), None, b"test", None).unwrap();
+        let found = |text: &str| {
+            let lines = [line(text, 0, 0)];
+            candidates(&engine, &lines, 2000, 100)
+                .unwrap()
+                .into_iter()
+                .map(|(c, _)| {
+                    (
+                        c.entity.as_str().to_owned(),
+                        text[c.start..c.end].to_owned(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        for text in [
+            "Rückruf-an-Herr-Jonas-Brandt-heute",
+            "Rückruf·an·Herr·Jonas·Brandt·heute",
+        ] {
+            assert!(
+                found(text)
+                    .iter()
+                    .any(|(e, v)| e == "PERSON" && v.contains("Jonas")),
+                "{text}: {:?}",
+                found(text)
+            );
+        }
+        // A real compound stays as it is: its parts are no names.
+        assert!(
+            found("Rechnung-an-Baden-Württemberg")
+                .iter()
+                .all(|(e, _)| e != "PERSON")
+        );
+        // The text keeps its length: the boxes of a finding stay its own.
+        assert_eq!(unmarked("a·b-c").unwrap(), "a  b c");
+        assert_eq!(unmarked("ohne Marken"), None);
+        // A separator in a letterhead is no space mark: an address after it
+        // is not joined to what stands before.
+        assert_eq!(
+            unmarked("Kanzlei Muster · Lindenweg 12 · 28195 Bremen"),
+            None
         );
     }
 

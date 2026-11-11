@@ -71,3 +71,4 @@ keep it to about a page.
 | [0029](0029-veilq-shows-its-ui-in-a-window-of-its-own.md) | veilq shows its UI in a window of its own | Accepted |
 | [0030](0030-a-gif-frame-is-read-where-it-changed.md) | A GIF frame is read where it changed | Accepted |
 | [0031](0031-a-click-starts-veilq-without-a-console-window.md) | A click starts veilq without a console window | Accepted |
+| [0032](0032-the-ui-shows-at-once-and-a-run-waits-for-the-models.md) | The UI shows at once, and a run waits for the models | Accepted |

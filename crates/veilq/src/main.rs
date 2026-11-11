@@ -357,7 +357,9 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
             policy,
         } => {
             let (policy, source) = load_policy(policy.as_deref())?;
-            let engine = engine(&policy, None)?;
+            // The server answers at once; the models load beside it.
+            let engine = patterns_engine(&policy)?;
+            let full = policy.clone();
             ui::run(ui::Options {
                 root: root.unwrap_or(std::env::current_dir()?),
                 port,
@@ -367,6 +369,7 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
                 policy,
                 policy_source: source.to_string(),
                 engine,
+                load: Some(Box::new(move || crate::engine(&full, None))),
                 desktop: false,
                 reload: Some(Box::new(|p: &Policy| crate::engine(p, None))),
                 window: None,
@@ -423,7 +426,9 @@ fn start_desktop() -> anyhow::Result<Outcome> {
             .filter(|r| r.is_dir())
             .unwrap_or(home);
         let (policy, source) = load_policy(None)?;
-        let engine = engine(&policy, None)?;
+        // The window shows at once; the models load beside it (ADR-0032).
+        let engine = patterns_engine(&policy)?;
+        let full = policy.clone();
         let options = ui::Options {
             root: home,
             port: 0,
@@ -433,6 +438,7 @@ fn start_desktop() -> anyhow::Result<Outcome> {
             policy,
             policy_source: source.to_string(),
             engine,
+            load: Some(Box::new(move || crate::engine(&full, None))),
             desktop: true,
             reload: Some(Box::new(|p: &Policy| crate::engine(p, None))),
             window: None,
@@ -459,16 +465,29 @@ fn load_policy(explicit: Option<&Path>) -> anyhow::Result<(Policy, veilq_core::p
 
 /// The engine of a run: the policy's key, if any, and a seed for `fake`
 /// (from the key, else random for this run).
-fn engine(policy: &Policy, action: Option<Action>) -> anyhow::Result<Engine> {
+/// The engine with its patterns only: quick to make, for a UI that shows
+/// at once while [`engine`] loads the models (ADR-0032).
+#[cfg(feature = "ui")]
+fn patterns_engine(policy: &Policy) -> anyhow::Result<Engine> {
     let key = PseudonymKey::from_policy_env(policy)?;
-    let seed = match &key {
+    let seed = fake_seed(&key)?;
+    Ok(Engine::new(policy, key, &seed, None)?)
+}
+
+fn fake_seed(key: &Option<PseudonymKey>) -> anyhow::Result<Vec<u8>> {
+    Ok(match key {
         Some(k) => k.fake_seed(),
         None => {
             let mut seed = vec![0u8; 32];
             getrandom::fill(&mut seed).map_err(|e| anyhow::anyhow!("no randomness: {e}"))?;
             seed
         }
-    };
+    })
+}
+
+fn engine(policy: &Policy, action: Option<Action>) -> anyhow::Result<Engine> {
+    let key = PseudonymKey::from_policy_env(policy)?;
+    let seed = fake_seed(&key)?;
     #[allow(unused_mut)]
     let mut engine = Engine::new(policy, key, &seed, action)?;
     let dir = models::model_dir();
