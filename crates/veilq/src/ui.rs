@@ -8,9 +8,11 @@
 //! gets nothing. Files are read under one root, as the MCP server reads them
 //! (ADR-0007). The HTTP API is internal to the embedded UI, not a contract.
 
+use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, Instant};
 
 use axum::Router;
 use axum::extract::{DefaultBodyLimit, Query, Request, State};
@@ -23,7 +25,17 @@ use include_dir::{Dir, include_dir};
 use serde::{Deserialize, Serialize};
 use veilq_core::{Action, Engine, Error, Format, Policy, Report, root};
 
+#[path = "ui_setup.rs"]
+mod setup;
+
 static UI: Dir<'_> = include_dir!("$OUT_DIR/ui");
+
+/// Builds the engine again, after a model was installed from the UI.
+pub type Reload = Box<dyn Fn() -> anyhow::Result<Engine> + Send + Sync>;
+
+/// A UI started by a double click ends this long after its window last
+/// said it is open (a background tab's timers run once a minute).
+const IDLE: Duration = Duration::from_secs(180);
 
 /// The largest input the UI redacts; a log export above this belongs to
 /// `veilq redact`, which streams.
@@ -46,6 +58,11 @@ pub struct Options {
     pub policy: Policy,
     pub policy_source: String,
     pub engine: Engine,
+    /// Started by a double click (ADR-0027): the URL opens in an app
+    /// window, the running instance is written down, and the server ends
+    /// when its window has been gone for a while.
+    pub desktop: bool,
+    pub reload: Option<Reload>,
 }
 
 struct AppState {
@@ -56,7 +73,15 @@ struct AppState {
     root: PathBuf,
     policy: Policy,
     policy_source: String,
-    engine: Engine,
+    /// Replaced when a model is installed from the UI.
+    engine: RwLock<Engine>,
+    reload: Option<Reload>,
+    desktop: bool,
+    /// Ends the server: the UI's "Quit", or a desktop window gone.
+    shutdown: tokio::sync::Notify,
+    last_ping: Mutex<Instant>,
+    /// Model downloads started from the UI, by component.
+    jobs: Mutex<HashMap<String, setup::Job>>,
 }
 
 pub fn run(options: Options) -> anyhow::Result<()> {
@@ -76,14 +101,17 @@ async fn serve(options: Options) -> anyhow::Result<()> {
             .await?;
     let port = listener.local_addr()?.port();
     let ports: Vec<u16> = std::iter::once(port).chain(options.proxy_port).collect();
-    let state = Arc::new(AppState::new(
+    let mut state = AppState::new(
         token(options.token_file.as_deref())?,
         &ports,
         root,
         options.policy,
         options.policy_source,
         options.engine,
-    ));
+    );
+    state.desktop = options.desktop;
+    state.reload = options.reload;
+    let state = Arc::new(state);
 
     let shown = options.proxy_port.unwrap_or(port);
     let url = format!("http://127.0.0.1:{shown}/#token={}", state.token);
@@ -91,15 +119,53 @@ async fn serve(options: Options) -> anyhow::Result<()> {
     println!("root:     {}", display_path(&state.root));
     println!("policy:   {}", state.policy_source);
     println!("Ctrl+C stops it.");
-    if options.open {
+    let instance = crate::desktop::instance_file();
+    if state.desktop {
+        if let Some(dir) = instance.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(
+            &instance,
+            serde_json::to_string(&crate::desktop::Instance {
+                url: url.clone(),
+                port,
+                pid: std::process::id(),
+            })?,
+        )?;
+        crate::desktop::open_app_window(&url);
+        crate::desktop::hide_console();
+        // The window says it is open; once it has been gone a while, end.
+        let watch = state.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                let idle = watch
+                    .last_ping
+                    .lock()
+                    .map(|t| t.elapsed())
+                    .unwrap_or_default();
+                if idle > IDLE {
+                    watch.shutdown.notify_one();
+                    break;
+                }
+            }
+        });
+    } else if options.open {
         open_browser(&url);
     }
 
+    let ended = state.clone();
     axum::serve(listener, router(state))
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
+        .with_graceful_shutdown(async move {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = ended.shutdown.notified() => {}
+            }
         })
         .await?;
+    if options.desktop {
+        let _ = std::fs::remove_file(&instance);
+    }
     Ok(())
 }
 
@@ -124,8 +190,21 @@ impl AppState {
             root,
             policy,
             policy_source,
-            engine,
+            engine: RwLock::new(engine),
+            reload: None,
+            desktop: false,
+            shutdown: tokio::sync::Notify::new(),
+            last_ping: Mutex::new(Instant::now()),
+            jobs: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// The engine as it is now (a model installed from the UI replaces it).
+    fn engine(&self) -> Engine {
+        self.engine
+            .read()
+            .map(|e| e.clone())
+            .unwrap_or_else(|p| p.into_inner().clone())
     }
 }
 
@@ -153,6 +232,12 @@ fn router(state: Arc<AppState>) -> Router {
         .route("/files", get(files))
         .route("/redact", post(redact))
         .route("/picture", get(picture))
+        .route("/ping", post(setup::ping))
+        .route("/quit", post(setup::quit))
+        .route("/setup", get(setup::status).post(setup::install))
+        .route("/setup/uninstall", post(setup::uninstall))
+        .route("/models", get(setup::models))
+        .route("/models/{component}/fetch", post(setup::fetch))
         .layer(DefaultBodyLimit::max(MAX_BODY))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_token));
     Router::new()
@@ -320,6 +405,11 @@ struct Info {
     /// `pseudonymize` only with a key.
     actions: Vec<&'static str>,
     max_input: usize,
+    /// Started by a double click: the UI says it is open, offers to quit,
+    /// and opens setup on the first start.
+    desktop: bool,
+    /// Whether this platform's setup is built (ADR-0027).
+    setup: bool,
 }
 
 async fn info(State(state): State<Arc<AppState>>) -> axum::Json<Info> {
@@ -335,10 +425,12 @@ async fn info(State(state): State<Arc<AppState>>) -> axum::Json<Info> {
             Action::Pseudonymize,
         ]
         .into_iter()
-        .filter(|a| *a != Action::Pseudonymize || state.engine.has_key())
+        .filter(|a| *a != Action::Pseudonymize || state.engine().has_key())
         .map(Action::name)
         .collect(),
         max_input: MAX_INPUT,
+        desktop: state.desktop,
+        setup: cfg!(windows),
     })
 }
 
@@ -471,7 +563,7 @@ async fn picture(
         let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
         if format == Some(Format::Pdf) {
             let (pages, n) = state
-                .engine
+                .engine()
                 .pdf_pages(&bytes, MAX_PAGES)
                 .map_err(Failure::from)?;
             return Ok(Picture {
@@ -558,8 +650,8 @@ async fn redact(
 ) -> Response {
     let result = tokio::task::spawn_blocking(move || {
         let engine = match request.action {
-            None => state.engine.clone(),
-            Some(a) => state.engine.with_action(Some(a)).map_err(Failure::from)?,
+            None => state.engine(),
+            Some(a) => state.engine().with_action(Some(a)).map_err(Failure::from)?,
         }
         .with_unverified(request.unverified);
         redact_source(&state, &engine, request.source)
@@ -761,7 +853,7 @@ fn display_path(path: &Path) -> String {
     s.strip_prefix(r"\\?\").map(str::to_owned).unwrap_or(s)
 }
 
-fn open_browser(url: &str) {
+pub(crate) fn open_browser(url: &str) {
     #[cfg(windows)]
     let result = std::process::Command::new("rundll32")
         .args(["url.dll,FileProtocolHandler", url])
@@ -1006,6 +1098,50 @@ mod tests {
         }))
         .unwrap();
         assert!(r.unverified);
+    }
+
+    #[tokio::test]
+    async fn the_settings_api_needs_the_token_and_lists_the_models() {
+        let dir = tempfile::tempdir().unwrap();
+        for (method, uri) in [
+            ("GET", "/api/models"),
+            ("GET", "/api/setup"),
+            ("POST", "/api/quit"),
+        ] {
+            let (status, _) = send(
+                app(dir.path()),
+                request(method, uri).body(Body::empty()).unwrap(),
+            )
+            .await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{method} {uri}");
+        }
+        let (status, body) = send(
+            app(dir.path()),
+            authed("GET", "/api/models").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let names: Vec<&str> = body["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["ner", "ocr", "pdf"]);
+        let (status, _) = send(
+            app(dir.path()),
+            authed("POST", "/api/models/nonsense/fetch")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (_, info) = send(
+            app(dir.path()),
+            authed("GET", "/api/info").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(info["desktop"], false);
     }
 
     #[tokio::test]

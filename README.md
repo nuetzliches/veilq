@@ -57,6 +57,12 @@ a build provenance attestation:
 gh attestation verify veilq-x86_64-unknown-linux-gnu.tar.gz --repo nuetzliches/veilq
 ```
 
+**Without a command line (Windows):** unpack the zip and double-click
+`veilq.exe`. It opens in its own window; Settings installs it for you
+(Start menu, desktop, `PATH`; no administrator rights) and downloads the
+models. The file is not signed yet (#10): Windows asks once, "More info →
+Run anyway". Uninstall it in Settings or under "Installed apps".
+
 Or build it: `cargo install --locked --git https://github.com/nuetzliches/veilq veilq`
 (Rust 1.98 or later; the web UI is embedded when `ui/dist` was built first,
 `npm ci && npm run build` in `ui/`).
@@ -109,7 +115,9 @@ OCR an image is an error; without NER the report says `review_required`.
   marked; JSON with `state`, `text` and the `write` to store back
   ([ADR-0024](docs/adr/0024-a-body-carries-its-verdict-in-its-first-line.md)).
 - **`veilq ui`** serves a local web UI on loopback, bound to a token, that
-  reads files under `--root` only.
+  reads files under `--root` only. Started by a double click, veilq opens it
+  in an app window, with Settings for setup and models
+  ([ADR-0027](docs/adr/0027-a-double-click-opens-the-ui-and-setup-installs-for-the-user.md)).
 - **`veilq mcp`** is an MCP server over stdio (or `--http` on loopback with
   a token) with the tools `scan`, `redact_text`, `redact_file` and
   `list_detectors`. In Claude Code:

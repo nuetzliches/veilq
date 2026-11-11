@@ -29,6 +29,49 @@ export interface Info {
   /** What a run can choose instead of the policy's actions. */
   actions: string[];
   max_input: number;
+  /** Started by a double click: the page says it is open, and can quit veilq. */
+  desktop?: boolean;
+  /** Whether setup (install, Start menu) is built for this platform. */
+  setup?: boolean;
+}
+
+/** What setup shows (ADR-0027). */
+export interface SetupStatus {
+  available: boolean;
+  exe: string;
+  install_dir: string;
+  installed: boolean;
+  runs_installed: boolean;
+  start_menu: boolean;
+  desktop: boolean;
+  on_path: boolean;
+}
+
+export interface SetupRequest {
+  start_menu: boolean;
+  desktop: boolean;
+  path: boolean;
+}
+
+export type ModelJob =
+  | { state: 'running'; file: string; index: number; of: number; bytes: number }
+  | { state: 'done' }
+  | { state: 'failed'; error: string };
+
+export interface ModelComponent {
+  name: string;
+  about: string;
+  installed: boolean;
+  available: boolean;
+  /** The running engine uses it. */
+  active: boolean;
+  files: { name: string; url: string; installed: boolean }[];
+  job?: ModelJob;
+}
+
+export interface Models {
+  dir: string;
+  components: ModelComponent[];
 }
 
 export interface Entry {
@@ -91,6 +134,17 @@ export interface Api {
    * written anyway, with the last round's findings filled, for a review.
    */
   redact(source: Source, action?: string, unverified?: boolean): Promise<Redaction>;
+  setup(): Promise<SetupStatus>;
+  install(request: SetupRequest): Promise<SetupStatus>;
+  /** Removes setup's work; veilq ends, and its folder goes after it. */
+  uninstall(models: boolean): Promise<void>;
+  models(): Promise<Models>;
+  /** Starts a download; `models()` shows how far it is. */
+  fetchModel(name: string): Promise<void>;
+  /** Ends veilq. */
+  quit(): Promise<void>;
+  /** A desktop window says it is open. */
+  ping(): Promise<void>;
 }
 
 export class ApiError extends Error {
