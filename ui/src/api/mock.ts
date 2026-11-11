@@ -2,7 +2,7 @@
 // files with synthetic data and a toy detector, so the UI can be built before
 // the detectors of M1 exist. Every value here is made up.
 
-import { ApiError, type Api, type Entry, type Finding, type Redaction, type Source } from './types';
+import { ApiError, type Api, type Entry, type Finding, type Reading, type Redaction, type Source } from './types';
 
 const FILES: Record<string, string> = {
   'exports/app.log': [
@@ -53,6 +53,49 @@ const encoder = new TextEncoder();
 const bytes = (s: string) => encoder.encode(s).length;
 
 /** The toy pipeline: find, drop overlaps (the first and longest wins), mask. */
+/** The mock's run on a source: text only. */
+function mockSource(source: Source): Redaction {
+  switch (source.kind) {
+    case 'text':
+      return mockRedact(source.text);
+    case 'file': {
+      const text = FILES[source.path];
+      if (text === undefined) throw new ApiError(404, `${source.path}: not found`);
+      return mockRedact(text, source.path);
+    }
+    case 'upload': {
+      let text: string;
+      try {
+        text = new TextDecoder('utf-8', { fatal: true }).decode(decodeBase64(source.data));
+      } catch {
+        throw new ApiError(422, `${source.name} is not UTF-8 text; the mock reads text only`);
+      }
+      return mockRedact(text, source.name);
+    }
+  }
+}
+
+/** The mock's explanation: one reading of the whole input, each finding kept. */
+export function mockExplain(result: Redaction): Reading[] {
+  const encoded = new TextEncoder().encode(result.input);
+  const decode = (s: number, e: number) => new TextDecoder().decode(encoded.slice(s, e));
+  return [
+    {
+      text: result.input,
+      candidates: result.report.findings.map((f, i) => ({
+        start: result.input_spans[i][0],
+        end: result.input_spans[i][1],
+        value: decode(result.input_spans[i][0], result.input_spans[i][1]),
+        entity: f.entity,
+        detector: f.detector,
+        confidence: f.confidence,
+        threshold: 0.7,
+        verdict: 'kept' as const,
+      })),
+    },
+  ];
+}
+
 export function mockRedact(input: string, name?: string): Redaction {
   const hits: { start: number; end: number; entity: string; detector: string; confidence: number }[] = [];
   for (const d of DETECTORS) {
@@ -206,25 +249,10 @@ export function mockApi(): Api {
     },
     async quit() {},
     async ping() {},
-    async redact(source: Source) {
-      switch (source.kind) {
-        case 'text':
-          return mockRedact(source.text);
-        case 'file': {
-          const text = FILES[source.path];
-          if (text === undefined) throw new ApiError(404, `${source.path}: not found`);
-          return mockRedact(text, source.path);
-        }
-        case 'upload': {
-          let text: string;
-          try {
-            text = new TextDecoder('utf-8', { fatal: true }).decode(decodeBase64(source.data));
-          } catch {
-            throw new ApiError(422, `${source.name} is not UTF-8 text; the mock reads text only`);
-          }
-          return mockRedact(text, source.name);
-        }
-      }
+    async redact(source: Source, _action?: string, _unverified?: boolean, explain?: boolean) {
+      const result = mockSource(source);
+      if (explain) result.explain = mockExplain(result);
+      return result;
     },
   };
 }

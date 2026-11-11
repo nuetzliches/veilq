@@ -13,6 +13,9 @@ Notable changes per release. The format follows
   with its detector, confidence, threshold and verdict (found, below
   threshold, overlapped, a role word, a system account, a brand word, …).
   On standard error, beside an unchanged report; it shows the values.
+- In the UI, "What veilq read" below the findings runs the input again and
+  shows the same, per text read, with a warning that the values are in
+  clear.
 
 ### Changed
 

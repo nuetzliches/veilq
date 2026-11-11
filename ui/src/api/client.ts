@@ -51,10 +51,10 @@ export function httpApi(token: string): Api {
     info: () => call<Info>('/info'),
     files: (dir) => call<Listing>(`/files?dir=${encodeURIComponent(dir)}`),
     picture: (path) => call<Picture>(`/picture?path=${encodeURIComponent(path)}`),
-    redact: (source: Source, action?: string, unverified?: boolean) =>
+    redact: (source: Source, action?: string, unverified?: boolean, explain?: boolean) =>
       call<Redaction>('/redact', {
         method: 'POST',
-        body: JSON.stringify({ source, action, unverified: unverified || undefined }),
+        body: JSON.stringify({ source, action, unverified: unverified || undefined, explain: explain || undefined }),
       }),
     setup: () => call<SetupStatus>('/setup'),
     install: (request) => call<SetupStatus>('/setup', { method: 'POST', body: JSON.stringify(request) }),

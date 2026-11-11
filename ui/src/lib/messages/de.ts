@@ -68,6 +68,23 @@ export const de: Record<MessageKey, string> = {
 
   'findings.title': 'Funde',
   'findings.confidenceTitle': 'Wie sicher veilq ist (gefunden von {detector})',
+  'findings.explain': 'Was veilq gelesen hat',
+  'findings.explainTitle': 'Liest noch einmal und zeigt, was veilq gelesen und wie es entschieden hat, mit den Werten im Klartext',
+
+  'explain.warning': 'Zeigt die Werte im Klartext. Nur zum Ansehen auf diesem Rechner; nicht in ein Ticket oder eine Mail kopieren.',
+  'explain.context': 'Gelesen mit: {context}',
+  'explain.nothing': 'Hier sah nichts nach personenbezogenen Daten aus.',
+  'explain.raised': 'angehoben: ein Datum neben einem Namen',
+  'explain.near': 'knapp unter der Schwelle',
+  'explain.score': '{confidence} % (braucht {threshold} %), {detector}',
+  'verdict.kept': 'gefunden',
+  'verdict.below_threshold': 'unter der Schwelle',
+  'verdict.allowed': 'per Regel erlaubt',
+  'verdict.overlap': 'in einem längeren Fund',
+  'verdict.role_words': 'nur Rollenwörter',
+  'verdict.account': 'ein Systemkonto',
+  'verdict.brand_word': 'ein Produktname',
+  'verdict.placeholder': 'ein Platzhalter',
 
   'where.span': 'Zeile {line}, Spalte {column}',
   'where.cell': 'Zeile {row}, Spalte {column}',

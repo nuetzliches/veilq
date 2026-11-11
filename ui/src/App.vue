@@ -117,7 +117,7 @@ const outputPictures = computed<Pictures | null>(() => {
   return null;
 });
 
-async function run(source: Source, name: string | null, unverified = false) {
+async function run(source: Source, name: string | null, unverified = false, explain = false) {
   busy.value = true;
   viewer.value = null;
   error.value = null;
@@ -127,7 +127,7 @@ async function run(source: Source, name: string | null, unverified = false) {
   sourceName.value = name;
   lastRun.value = { source, name };
   try {
-    result.value = await api.redact(source, action.value || undefined, unverified);
+    result.value = await api.redact(source, action.value || undefined, unverified, explain);
   } catch (e) {
     // Fail closed: no output at all when veilq could not redact.
     error.value = e instanceof Error ? e.message : String(e);
@@ -140,6 +140,11 @@ async function run(source: Source, name: string | null, unverified = false) {
 /** Runs the last source again, writing a picture whose verify did not settle. */
 function runUnverified() {
   if (lastRun.value) void run(lastRun.value.source, lastRun.value.name, true);
+}
+
+/** The last source again, with what veilq read and why it decided (ADR-0034). */
+function runExplained() {
+  if (lastRun.value && !busy.value) void run(lastRun.value.source, lastRun.value.name, false, true);
 }
 
 /** The last source again: the action changed, or a model it needed arrived. */
@@ -615,8 +620,11 @@ onBeforeUnmount(() => {
       v-if="panel && result"
       :findings="findings"
       :hovered="hovered"
+      :readings="result.explain ?? null"
+      :busy="busy"
       @hover="hovered = $event"
       @close="panel = false"
+      @explain="runExplained"
     />
 
     <div v-if="dragging" class="drop" @dragleave.self="dragging = false">
