@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import type { Api, Info, ModelComponent, Models, SetupStatus } from '@/api';
+import type { Api, Info, ModelComponent, Models, SetupStatus, UpdateCheck } from '@/api';
 
 // Settings (ADR-0027): setup for this user (install, Start menu, desktop,
 // PATH), the models, and quitting a veilq a double click started.
@@ -15,6 +15,8 @@ const busy = ref(false);
 const done = ref<string | null>(null);
 const removeModels = ref(false);
 const ended = ref<string | null>(null);
+const update = ref<UpdateCheck | null>(null);
+const checking = ref(false);
 let poll: ReturnType<typeof setInterval> | undefined;
 
 const running = computed(() => models.value?.components.some((c) => c.job?.state === 'running') ?? false);
@@ -73,6 +75,33 @@ async function fetchModel(c: ModelComponent) {
     await loadModels();
   } catch (e) {
     error.value = message(e);
+  }
+}
+
+async function checkUpdate() {
+  checking.value = true;
+  error.value = null;
+  try {
+    update.value = await props.api.checkUpdate();
+  } catch (e) {
+    error.value = message(e);
+  } finally {
+    checking.value = false;
+  }
+}
+
+async function installUpdate() {
+  if (!update.value) return;
+  if (!window.confirm(`Install veilq ${update.value.latest} and restart it? This window stops working; veilq opens a new one.`)) return;
+  checking.value = true;
+  error.value = null;
+  try {
+    await props.api.installUpdate();
+    ended.value = `veilq ${update.value.latest} is installed and opens in a new window. You can close this one.`;
+  } catch (e) {
+    error.value = message(e);
+  } finally {
+    checking.value = false;
   }
 }
 
@@ -172,6 +201,32 @@ onBeforeUnmount(() => clearInterval(poll));
             </p>
             <p v-else-if="c.job?.state === 'failed'" class="failure">{{ c.job.error }}</p>
           </div>
+        </section>
+
+        <section class="card">
+          <h3>Updates</h3>
+          <p class="hint">
+            veilq {{ info.version }}. Checking asks GitHub for the newest release and sends nothing else; an update is
+            checked against the release's checksums before it replaces this program.
+          </p>
+          <div class="row">
+            <button :disabled="checking" @click="checkUpdate">{{ checking ? 'Checking …' : 'Check for updates' }}</button>
+            <template v-if="update">
+              <span v-if="!update.newer" class="ok">veilq {{ update.current }} is the newest release.</span>
+              <span v-else>
+                veilq {{ update.latest }} is out.
+                <a :href="update.url" target="_blank" rel="noopener">What changed</a>
+              </span>
+            </template>
+          </div>
+          <template v-if="update?.newer">
+            <button v-if="info.desktop && update.archive" class="primary" :disabled="checking" @click="installUpdate">
+              Install {{ update.latest }} and restart
+            </button>
+            <p v-else-if="!info.desktop" class="hint">
+              This veilq runs from a command line: update it there with <span class="mono">veilq update</span>.
+            </p>
+          </template>
         </section>
 
         <section v-if="info.desktop" class="card">

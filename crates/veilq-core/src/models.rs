@@ -285,7 +285,8 @@ pub fn ner_files(model_dir: &Path) -> Option<(PathBuf, PathBuf, PathBuf)> {
     Some((find("model.onnx")?, find("tokenizer.json")?, runtime))
 }
 
-fn sha256_of(path: &Path) -> Result<String, Error> {
+/// The SHA-256 of a file, as lower-case hex.
+pub fn sha256_of(path: &Path) -> Result<String, Error> {
     let mut file = std::fs::File::open(path).map_err(|source| Error::Io {
         path: path.into(),
         source,
@@ -337,33 +338,7 @@ pub fn install(f: &PinnedFile, download: &Path, model_dir: &Path) -> Result<Path
             std::fs::copy(download, &tmp).map_err(io)?;
         }
         Some(member) => {
-            let mut out = std::fs::File::create(&tmp).map_err(io)?;
-            let archive = std::fs::File::open(download).map_err(|source| Error::Io {
-                path: download.into(),
-                source,
-            })?;
-            let found = if f.name.ends_with(".zip") {
-                let mut zip =
-                    zip::ZipArchive::new(archive).map_err(|e| Error::Format(e.to_string()))?;
-                let mut m = zip
-                    .by_name(member)
-                    .map_err(|e| Error::Format(format!("{member}: {e}")))?;
-                std::io::copy(&mut m, &mut out).map_err(io)?;
-                true
-            } else {
-                let mut tar = tar::Archive::new(flate2::read::GzDecoder::new(archive));
-                let mut found = false;
-                for entry in tar.entries().map_err(io)? {
-                    let mut entry = entry.map_err(io)?;
-                    if entry.path().map_err(io)?.to_string_lossy() == member {
-                        std::io::copy(&mut entry, &mut out).map_err(io)?;
-                        found = true;
-                        break;
-                    }
-                }
-                found
-            };
-            if !found {
+            if !unpack(download, f.name, member, &tmp)? {
                 let _ = std::fs::remove_file(&tmp);
                 return Err(Error::Format(format!("{} has no {member}", f.name)));
             }
@@ -374,6 +349,37 @@ pub fn install(f: &PinnedFile, download: &Path, model_dir: &Path) -> Result<Path
         source,
     })?;
     Ok(target)
+}
+
+/// Writes `member` of the archive `archive` (a `.zip` by its `name`, else a
+/// `.tar.gz`) to `out`; `false` when the archive has no such member.
+pub fn unpack(archive: &Path, name: &str, member: &str, out: &Path) -> Result<bool, Error> {
+    let io = |source| Error::Io {
+        path: out.to_path_buf(),
+        source,
+    };
+    let mut target = std::fs::File::create(out).map_err(io)?;
+    let file = std::fs::File::open(archive).map_err(|source| Error::Io {
+        path: archive.into(),
+        source,
+    })?;
+    if name.ends_with(".zip") {
+        let mut zip = zip::ZipArchive::new(file).map_err(|e| Error::Format(e.to_string()))?;
+        let Ok(mut m) = zip.by_name(member) else {
+            return Ok(false);
+        };
+        std::io::copy(&mut m, &mut target).map_err(io)?;
+        return Ok(true);
+    }
+    let mut tar = tar::Archive::new(flate2::read::GzDecoder::new(file));
+    for entry in tar.entries().map_err(io)? {
+        let mut entry = entry.map_err(io)?;
+        if entry.path().map_err(io)?.to_string_lossy() == member {
+            std::io::copy(&mut entry, &mut target).map_err(io)?;
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Where models live: `VEILQ_MODEL_DIR`, else the user's cache directory.

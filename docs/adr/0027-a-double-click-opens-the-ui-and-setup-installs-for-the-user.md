@@ -14,9 +14,9 @@ fetch`, and the UI only read.
 
 ## Decision
 
-This ADR records phase 1 of the card (Windows); the user policy, the
-policy form, folder redaction, macOS's `veilq.app`, Linux's `.desktop`,
-"Connect to Claude" and the update check follow under the same approval.
+This ADR records phase 1 of the card (Windows) and the update (point 6);
+the user policy, the policy form, folder redaction, macOS's `veilq.app`,
+Linux's `.desktop` and "Connect to Claude" follow under the same approval.
 
 - **A double click** (on Windows: the process is alone on its console, so
   the Explorer made it) starts the UI in an app window (Edge or Chrome with
@@ -37,6 +37,14 @@ policy form, folder redaction, macOS's `veilq.app`, Linux's `.desktop`,
 - **Models** can be downloaded from the settings page: the same pinned
   files and SHA-256 as `veilq models fetch`, with progress; afterwards the
   engine is built again, without a restart.
+- **Update, only when asked:** Settings' "Check for updates" and `veilq
+  update --check` ask GitHub's API for the newest release; nothing else is
+  sent, and nothing is checked by itself. "Install … and restart" (only in
+  a veilq a double click started) and `veilq update` download this
+  platform's archive of that release, check it against the release's
+  `SHA256SUMS`, move the running program aside (`veilq.old.exe`, removed at
+  the next start) and put the new one in its place; the UI starts it and
+  ends.
 - `veilq.exe` carries an icon (drawn from the favicon by `scripts/icon.py`).
 
 ## Alternatives considered
@@ -60,12 +68,18 @@ policy form, folder redaction, macOS's `veilq.app`, Linux's `.desktop`,
   processes, hiding the console, announcing a changed environment), each
   with its reason.
 - Unsigned, the downloaded `veilq.exe` gets a SmartScreen warning (#10).
+- The update's checksum comes from the same release as the archive: it
+  catches a broken download, not a release that was tampered with. Until
+  the binaries are signed (#10), the build provenance attestation (`gh
+  attestation verify`) is the check for that, and the update does not run
+  it.
 
 ## Enforced by
 
 - `crates/veilq/src/desktop.rs`, `crates/veilq/src/desktop/windows.rs`
-- `crates/veilq/src/ui_setup.rs` (`/api/setup`, `/api/models`, `/api/quit`,
-  `/api/ping`), `crates/veilq/src/fetch.rs` (shared with the CLI)
+- `crates/veilq/src/ui_setup.rs` (`/api/setup`, `/api/models`, `/api/update`,
+  `/api/quit`, `/api/ping`), `crates/veilq/src/fetch.rs` (shared with the
+  CLI), `crates/veilq/src/update.rs` (`veilq update`)
 - `crates/veilq/src/main.rs` (no command, `uninstall`)
 - `ui/src/components/SettingsPane.vue`
 

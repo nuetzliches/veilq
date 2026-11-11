@@ -236,6 +236,10 @@ fn router(state: Arc<AppState>) -> Router {
         .route("/quit", post(setup::quit))
         .route("/setup", get(setup::status).post(setup::install))
         .route("/setup/uninstall", post(setup::uninstall))
+        .route(
+            "/update",
+            get(setup::update_check).post(setup::update_install),
+        )
         .route("/models", get(setup::models))
         .route("/models/{component}/fetch", post(setup::fetch))
         .layer(DefaultBodyLimit::max(MAX_BODY))

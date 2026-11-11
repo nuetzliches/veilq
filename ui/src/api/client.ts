@@ -8,6 +8,7 @@ import {
   type Redaction,
   type SetupStatus,
   type Source,
+  type UpdateCheck,
 } from './types';
 
 const TOKEN_KEY = 'veilq-token';
@@ -60,6 +61,8 @@ export function httpApi(token: string): Api {
     fetchModel: async (name) => {
       await call<null>(`/models/${encodeURIComponent(name)}/fetch`, { method: 'POST' });
     },
+    checkUpdate: () => call<UpdateCheck>('/update'),
+    installUpdate: () => call<UpdateCheck>('/update', { method: 'POST' }),
     quit: async () => {
       await call<null>('/quit', { method: 'POST' });
     },

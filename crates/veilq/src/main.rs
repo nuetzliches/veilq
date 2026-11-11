@@ -14,6 +14,7 @@ mod mcp;
 mod sarif;
 #[cfg(feature = "ui")]
 mod ui;
+mod update;
 
 /// Find and redact personal data in text, documents, images and screen
 /// recordings.
@@ -164,6 +165,13 @@ enum Command {
         #[arg(long)]
         policy: Option<PathBuf>,
     },
+    /// Check for a newer release, and install it where this program is
+    /// (only when asked; nothing but the request is sent, ADR-0027).
+    Update {
+        /// Only say whether there is a newer release.
+        #[arg(long)]
+        check: bool,
+    },
     /// Remove what setup installed for this user: shortcuts, the PATH
     /// entry, the entry in "Installed apps" and the program (ADR-0027).
     #[cfg(feature = "ui")]
@@ -249,6 +257,7 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> anyhow::Result<Outcome> {
+    update::clean_up();
     let Some(command) = cli.command else {
         #[cfg(feature = "ui")]
         if desktop::double_clicked() {
@@ -354,6 +363,22 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
                 desktop: false,
                 reload: Some(Box::new(move || crate::engine(&reload, None))),
             })?;
+            Ok(Outcome::Clean)
+        }
+        Command::Update { check } => {
+            let found = update::check()?;
+            if !found.newer {
+                println!("veilq {} is the newest release", found.current);
+                return Ok(Outcome::Clean);
+            }
+            println!(
+                "veilq {} is out (this is {}): {}",
+                found.latest, found.current, found.url
+            );
+            if !check {
+                let (_, program) = update::install_latest()?;
+                println!("installed: {}", program.display());
+            }
             Ok(Outcome::Clean)
         }
         #[cfg(feature = "ui")]
