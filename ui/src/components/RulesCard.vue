@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import type { Api, Policy, PolicyTried, PolicyView } from '@/api';
+import { t } from '@/lib/i18n';
+import { actionLabel, entityLabel } from '@/lib/labels';
 
 // The user's policy as a form (ADR-0028): what veilq replaces and how,
 // what is never personal data, and the user's own patterns, tried on a
@@ -13,7 +15,7 @@ const view = ref<PolicyView | null>(null);
 const policy = ref<Policy | null>(null);
 const allowValues = ref('');
 const allowPatterns = ref('');
-const sample = ref('Rückruf an Mira Albers, Kundennummer KD-482913, Tel. 0421 5550173.');
+const sample = ref(t('rules.sampleText'));
 const tried = ref<PolicyTried | null>(null);
 const error = ref<string | null>(null);
 const saved = ref<string | null>(null);
@@ -75,9 +77,7 @@ async function save() {
   saved.value = null;
   try {
     const r = await props.api.savePolicy(current());
-    saved.value = r.in_use
-      ? `Saved to ${r.path}; veilq uses it now.`
-      : `Saved to ${r.path}. A project's veilq.toml is in use here and comes first.`;
+    saved.value = r.in_use ? t('rules.saved') : t('rules.savedProject', { path: r.path });
     emit('saved');
     view.value = await props.api.policy();
   } catch (e) {
@@ -104,100 +104,111 @@ onMounted(async () => {
 
 <template>
   <section class="card">
-    <h3>Rules</h3>
+    <h3>{{ t('rules.title') }}</h3>
     <p v-if="view" class="hint">
-      In use: <span class="mono">{{ view.source }}</span>.
-      <template v-if="view.user_in_use">Your rules are saved to <span class="mono">{{ view.user_file }}</span>.</template>
-      <template v-else>
-        Your rules (<span class="mono">{{ view.user_file }}</span>) apply where no project has a veilq.toml; here one
-        does.
-      </template>
+      <template v-if="view.user_in_use">{{ t('rules.inUse') }}</template>
+      <template v-else>{{ t('rules.projectInUse', { source: view.source }) }}</template>
     </p>
     <p v-if="error" class="failure">{{ error }}</p>
     <template v-if="policy && view">
       <div class="grid">
         <label>
-          Replace findings with
+          {{ t('rules.replaceWith') }}
           <select v-model="policy.defaults.action">
-            <option v-for="a in view.actions" :key="a" :value="a">{{ a }}</option>
+            <option v-for="a in view.actions" :key="a" :value="a">{{ actionLabel(a) }}</option>
           </select>
         </label>
         <label>
-          Minimum confidence
+          {{ t('rules.minConfidence') }}
           <input v-model.number="policy.defaults.min_confidence" type="number" min="0" max="1" step="0.05" />
         </label>
         <fieldset>
-          <legend>Languages</legend>
+          <legend>{{ t('rules.languages') }}</legend>
           <label v-for="l in view.locales" :key="l">
             <input v-model="policy.locales" type="checkbox" :value="l" /> {{ l }}
           </label>
         </fieldset>
       </div>
 
-      <details>
-        <summary>Per type</summary>
-        <table class="types">
-          <thead>
-            <tr><th>Type</th><th>Replace with</th><th>Min. confidence</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="e in entityRows" :key="e">
-              <td class="mono">{{ e }}</td>
-              <td>
-                <select v-model="entityRule(e).action">
-                  <option :value="undefined">as above</option>
-                  <option v-for="a in view.actions" :key="a" :value="a">{{ a }}</option>
-                </select>
-              </td>
-              <td><input v-model.number="entityRule(e).min_confidence" type="number" min="0" max="1" step="0.05" placeholder="as above" /></td>
-            </tr>
-          </tbody>
-        </table>
-      </details>
-
       <details open>
-        <summary>Never personal data here</summary>
+        <summary>{{ t('rules.allowTitle') }}</summary>
         <div class="grid two">
           <label>
-            Exact values, one per line (your firm's name, a court)
+            {{ t('rules.allowValues') }}
             <textarea v-model="allowValues" rows="4" spellcheck="false" />
           </label>
           <label>
-            Patterns a whole finding matches, one per line
+            {{ t('rules.allowPatterns') }}
             <textarea v-model="allowPatterns" class="mono" rows="4" spellcheck="false" />
           </label>
         </div>
       </details>
 
-      <details open>
-        <summary>Your own patterns ({{ policy.patterns.length }})</summary>
+      <details>
+        <summary>{{ t('rules.perType') }}</summary>
+        <table class="types">
+          <thead>
+            <tr>
+              <th>{{ t('rules.type') }}</th>
+              <th>{{ t('rules.replaceWith') }}</th>
+              <th>{{ t('rules.minConfidence') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="e in entityRows" :key="e">
+              <td :title="e">{{ entityLabel(e) }}</td>
+              <td>
+                <select v-model="entityRule(e).action">
+                  <option :value="undefined">{{ t('rules.asAbove') }}</option>
+                  <option v-for="a in view.actions" :key="a" :value="a">{{ actionLabel(a) }}</option>
+                </select>
+              </td>
+              <td>
+                <input
+                  v-model.number="entityRule(e).min_confidence"
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  :placeholder="t('rules.asAbove')"
+                />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </details>
+
+      <details :open="policy.patterns.length > 0">
+        <summary>{{ t('rules.patterns', { n: policy.patterns.length }) }}</summary>
         <div v-for="(p, i) in policy.patterns" :key="i" class="pattern">
-          <input v-model="p.name" class="mono" placeholder="name" title="lower case letters, digits and -" />
-          <input v-model="p.entity" class="mono" list="veilq-entities" placeholder="TYPE" />
-          <input v-model="p.regex" class="mono regex" placeholder="regex, e.g. KD-\d{6}" />
+          <input v-model="p.name" class="mono" :placeholder="t('rules.patternName')" :title="t('rules.patternNameTitle')" />
+          <input v-model="p.entity" class="mono" list="veilq-entities" :placeholder="t('rules.type')" />
+          <input v-model="p.regex" class="mono regex" :placeholder="t('rules.regex')" />
           <input v-model.number="p.confidence" type="number" min="0" max="1" step="0.05" placeholder="0.9" />
-          <button class="small" title="Remove" @click="policy.patterns.splice(i, 1)">×</button>
+          <button class="small" :title="t('rules.remove')" @click="policy.patterns.splice(i, 1)">×</button>
         </div>
         <datalist id="veilq-entities">
           <option v-for="e in view.entities" :key="e" :value="e" />
         </datalist>
-        <button class="small" @click="addPattern">Add a pattern</button>
+        <button class="small" @click="addPattern">{{ t('rules.addPattern') }}</button>
       </details>
 
       <label>
-        Try it on a sample (patterns only; no models)
+        {{ t('rules.sample') }}
         <textarea v-model="sample" rows="2" spellcheck="false" />
       </label>
       <div class="row">
-        <button @click="tryIt">Try</button>
-        <button class="primary" :disabled="busy" @click="save">Save</button>
+        <button @click="tryIt">{{ t('rules.try') }}</button>
+        <button class="primary" :disabled="busy" @click="save">{{ t('common.save') }}</button>
         <span v-if="saved" class="ok">{{ saved }}</span>
       </div>
       <template v-if="tried">
         <p v-if="tried.output !== undefined" class="mono out">{{ tried.output }}</p>
-        <p v-if="tried.findings" class="hint">Found: {{ tried.findings.join(', ') || 'nothing' }}</p>
+        <p v-if="tried.findings" class="hint">
+          {{ t('rules.found', { list: tried.findings.join(', ') || t('rules.nothing') }) }}
+        </p>
         <details>
-          <summary>As veilq.toml</summary>
+          <summary>{{ t('rules.asToml') }}</summary>
           <pre class="mono toml">{{ tried.toml }}</pre>
         </details>
       </template>

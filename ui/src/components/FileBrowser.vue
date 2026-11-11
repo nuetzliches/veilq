@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import type { Api, Listing } from '@/api';
+import { t } from '@/lib/i18n';
 import { formatSize } from '@/lib/segments';
 
-const props = defineProps<{ api: Api; selected: string | null }>();
+// The files under the folder veilq reads (Settings, Advanced).
+const props = defineProps<{ api: Api; root: string; selected: string | null }>();
 const emit = defineEmits<{ select: [path: string] }>();
 
 const listing = ref<Listing | null>(null);
@@ -37,7 +39,7 @@ onMounted(() => open(''));
 <template>
   <div class="browser">
     <nav class="crumbs">
-      <button class="link" @click="open('')">root</button>
+      <button class="link mono" :title="root" @click="open('')">{{ root }}</button>
       <template v-for="c in crumbs(listing?.dir ?? '')" :key="c.path">
         <span class="sep">/</span>
         <button class="link" @click="open(c.path)">{{ c.name }}</button>
@@ -59,8 +61,8 @@ onMounted(() => open(''));
           <span v-if="!e.dir" class="size">{{ formatSize(e.size) }}</span>
         </button>
       </li>
-      <li v-if="!listing.entries.length" class="empty">empty</li>
-      <li v-if="listing.truncated" class="empty">more entries than shown</li>
+      <li v-if="!listing.entries.length" class="empty">{{ t('files.empty') }}</li>
+      <li v-if="listing.truncated" class="empty">{{ t('files.truncated') }}</li>
     </ul>
   </div>
 </template>

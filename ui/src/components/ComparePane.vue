@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { Finding } from '@/api';
+import { entityLabel } from '@/lib/labels';
 import { segments } from '@/lib/segments';
 
 const props = defineProps<{
@@ -20,7 +21,7 @@ const parts = computed(() => segments(props.text, props.spans));
         v-if="p.finding !== undefined"
         :class="{ hot: hovered === p.finding }"
         :data-entity="findings[p.finding]?.entity"
-        :title="`${findings[p.finding]?.entity} · ${findings[p.finding]?.detector}`"
+        :title="`${p.finding + 1}. ${entityLabel(findings[p.finding]?.entity ?? '')}`"
         @mouseenter="emit('hover', p.finding)"
         @mouseleave="emit('hover', null)"
       >{{ p.text }}</mark><template v-else>{{ p.text }}</template></template></pre>

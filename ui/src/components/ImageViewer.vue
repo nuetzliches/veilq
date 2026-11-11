@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { Finding } from '@/api';
 import ImagePane from '@/components/ImagePane.vue';
+import { t } from '@/lib/i18n';
 
 /** The pictures of one side: an image, or a PDF's pages. */
 export interface Pictures {
@@ -34,7 +35,7 @@ const body = ref<HTMLElement | null>(null);
 const fullscreen = ref(false);
 
 const shown = computed(() => (side.value === 'input' ? props.input : props.output) ?? props.input ?? props.output);
-const label = computed(() => (zoom.value === 'fit' ? 'Fit' : `${Math.round(zoom.value * 100)} %`));
+const label = computed(() => (zoom.value === 'fit' ? t('viewer.fit') : `${Math.round(zoom.value * 100)} %`));
 
 /** The scale the first picture is shown at now: in `fit`, as measured. */
 function currentScale(): number {
@@ -151,7 +152,7 @@ onBeforeUnmount(() => {
           :disabled="!input"
           @click="side = 'input'"
         >
-          Input <kbd>I</kbd>
+          {{ t('input.title') }} <kbd>I</kbd>
         </button>
         <button
           role="tab"
@@ -160,19 +161,19 @@ onBeforeUnmount(() => {
           :disabled="!output"
           @click="side = 'output'"
         >
-          Output <kbd>O</kbd>
+          {{ t('output.title') }} <kbd>O</kbd>
         </button>
       </div>
       <span class="spacer" />
-      <button class="small" title="Zoom out (−, Ctrl+wheel)" @click="zoomOut">−</button>
+      <button class="small" :title="t('viewer.zoomOut')" @click="zoomOut">−</button>
       <span class="mono level">{{ label }}</span>
-      <button class="small" title="Zoom in (+, Ctrl+wheel)" @click="zoomIn">+</button>
-      <button class="small" :class="{ on: zoom === 'fit' }" title="Fit to the window (0)" @click="fit">Fit</button>
-      <button class="small" :class="{ on: zoom === 1 }" title="Natural size (1)" @click="actual">1:1</button>
-      <button class="small" title="Fullscreen (F)" @click="toggleFullscreen">
-        {{ fullscreen ? 'Leave fullscreen' : 'Fullscreen' }}
+      <button class="small" :title="t('viewer.zoomIn')" @click="zoomIn">+</button>
+      <button class="small" :class="{ on: zoom === 'fit' }" :title="t('viewer.fitTitle')" @click="fit">{{ t('viewer.fit') }}</button>
+      <button class="small" :class="{ on: zoom === 1 }" :title="t('viewer.actual')" @click="actual">1:1</button>
+      <button class="small" :title="t('viewer.fullscreenTitle')" @click="toggleFullscreen">
+        {{ fullscreen ? t('viewer.leaveFullscreen') : t('viewer.fullscreen') }}
       </button>
-      <button class="small" title="Close (Esc)" @click="close">Close</button>
+      <button class="small" :title="t('viewer.closeTitle')" @click="close">{{ t('common.close') }}</button>
     </header>
     <div
       ref="body"
