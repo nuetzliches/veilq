@@ -6,6 +6,39 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-11
+
+### Added
+
+- The web UI takes an image or a file from the clipboard: Ctrl+V uploads it
+  as a drop would (a screenshot as `clipboard.png`); text pasted into the
+  editor stays plain pasting.
+- The web UI shows a picture (an image, a PDF's pages) over the whole window
+  to zoom into: fit, natural size, `+`/`-` and Ctrl+wheel, drag to pan,
+  fullscreen (`F`), `I`/`O` to switch between input and output, with the
+  findings' frames. It opens from the panes' "Zoom" button or a double click.
+- An address cut short is still an address (ADR-0025): the `intl` pattern
+  `email-cut` finds `name@host` without a top-level domain, as a screen cuts
+  it (`mira.albers@exampl…`) or a log names a user on a host. The validator
+  `email_host`, which a policy may name too, keeps a package's tag, a
+  version, a commit and a digest below the threshold.
+
+### Fixed
+
+- In a picture, a value whose box a neighbour's padded box touched by a few
+  pixels was taken for filled already and stayed visible, in the scan and in
+  every verify round. A box now covers a value only when it holds nine
+  tenths of it.
+- German words that mean a person are no names for NER (`Kein Inhalt mit
+  Personen.`, `Mitglied`, `Empfänger`, `Teilnehmerinnen`, `Kontaktperson`,
+  ...), in their plural, feminine and case forms and at the end of a
+  compound; surnames that are such words as well (`Richter`, `Bürger`) stay
+  names.
+
+### Changed
+
+- Dependencies: `tokenizers` 0.23, the UI's npm group.
+
 ## [0.1.0] - 2026-11-10
 
 ### Added
