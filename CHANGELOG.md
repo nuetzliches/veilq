@@ -6,6 +6,8 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-11
+
 ### Changed
 
 - On Windows a double-click veilq shows its UI in a window of its own
