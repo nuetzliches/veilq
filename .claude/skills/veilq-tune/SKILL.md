@@ -13,6 +13,15 @@ If someone hands you a real document that veilq gets wrong, write a synthetic
 reproduction into the generator first (`crates/veilq-eval/src/generate.rs`),
 then tune against that.
 
+A value from such a document never becomes an example, not even one that
+looks harmless (a street with its town, a date, a product name): make up
+the synthetic values **before** writing the test, the comment or the
+CHANGELOG line, with the same shape (a street without a street word and a number stays one, with another name), and
+before the commit search the diff for every value the report showed. Real
+2026-11-11: a client's address from a screenshot went into a test, a
+pattern's comment and the CHANGELOG, and was found only just before the
+commit.
+
 ## 1. Measure one source
 
 ```sh
