@@ -52,7 +52,7 @@ fn place(f: &Finding) -> String {
             height,
             ..
         } => {
-            let at = format!("{width}×{height} at {x},{y}");
+            let at = format!("{width}x{height} at {x},{y}");
             match frame {
                 Some(n) => format!("{at} (frame or page {n})"),
                 None => at,
@@ -495,7 +495,7 @@ mod tests {
             detector: "ner".into(),
             pseudonym: None,
         };
-        assert_eq!(place(&f), "97×24 at 142,228 (frame or page 3)");
+        assert_eq!(place(&f), "97x24 at 142,228 (frame or page 3)");
         let e = Error::Unsettled {
             entity: "PERSON".into(),
             at: place(&f),
@@ -503,7 +503,7 @@ mod tests {
         };
         let m = e.to_string();
         assert!(
-            m.contains("PERSON at 97×24 at 142,228") && m.contains("--unverified"),
+            m.contains("PERSON at 97x24 at 142,228") && m.contains("--unverified"),
             "{m}"
         );
     }

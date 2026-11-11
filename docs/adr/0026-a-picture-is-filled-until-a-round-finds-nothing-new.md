@@ -23,7 +23,7 @@ the place nor a way on.
   something new, for up to **six** rounds (a GIF frame and a PDF page each
   their own).
 - **When the sixth round still finds something**, it is an error as
-  before, now `Unsettled`: `the picture still shows PERSON at 97×24 at
+  before, now `Unsettled`: `the picture still shows PERSON at 97x24 at
   142,228 after 6 rounds of filling; nothing was written`, with the frame or
   page where there is one.
 - **`veilq redact --unverified`** (and `unverified: true` in the web UI's
