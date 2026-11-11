@@ -301,6 +301,8 @@ impl From<Error> for Failure {
                 StatusCode::NOT_FOUND
             }
             Error::NotBuilt(_) | Error::ActionNotBuilt(_) => StatusCode::NOT_IMPLEMENTED,
+            // The UI offers to write it anyway (`unverified`).
+            Error::Unsettled { .. } => StatusCode::CONFLICT,
             _ => StatusCode::UNPROCESSABLE_ENTITY,
         };
         // Without Windows' `\\?\` prefix, which `canonicalize` adds.
@@ -499,6 +501,10 @@ struct RedactRequest {
     /// Overrides the policy's actions for this request, as `--action` does.
     #[serde(default)]
     action: Option<Action>,
+    /// A picture whose verify rounds do not settle is written anyway, for a
+    /// review, as `--unverified` does (ADR-0026).
+    #[serde(default)]
+    unverified: bool,
 }
 
 #[derive(Serialize)]
@@ -552,14 +558,11 @@ async fn redact(
 ) -> Response {
     let result = tokio::task::spawn_blocking(move || {
         let engine = match request.action {
-            None => None,
-            Some(a) => Some(state.engine.with_action(Some(a)).map_err(Failure::from)?),
-        };
-        redact_source(
-            &state,
-            engine.as_ref().unwrap_or(&state.engine),
-            request.source,
-        )
+            None => state.engine.clone(),
+            Some(a) => state.engine.with_action(Some(a)).map_err(Failure::from)?,
+        }
+        .with_unverified(request.unverified);
+        redact_source(&state, &engine, request.source)
     })
     .await;
     match result {
@@ -987,6 +990,22 @@ mod tests {
             info["actions"],
             serde_json::json!(["mask", "fake", "remove"])
         );
+    }
+
+    #[test]
+    fn an_unsettled_picture_is_a_conflict_the_ui_can_resolve() {
+        let f = Failure::from(Error::Unsettled {
+            entity: "PERSON".into(),
+            at: "97×24 at 142,228".into(),
+            rounds: 6,
+        });
+        assert_eq!(f.0, StatusCode::CONFLICT);
+        let r: RedactRequest = serde_json::from_value(serde_json::json!({
+            "source": { "kind": "text", "text": "x" },
+            "unverified": true
+        }))
+        .unwrap();
+        assert!(r.unverified);
     }
 
     #[tokio::test]
