@@ -6,6 +6,8 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-11-12
+
 ### Added
 
 - `veilq scan --explain` says what veilq read and why it decided
