@@ -221,7 +221,8 @@ impl Detector {
         kept.retain(|c| {
             c.entity.as_str() != "PERSON"
                 || !(only_role_words(&text[c.start..c.end])
-                    || ACCOUNTS.contains(&text[c.start..c.end].to_lowercase().as_str()))
+                    || ACCOUNTS.contains(&text[c.start..c.end].to_lowercase().as_str())
+                    || (c.detector == "ner" && brand_word(&text[c.start..c.end])))
         });
         kept.sort_by(|a, b| {
             (b.end - b.start)
@@ -317,6 +318,17 @@ fn can_be_birth_date(value: &str) -> bool {
         .find_map(|p| p.parse::<u64>().ok());
     matches!(year, Some(y) if (1900..=year_now.saturating_sub(10)).contains(&y))
         && validate::date(value)
+}
+
+/// Whether `span` is one word with a capital inside after four letters or
+/// more (`PowerShell`, `LinkedIn`): a product's or a company's name, which
+/// NER takes for a person's in a logo or a title bar. A name's prefix is
+/// shorter (`McDonald`, `DeVries`, `MacArthur`).
+pub(crate) fn brand_word(span: &str) -> bool {
+    let chars: Vec<char> = span.chars().collect();
+    chars.iter().all(|c| c.is_alphabetic())
+        && chars.first().is_some_and(|c| c.is_uppercase())
+        && (4..chars.len()).any(|i| chars[i].is_uppercase() && chars[i - 1].is_lowercase())
 }
 
 /// The accounts a system makes, whose home directory names no person.
@@ -652,6 +664,24 @@ mod tests {
             "ADDRESS",
             "Lindenweg 12, 28195 Bremen"
         ));
+    }
+
+    #[test]
+    fn a_word_with_a_capital_inside_is_a_brand() {
+        for word in ["PowerShell", "WordPress", "LinkedIn", "CloudDesk"] {
+            assert!(brand_word(word), "{word}");
+        }
+        for name in [
+            "McDonald",
+            "MacArthur",
+            "DeVries",
+            "DiCaprio",
+            "Brandt",
+            "Mira Albers",
+            "JBrandt",
+        ] {
+            assert!(!brand_word(name), "{name}");
+        }
     }
 
     #[test]
