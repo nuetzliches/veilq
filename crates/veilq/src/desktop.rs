@@ -11,6 +11,8 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 #[cfg(windows)]
+pub mod window;
+#[cfg(windows)]
 mod windows;
 
 /// Whether veilq was started by a double click (or a shortcut) rather than
@@ -103,6 +105,34 @@ fn healthy(port: u16) -> bool {
     let mut body = String::new();
     let _ = s.read_to_string(&mut body);
     body.starts_with("HTTP/1.1 200") && body.ends_with("ok")
+}
+
+/// Asks the running instance to bring its own window to the front; false
+/// when it has none (a browser window) or does not answer.
+pub fn focus_running(instance: &Instance) -> bool {
+    use std::io::{Read, Write};
+    let Some(token) = instance.url.split("#token=").nth(1) else {
+        return false;
+    };
+    #[cfg(windows)]
+    windows::allow_foreground(instance.pid);
+    let Ok(mut s) = std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], instance.port)),
+        Duration::from_millis(500),
+    ) else {
+        return false;
+    };
+    let _ = s.set_read_timeout(Some(Duration::from_secs(2)));
+    let request = format!(
+        "POST /api/focus HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {token}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        instance.port
+    );
+    if s.write_all(request.as_bytes()).is_err() {
+        return false;
+    }
+    let mut answer = String::new();
+    let _ = s.read_to_string(&mut answer);
+    answer.starts_with("HTTP/1.1 204")
 }
 
 /// Hides the console window a double click opened: the UI is the program.

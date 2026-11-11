@@ -66,6 +66,17 @@ pub struct Options {
     /// when its window has been gone for a while.
     pub desktop: bool,
     pub reload: Option<Reload>,
+    /// A window of veilq's own shows the UI (ADR-0029): it is told the URL,
+    /// and closing it ends veilq; no browser window, no heartbeat.
+    pub window: Option<WindowHooks>,
+}
+
+/// What a window of veilq's own needs from the server.
+pub struct WindowHooks {
+    /// Gets the URL once the server listens.
+    pub ready: std::sync::mpsc::Sender<String>,
+    /// Brings the window to the front: a second double click asks for it.
+    pub focus: Box<dyn Fn() + Send + Sync>,
 }
 
 struct AppState {
@@ -87,6 +98,8 @@ struct AppState {
     jobs: Mutex<HashMap<String, setup::Job>>,
     /// The folder run, while it runs and after.
     batch: Mutex<Option<settings::BatchJob>>,
+    /// The window of veilq's own, brought to the front on request.
+    focus: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
 pub fn run(options: Options) -> anyhow::Result<()> {
@@ -116,6 +129,10 @@ async fn serve(options: Options) -> anyhow::Result<()> {
     );
     state.desktop = options.desktop;
     state.reload = options.reload;
+    let ready = options.window.map(|w| {
+        state.focus = Some(w.focus);
+        w.ready
+    });
     let state = Arc::new(state);
 
     let shown = options.proxy_port.unwrap_or(port);
@@ -137,24 +154,29 @@ async fn serve(options: Options) -> anyhow::Result<()> {
                 pid: std::process::id(),
             })?,
         )?;
-        crate::desktop::open_app_window(&url);
         crate::desktop::hide_console();
-        // The window says it is open; once it has been gone a while, end.
-        let watch = state.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(Duration::from_secs(30)).await;
-                let idle = watch
-                    .last_ping
-                    .lock()
-                    .map(|t| t.elapsed())
-                    .unwrap_or_default();
-                if idle > IDLE {
-                    watch.shutdown.notify_one();
-                    break;
+        if let Some(ready) = ready {
+            // veilq's own window: closing it ends veilq.
+            let _ = ready.send(url.clone());
+        } else {
+            crate::desktop::open_app_window(&url);
+            // The window says it is open; once it has been gone a while, end.
+            let watch = state.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(30)).await;
+                    let idle = watch
+                        .last_ping
+                        .lock()
+                        .map(|t| t.elapsed())
+                        .unwrap_or_default();
+                    if idle > IDLE {
+                        watch.shutdown.notify_one();
+                        break;
+                    }
                 }
-            }
-        });
+            });
+        }
     } else if options.open {
         open_browser(&url);
     }
@@ -196,6 +218,7 @@ impl AppState {
             policy: RwLock::new((policy, policy_source)),
             engine: RwLock::new(engine),
             reload: None,
+            focus: None,
             desktop: false,
             shutdown: tokio::sync::Notify::new(),
             last_ping: Mutex::new(Instant::now()),
@@ -254,6 +277,7 @@ fn router(state: Arc<AppState>) -> Router {
         .route("/picture", get(picture))
         .route("/ping", post(setup::ping))
         .route("/quit", post(setup::quit))
+        .route("/focus", post(setup::focus))
         .route("/setup", get(setup::status).post(setup::install))
         .route("/setup/uninstall", post(setup::uninstall))
         .route(
@@ -446,6 +470,8 @@ struct Info {
     desktop: bool,
     /// Whether this platform's setup is built (ADR-0027).
     setup: bool,
+    /// Shown in veilq's own window (ADR-0029): closing it ends veilq.
+    window: bool,
 }
 
 async fn info(State(state): State<Arc<AppState>>) -> axum::Json<Info> {
@@ -466,6 +492,7 @@ async fn info(State(state): State<Arc<AppState>>) -> axum::Json<Info> {
         .collect(),
         max_input: MAX_INPUT,
         desktop: state.desktop,
+        window: state.focus.is_some(),
         setup: cfg!(windows),
     })
 }

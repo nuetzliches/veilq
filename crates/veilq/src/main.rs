@@ -361,6 +361,7 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
                 engine,
                 desktop: false,
                 reload: Some(Box::new(|p: &Policy| crate::engine(p, None))),
+                window: None,
             })?;
             Ok(Outcome::Clean)
         }
@@ -389,13 +390,17 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
     }
 }
 
-/// A double click: open the running UI, or start one in an app window
-/// that reads the user's home folder (ADR-0027). An error stays on screen
-/// until a key is pressed, since the console closes with the program.
+/// A double click: bring the running UI to the front, or start one that
+/// reads the user's home folder (ADR-0027), in veilq's own window where
+/// WebView2 is there (ADR-0029), else in a browser's app window. An error
+/// stays on screen until a key is pressed, since the console closes with
+/// the program.
 #[cfg(feature = "ui")]
 fn start_desktop() -> anyhow::Result<Outcome> {
     if let Some(instance) = desktop::running_instance() {
-        desktop::open_app_window(&instance.url);
+        if !desktop::focus_running(&instance) {
+            desktop::open_app_window(&instance.url);
+        }
         return Ok(Outcome::Clean);
     }
     let result = (|| -> anyhow::Result<()> {
@@ -409,7 +414,7 @@ fn start_desktop() -> anyhow::Result<Outcome> {
             .unwrap_or(home);
         let (policy, source) = load_policy(None)?;
         let engine = engine(&policy, None)?;
-        ui::run(ui::Options {
+        let options = ui::Options {
             root: home,
             port: 0,
             proxy_port: None,
@@ -420,14 +425,16 @@ fn start_desktop() -> anyhow::Result<Outcome> {
             engine,
             desktop: true,
             reload: Some(Box::new(|p: &Policy| crate::engine(p, None))),
-        })
+            window: None,
+        };
+        #[cfg(windows)]
+        if desktop::window::available() {
+            return desktop::window::run(options);
+        }
+        ui::run(options)
     })();
     if let Err(e) = result {
-        eprintln!(
-            "error: {e:#}
-
-Press Enter to close."
-        );
+        eprintln!("error: {e:#}\n\nPress Enter to close.");
         let _ = std::io::stdin().read_line(&mut String::new());
         return Ok(Outcome::Error);
     }

@@ -33,6 +33,8 @@ export interface Info {
   desktop?: boolean;
   /** Whether setup (install, Start menu) is built for this platform. */
   setup?: boolean;
+  /** Shown in veilq's own window: closing it ends veilq. */
+  window?: boolean;
 }
 
 /** What setup shows (ADR-0027). */
