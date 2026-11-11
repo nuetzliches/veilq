@@ -6,6 +6,8 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-11-11
+
 ### Fixed
 
 - A click on the pinned veilq (or its Start menu entry) opened a terminal
