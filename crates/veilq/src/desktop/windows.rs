@@ -2,7 +2,7 @@
 //! and the entry in "Installed apps". All of it is the user's own (HKCU,
 //! the user's Start menu): no administrator rights.
 //!
-//! The three calls into the Windows API are the only `unsafe` code in
+//! The four calls into the Windows API are the only `unsafe` code in
 //! veilq (ADR-0027); each says why it is sound.
 #![allow(unsafe_code)]
 
@@ -41,6 +41,16 @@ pub fn hide_console() {
                 windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE,
             );
         }
+    }
+}
+
+/// Lets the running veilq (`pid`) take the foreground: a second double click
+/// has that right, the running one in the background has not.
+pub fn allow_foreground(pid: u32) {
+    // SAFETY: a plain call with a process id; it fails (and nothing
+    // happens) when this process may not hand the right on.
+    unsafe {
+        windows_sys::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow(pid);
     }
 }
 

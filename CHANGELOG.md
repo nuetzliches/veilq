@@ -6,6 +6,14 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- On Windows a double-click veilq shows its UI in a window of its own
+  (WebView2, ADR-0029) instead of Edge's app mode: the taskbar and a pinned
+  button show veilq and its icon, closing the window ends veilq, and a
+  second double click brings it to the front. Without WebView2, the app
+  window as before.
+
 ## [0.1.2] - 2026-11-11
 
 ### Added

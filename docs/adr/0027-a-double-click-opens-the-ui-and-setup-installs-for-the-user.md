@@ -1,6 +1,6 @@
 # ADR-0027: A double click opens the UI, and setup installs for the user
 
-- **Status:** Accepted (card in the conversation, points 1 to 6, approved by the owner 2026-11-11); amends [ADR-0008](0008-the-web-ui-is-local-token-bound-and-reads-under-one-root.md) (the UI may write what setup and the model page ask for) and [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md) (a model may be fetched from the UI)
+- **Status:** Accepted (card in the conversation, points 1 to 6, approved by the owner 2026-11-11); amends [ADR-0008](0008-the-web-ui-is-local-token-bound-and-reads-under-one-root.md) (the UI may write what setup and the model page ask for) and [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md) (a model may be fetched from the UI); its app window on Windows superseded by [ADR-0029](0029-veilq-shows-its-ui-in-a-window-of-its-own.md)
 - **Date:** 2026-11-11
 - **Deciders:** project owner
 - **Related:** [ADR-0021](0021-the-ui-token-can-be-kept-in-a-file-across-starts.md), issue #10 (signing)

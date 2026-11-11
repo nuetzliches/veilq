@@ -173,7 +173,11 @@ onBeforeUnmount(() => clearInterval(poll));
           <label>
             <input v-model="wanted.path" type="checkbox" /> Command line: <span class="mono">veilq</span> in new terminals
           </label>
-          <p class="hint">
+          <p v-if="info.window" class="hint">
+            To pin veilq to the taskbar, right-click its button in the taskbar (or its Start menu entry) and choose
+            "Pin to taskbar": Windows lets no program do that itself.
+          </p>
+          <p v-else class="hint">
             To pin veilq to the taskbar, right-click its Start menu entry and choose "Pin to taskbar": Windows lets
             no program do that itself.
           </p>
@@ -268,7 +272,8 @@ onBeforeUnmount(() => clearInterval(poll));
 
         <section v-if="info.desktop" class="card">
           <h3>veilq</h3>
-          <p class="hint">
+          <p v-if="info.window" class="hint">Closing this window ends veilq.</p>
+          <p v-else class="hint">
             veilq runs in the background while this window is open, and ends a few minutes after it is closed.
           </p>
           <button @click="quit">Quit veilq</button>

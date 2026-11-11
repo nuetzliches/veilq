@@ -35,6 +35,17 @@ pub async fn ping(State(state): State<Arc<AppState>>) -> StatusCode {
     StatusCode::NO_CONTENT
 }
 
+/// Brings veilq's own window to the front (a second double click).
+pub async fn focus(State(state): State<Arc<AppState>>) -> StatusCode {
+    match &state.focus {
+        Some(focus) => {
+            focus();
+            StatusCode::NO_CONTENT
+        }
+        None => StatusCode::NOT_FOUND,
+    }
+}
+
 pub async fn quit(State(state): State<Arc<AppState>>) -> StatusCode {
     state.shutdown.notify_one();
     StatusCode::NO_CONTENT
