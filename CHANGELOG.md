@@ -16,6 +16,10 @@ Notable changes per release. The format follows
   apps"), the models with download and progress, and "Quit veilq".
   `veilq uninstall` removes what setup made.
 - `veilq.exe` has an icon.
+- The web UI copies the redacted output with Ctrl+C when nothing is
+  selected, an image as a picture (PNG), text as text; the Copy button too.
+  The empty panes say how to drop, paste and copy, and the input pane takes
+  a dropped file.
 
 - `veilq redact --unverified` and the web UI's "Generate anyway" (ADR-0026):
   a picture whose verify rounds do not settle is written with the last
