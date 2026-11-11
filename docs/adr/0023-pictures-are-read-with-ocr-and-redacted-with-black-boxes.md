@@ -1,6 +1,6 @@
 # ADR-0023: Pictures are read with OCR and redacted with black boxes
 
-- **Status:** Accepted (card M4, points 1 to 7, approved 2026-11-10); amends [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md) and [ADR-0019](0019-office-files-are-edited-in-place-every-part-read.md)
+- **Status:** Accepted (card M4, points 1 to 7, approved 2026-11-10); amends [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md) and [ADR-0019](0019-office-files-are-edited-in-place-every-part-read.md); amended by [ADR-0026](0026-a-picture-is-filled-until-a-round-finds-nothing-new.md) (rounds)
 - **Date:** 2026-11-10
 - **Deciders:** project owner
 - **Related:** plan M4, [ADR-0022](0022-ner-is-gliner-in-onnx-optional-and-pinned.md), [ADR-0013](0013-a-synthetic-corpus-with-truth-and-golden-outputs-gates-recall.md)
@@ -25,7 +25,7 @@ renderer: both are code and data veilq loads, not code it ships.
   rows, and each line is read again with its left and upper neighbour as
   context (a form's label). Patterns and NER run on both; a finding becomes
   the boxes of its characters, two pixels wider, filled **black**. Verify
-  reads the filled picture again, up to three rounds (ADR-0022). Every
+  reads the filled picture again, up to three rounds (ADR-0022; six since ADR-0026). Every
   action is a black box; when a policy asks for `pseudonymize` or `fake`
   the report says so as a review reason.
 - **Metadata is always removed:** the output is encoded anew (JPEG at

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { createApi, type Info, type Redaction, type Source } from '@/api';
+import { ApiError, createApi, type Info, type Redaction, type Source } from '@/api';
 import ComparePane from '@/components/ComparePane.vue';
 import FileBrowser from '@/components/FileBrowser.vue';
 import FindingsTable from '@/components/FindingsTable.vue';
@@ -23,6 +23,8 @@ const dragging = ref(false);
 const busy = ref(false);
 const result = ref<Redaction | null>(null);
 const error = ref<string | null>(null);
+/** The last run failed because a picture's verify rounds did not settle: it can be written anyway. */
+const unsettled = ref(false);
 /** The source of the last run, shown above the input while it runs or failed. */
 const sourceName = ref<string | null>(null);
 const hovered = ref<number | null>(null);
@@ -69,22 +71,29 @@ const tabs: { kind: Kind; label: string }[] = [
   { kind: 'file', label: 'File' },
 ];
 
-async function run(source: Source, name: string | null) {
+async function run(source: Source, name: string | null, unverified = false) {
   busy.value = true;
   viewer.value = null;
   error.value = null;
+  unsettled.value = false;
   result.value = null;
   hovered.value = null;
   sourceName.value = name;
   lastRun.value = { source, name };
   try {
-    result.value = await api.redact(source, action.value || undefined);
+    result.value = await api.redact(source, action.value || undefined, unverified);
   } catch (e) {
     // Fail closed: no output at all when veilq could not redact.
     error.value = e instanceof Error ? e.message : String(e);
+    unsettled.value = e instanceof ApiError && e.status === 409;
   } finally {
     busy.value = false;
   }
+}
+
+/** Runs the last source again, writing a picture whose verify did not settle. */
+function runUnverified() {
+  if (lastRun.value) void run(lastRun.value.source, lastRun.value.name, true);
 }
 
 function changeAction() {
@@ -385,6 +394,13 @@ onBeforeUnmount(() => window.removeEventListener('paste', onPaste));
           <div v-if="error" class="failure">
             <strong>No output.</strong>
             <p>{{ error }}</p>
+            <template v-if="unsettled">
+              <p class="unsettled">
+                Each round of reading the blacked-out picture again found something new. Generating anyway fills
+                that too, but the picture is not read again: look at it before you pass it on.
+              </p>
+              <button :disabled="busy" @click="runUnverified">Generate anyway</button>
+            </template>
           </div>
           <ImagePane
             v-else-if="image"
@@ -651,6 +667,13 @@ onBeforeUnmount(() => window.removeEventListener('paste', onPaste));
   background: var(--danger-soft);
   color: var(--danger-text);
   font-size: 13px;
+}
+.failure .unsettled {
+  margin-top: var(--space-2);
+  color: var(--text-2);
+}
+.failure button {
+  margin-top: var(--space-2);
 }
 .report {
   grid-area: report;

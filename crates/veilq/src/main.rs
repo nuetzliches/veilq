@@ -62,6 +62,12 @@ enum Command {
         /// for, encrypted to the policy's `[mapping] recipients` (age).
         #[arg(long)]
         mapping: Option<PathBuf>,
+        /// A picture whose verify rounds do not settle (each finds something
+        /// new) is written anyway, with the last round's findings filled
+        /// too; the report asks for a review (ADR-0026). Without it, that is
+        /// an error.
+        #[arg(long)]
+        unverified: bool,
     },
     /// Decide on a ticket's body (Markdown) for a gateway: hand it on as it
     /// is when its first line is a matching `veilq: cleaned|pass <hash>` or
@@ -244,6 +250,7 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
             action,
             report,
             mapping,
+            unverified,
         } => redact(
             &path,
             &output,
@@ -251,6 +258,7 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
             action.map(Action::from),
             report.as_deref(),
             mapping.as_deref(),
+            unverified,
         ),
         Command::Reveal {
             path,
@@ -647,6 +655,7 @@ fn redact(
     action: Option<Action>,
     report_path: Option<&Path>,
     mapping_path: Option<&Path>,
+    unverified: bool,
 ) -> anyhow::Result<Outcome> {
     if !is_stdin(path) && path.is_dir() {
         anyhow::bail!("{}: redact takes one file", path.display());
@@ -667,7 +676,7 @@ fn redact(
         ),
         None => None,
     };
-    let engine = engine(&policy, action)?;
+    let engine = engine(&policy, action)?.with_unverified(unverified);
     let format = format_of(path, input.format.as_deref())?;
     let reader = open(path)?;
     let run = if is_stdin(output) {

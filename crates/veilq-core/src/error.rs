@@ -35,6 +35,18 @@ pub enum Error {
     #[error("the output still contains {entity} (found by {detector}); nothing was written")]
     Leftover { entity: String, detector: String },
 
+    /// In a picture, every verify round found something new to fill
+    /// (ADR-0026). The message names the type and the place, never the
+    /// value.
+    #[error(
+        "the picture still shows {entity} at {at} after {rounds} rounds of filling; nothing was written (`--unverified` writes it with that filled too, for a review)"
+    )]
+    Unsettled {
+        entity: String,
+        at: String,
+        rounds: usize,
+    },
+
     /// Writing or reading a mapping file (ADR-0018).
     #[error("mapping: {0}")]
     Mapping(String),

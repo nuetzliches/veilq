@@ -6,6 +6,25 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `veilq redact --unverified` and the web UI's "Generate anyway" (ADR-0026):
+  a picture whose verify rounds do not settle is written with the last
+  round's findings filled too, and the report asks for a review.
+
+### Changed
+
+- A picture is read again and filled for up to six rounds instead of three,
+  as long as each finds something new (ADR-0026). The error when it does
+  not settle names the type and the place (`PERSON at 97×24 at 142,228`).
+- NER keeps its candidates per text: a picture's unchanged lines are not
+  read by the model again in the next round or frame.
+
+### Fixed
+
+- A GIF is decoded and encoded frame by frame: a screen recording of 717
+  frames at 3815×1958 took about 21 GB, every frame decoded at once.
+
 ## [0.1.1] - 2026-11-11
 
 ### Added

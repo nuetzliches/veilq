@@ -15,6 +15,7 @@
 //! span of 1 to `max_width` words; the logits are `[1, words, max_width,
 //! labels]`, a sigmoid gives the score.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -33,6 +34,8 @@ const WINDOW: usize = 200;
 const OVERLAP: usize = 40;
 /// The model's own threshold: spans below it are no candidates.
 pub const MIN_SCORE: f32 = 0.3;
+/// Texts whose candidates are kept; the cache is emptied when it is full.
+const CACHE: usize = 4096;
 
 fn error(message: impl std::fmt::Display) -> Error {
     Error::Format(format!("NER: {message}"))
@@ -40,6 +43,10 @@ fn error(message: impl std::fmt::Display) -> Error {
 
 pub struct Ner {
     session: Mutex<Session>,
+    /// The candidates of texts read before. The model reads a text alone,
+    /// so the same text gives the same candidates: a picture's lines come
+    /// again in each verify round and in each frame of a recording.
+    cache: Mutex<HashMap<String, Vec<Candidate>>>,
     tokenizer: Tokenizer,
     words: Regex,
     max_width: usize,
@@ -69,6 +76,7 @@ impl Ner {
         }
         Ok(Self {
             session: Mutex::new(session),
+            cache: Mutex::new(HashMap::new()),
             tokenizer,
             words: words_regex(),
             max_width: 12,
@@ -81,6 +89,20 @@ impl Ner {
     /// read, and the model guesses (`Name` read as a person): there, only
     /// the patterns decide, with the column's name as their context.
     pub fn candidates(&self, text: &str) -> Result<Vec<Candidate>, Error> {
+        if let Some(hit) = self.cache.lock().ok().and_then(|c| c.get(text).cloned()) {
+            return Ok(hit);
+        }
+        let out = self.read(text)?;
+        if let Ok(mut cache) = self.cache.lock() {
+            if cache.len() >= CACHE {
+                cache.clear();
+            }
+            cache.insert(text.to_owned(), out.clone());
+        }
+        Ok(out)
+    }
+
+    fn read(&self, text: &str) -> Result<Vec<Candidate>, Error> {
         let words: Vec<(usize, usize)> = self
             .words
             .find_iter(text)
