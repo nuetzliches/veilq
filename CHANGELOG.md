@@ -34,6 +34,11 @@ Notable changes per release. The format follows
 - A context word of five or more characters counts at the end of a compound
   too: `Senderkonto` is context for an IBAN, `Mobiltelefon` for a phone
   number (ADR-0037).
+- Three kinds of NER false positives, seen in a screenshot of a news page:
+  a shop's domain (`Lesehaus.de`) is no name; what a name owns is cut off
+  (`Brandts Kapuze` becomes `Brandts` when `Jonas Brandt` stands in the same
+  text or, in a picture, on the same page); a clergy title alone
+  (`Der Pater`) is no name, before a name (`Pater Ole`) it stays one.
 
 ### Removed
 
