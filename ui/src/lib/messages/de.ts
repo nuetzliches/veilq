@@ -109,6 +109,7 @@ export const de: Record<MessageKey, string> = {
   'entity.CUSTOMER_NUMBER': 'Kundennummer',
   'entity.ACCOUNT_NUMBER': 'Kontonummer',
   'entity.FILE_NUMBER': 'Aktenzeichen',
+  'entity.FACE': 'Gesicht',
   'entity.METADATA': 'Dokumenteigenschaften',
   'entity.IMAGE': 'Eingebettetes Bild',
 

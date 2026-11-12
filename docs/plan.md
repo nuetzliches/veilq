@@ -89,7 +89,7 @@ mapping file comes in M2, encrypted (age); it never goes into a report.
 | Text, logs, NDJSON, JSON, CSV | streamed in chunks with an overlap window; CSV and JSON aware of columns and keys | a value split across a chunk boundary |
 | DOCX, XLSX, PPTX | edit the OOXML parts in place, keep formatting | a value split across runs; comments, tracked changes, headers/footers, document properties (author), hidden sheets, cached formula values, embedded images |
 | EML | headers, bodies, attachments recursively | encoded words, nested messages |
-| Images | OCR, character boxes filled black, encoded anew (ADR-0023) | EXIF/XMP metadata including GPS |
+| Images | OCR, character boxes filled black, encoded anew (ADR-0023); faces found and filled black (ADR-0038) | EXIF/XMP metadata including GPS; a face the detector misses |
 | GIF | decode frames, OCR changed frames only, boxes persist while their pixels stand still, re-encode (ADR-0023) | one frame without the box shows the value |
 | PDF | rasterise pages with PDFium and redact the images; a new PDF of page images (text layer gone, stated in the report; ADR-0023) | incremental updates and metadata keep old content |
 | Video | M5: through an external `ffmpeg` | as GIF, plus audio |

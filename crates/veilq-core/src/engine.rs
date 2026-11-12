@@ -21,7 +21,7 @@ use std::path::Path;
 
 use crate::detect::{Candidate, Detector, Source, Verdict};
 use crate::fake::Faker;
-use crate::finding::{Finding, Location, Report};
+use crate::finding::{EntityType, Finding, Location, Report};
 use crate::mapping::Entry;
 use crate::{Action, Error, Policy, PseudonymKey};
 
@@ -244,6 +244,8 @@ pub struct Engine {
     explain: Option<Explain>,
     #[cfg(feature = "ocr")]
     ocr: Option<std::sync::Arc<crate::ocr::Ocr>>,
+    #[cfg(feature = "ocr")]
+    faces: Option<std::sync::Arc<crate::face::Faces>>,
     #[cfg(feature = "pdf")]
     pdfium: Option<&'static pdfium_render::prelude::Pdfium>,
 }
@@ -280,14 +282,25 @@ impl Engine {
             explain: None,
             #[cfg(feature = "ocr")]
             ocr: None,
+            #[cfg(feature = "ocr")]
+            faces: None,
             #[cfg(feature = "pdf")]
             pdfium: None,
         })
     }
 
     pub(crate) fn action_for(&self, c: &Candidate) -> Action {
+        self.action_for_entity(&c.entity)
+    }
+
+    /// The confidence a finding of `entity` needs.
+    pub(crate) fn threshold(&self, entity: &EntityType) -> f32 {
+        self.detector.threshold(entity)
+    }
+
+    pub(crate) fn action_for_entity(&self, entity: &EntityType) -> Action {
         self.action
-            .unwrap_or_else(|| self.detector.policy().action_for(&c.entity))
+            .unwrap_or_else(|| self.detector.policy().action_for(entity))
     }
 
     /// `input` redacted as a whole, with the spans a viewer marks.
@@ -562,19 +575,70 @@ impl Engine {
         self
     }
 
-    /// Whether this engine reads `format`: a picture needs OCR, a PDF also
-    /// PDFium; everything else is always read.
+    /// Finds faces in pictures (ADR-0038).
+    #[cfg(feature = "ocr")]
+    pub fn with_faces(mut self, faces: std::sync::Arc<crate::face::Faces>) -> Self {
+        self.faces = Some(faces);
+        self
+    }
+
+    /// Whether this engine reads `format`: a picture needs OCR and, unless
+    /// the policy keeps faces, the face detector; a PDF also PDFium;
+    /// everything else is always read.
     pub fn reads(&self, format: Format) -> bool {
         match format {
             Format::Pdf => {
                 #[cfg(feature = "pdf")]
-                return self.has_ocr() && self.pdfium.is_some();
+                return self.reads_pictures() && self.pdfium.is_some();
                 #[cfg(not(feature = "pdf"))]
                 false
             }
-            f if f.is_picture() => self.has_ocr(),
+            f if f.is_picture() => self.reads_pictures(),
             _ => true,
         }
+    }
+
+    /// Whether pictures can be read as the policy asks: OCR, and the face
+    /// detector unless faces are kept.
+    fn reads_pictures(&self) -> bool {
+        self.has_ocr() && (!self.redacts_faces() || self.has_faces())
+    }
+
+    /// Whether the policy has faces in pictures filled (ADR-0038).
+    pub fn redacts_faces(&self) -> bool {
+        self.detector.policy().picture.faces == crate::policy::FacePolicy::Redact
+    }
+
+    /// Whether faces can be found.
+    pub fn has_faces(&self) -> bool {
+        #[cfg(feature = "ocr")]
+        return self.faces.is_some();
+        #[cfg(not(feature = "ocr"))]
+        false
+    }
+
+    /// The face detector, when the policy has faces filled.
+    #[cfg(feature = "ocr")]
+    pub(crate) fn faces(&self) -> Option<&crate::face::Faces> {
+        self.faces.as_deref().filter(|_| self.redacts_faces())
+    }
+
+    /// Why pictures cannot be read, with what to install; `None` when
+    /// they can.
+    fn pictures_missing(&self) -> Option<String> {
+        let mut missing = Vec::new();
+        if !self.has_ocr() {
+            missing.push("OCR (`veilq models fetch ocr`)");
+        }
+        if self.redacts_faces() && !self.has_faces() {
+            missing.push("the face detector (`veilq models fetch face`, or `[picture] faces = \"keep\"` in the policy)");
+        }
+        (!missing.is_empty()).then(|| {
+            format!(
+                "pictures need {}, which is not installed",
+                missing.join(" and ")
+            )
+        })
     }
 
     /// Whether images can be read.
@@ -646,13 +710,18 @@ impl Engine {
 
     /// A PDF, redacted (ADR-0023); without OCR and PDFium an error.
     pub(crate) fn pdf(&self, input: &[u8], apply: bool) -> Result<crate::office::Outcome, Error> {
+        if let Some(missing) = self.pictures_missing() {
+            return Err(Error::Format(format!(
+                "a PDF is read as pictures: {missing}"
+            )));
+        }
         #[cfg(feature = "pdf")]
         if let (Some(ocr), Some(pdfium)) = (&self.ocr, self.pdfium) {
             return crate::pdf::redact(self, ocr, pdfium, input, apply);
         }
         let _ = (input, apply);
         Err(Error::Format(
-            "PDFs need OCR and PDFium, which are not installed: `veilq models fetch ocr` and `veilq models fetch pdf`".into(),
+            "PDFs need PDFium, which is not installed: `veilq models fetch pdf`".into(),
         ))
     }
 
@@ -671,14 +740,15 @@ impl Engine {
 
     /// An image, redacted (ADR-0023); without OCR an error (ADR-0003).
     pub(crate) fn image(&self, input: &[u8], apply: bool) -> Result<crate::office::Outcome, Error> {
+        if let Some(missing) = self.pictures_missing() {
+            return Err(Error::Format(missing));
+        }
         #[cfg(feature = "ocr")]
         if let Some(ocr) = &self.ocr {
             return crate::visual::image(self, ocr, input, apply);
         }
         let _ = (input, apply);
-        Err(Error::Format(
-            "images need OCR, which is not installed: `veilq models fetch ocr`".into(),
-        ))
+        Err(Error::Format("this build reads no images".into()))
     }
 
     /// Runs the NER model beside the patterns (ADR-0022).

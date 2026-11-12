@@ -9,6 +9,11 @@
 //! into pixels faithfully. **verify** reads the filled image again; what it
 //! still finds is filled too, for up to three rounds (ADR-0022).
 //!
+//! Faces are found first (ADR-0038), when the policy has them filled: each
+//! is a `FACE` finding and filled black before OCR reads the picture. A
+//! face in a GIF is looked for in every frame that changed, in the whole
+//! frame.
+//!
 //! A GIF is read frame by frame. A box stays filled in the following frames
 //! as long as its pixels do not change there, so a value that stands still
 //! is not visible for a frame because OCR missed it once. Unchanged frames
@@ -38,6 +43,8 @@ const PAD: u32 = 2;
 
 /// Said when a policy asks for `pseudonymize` or `fake` in a picture.
 pub const BOXES_ONLY: &str = "in a picture every action is a black box: a pseudonym or a stand-in cannot be written into pixels faithfully";
+/// Said when faces were filled: what the detector missed stays.
+pub const FACES_FOUND: &str = "faces were found and filled black; the face detector can miss a face (in profile, small, covered, drawn): check the picture";
 /// Verify rounds at most: reading a filled picture again moves rows and
 /// labels, so a round can find what the one before did not (ADR-0026).
 const ROUNDS: usize = 6;
@@ -217,8 +224,80 @@ pub fn redact_picture(
     apply: bool,
     out: &mut Outcome,
 ) -> Result<Vec<Rect>, Error> {
+    let mut boxes = faces(engine, img, frame, apply, out, &[])?;
+    boxes.extend(read_whole(engine, ocr, img, frame, apply, out)?);
+    Ok(boxes)
+}
+
+/// The text of a whole picture, redacted: [`settle`] without a band.
+fn read_whole(
+    engine: &Engine,
+    ocr: &Ocr,
+    img: &mut RgbaImage,
+    frame: Option<u64>,
+    apply: bool,
+    out: &mut Outcome,
+) -> Result<Vec<Rect>, Error> {
     settle(engine, ocr, img, frame, apply, out, Band::WHOLE)?
         .ok_or_else(|| error("a whole picture has no edge a line could be cut at"))
+}
+
+/// The faces in `img`, reported as `FACE` and filled (with `apply`), at
+/// `frame`; nothing when the policy keeps faces. A face inside a box of
+/// `kept` (a box of the frame before, whose pixels stood still) is that
+/// box's and not reported again. The boxes filled are returned.
+fn faces(
+    engine: &Engine,
+    img: &mut RgbaImage,
+    frame: Option<u64>,
+    apply: bool,
+    out: &mut Outcome,
+    kept: &[Rect],
+) -> Result<Vec<Rect>, Error> {
+    let Some(detector) = engine.faces() else {
+        return Ok(Vec::new());
+    };
+    let entity = EntityType::new("FACE").expect("a valid type");
+    let threshold = engine.threshold(&entity);
+    let rgb = DynamicImage::ImageRgba8(img.clone()).to_rgb8();
+    let mut filled = Vec::new();
+    for face in detector.find(&rgb)? {
+        let confidence = crate::face::confidence(face.score);
+        if confidence < threshold || covered(&face.rect, kept.iter()) {
+            continue;
+        }
+        out.findings.push(Finding {
+            entity: entity.clone(),
+            location: Location::Region {
+                part: None,
+                frame,
+                x: face.rect.x,
+                y: face.rect.y,
+                width: face.rect.w,
+                height: face.rect.h,
+            },
+            confidence,
+            detector: "face".into(),
+            pseudonym: None,
+        });
+        if apply {
+            fill(img, &face.rect);
+        }
+        filled.push(face.rect);
+    }
+    if !filled.is_empty() {
+        if !out.review_reasons.iter().any(|r| r == FACES_FOUND) {
+            out.review_reasons.push(FACES_FOUND.into());
+        }
+        if matches!(
+            engine.action_for_entity(&entity),
+            crate::Action::Pseudonymize | crate::Action::Fake
+        ) && !out.review_reasons.iter().any(|r| r == BOXES_ONLY)
+        {
+            out.review_reasons.push(BOXES_ONLY.into());
+        }
+    }
+    Ok(filled)
 }
 
 /// Where a picture being read is a band of a larger one: its top row there,
@@ -479,7 +558,9 @@ fn too_much(bands: &[(u32, u32)], height: u32) -> bool {
 /// where its pixels changed (#12). A band whose edge cuts a line OCR reads
 /// is read again, larger; when the bands come to more than half the frame,
 /// it is read whole. Outside the bands every box of the frame before stays,
-/// as its pixels stand still. The boxes returned are in the frame.
+/// as its pixels stand still (`kept`). Faces are looked for in the whole
+/// frame: a face cut by a band's edge is still one. The boxes returned are
+/// in the frame.
 #[allow(clippy::too_many_arguments)]
 fn redact_changed(
     engine: &Engine,
@@ -490,15 +571,18 @@ fn redact_changed(
     frame: Option<u64>,
     apply: bool,
     out: &mut Outcome,
+    kept: &[Rect],
 ) -> Result<Vec<Rect>, Error> {
     let (w, h) = img.dimensions();
+    let mut boxes = faces(engine, img, frame, apply, out, kept)?;
     let margin = MARGIN.max(h / 20);
     let mut bands = changed_bands(before, after, margin);
     // Read each band on a copy; a band cut short starts the reading over, so
     // nothing of a reading given up reaches the frame or the report.
     let read = 'read: loop {
         if too_much(&bands, h) {
-            return redact_picture(engine, ocr, img, frame, apply, out);
+            boxes.extend(read_whole(engine, ocr, img, frame, apply, out)?);
+            return Ok(boxes);
         }
         let mut read = Vec::new();
         for (i, &(top, bottom)) in bands.iter().enumerate() {
@@ -522,7 +606,6 @@ fn redact_changed(
         }
         break read;
     };
-    let mut boxes = Vec::new();
     for (top, part, found, rects) in read {
         if apply {
             image::imageops::replace(img, &part, 0, i64::from(top));
@@ -580,7 +663,7 @@ fn gif(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Outcome,
                 let n = Some(i as u64 + 1);
                 let found = match &prev {
                     Some((before, _)) => redact_changed(
-                        engine, ocr, before, &original, &mut img, n, apply, &mut out,
+                        engine, ocr, before, &original, &mut img, n, apply, &mut out, &boxes,
                     )?,
                     None => redact_picture(engine, ocr, &mut img, n, apply, &mut out)?,
                 };

@@ -12,6 +12,17 @@ Notable changes per release. The format follows
   (handwriting, small or blurred text) is no longer passed silently: where
   a letter or digit scores below 0.7 and nothing was blacked out there, the
   report says `review_required` and where the first such line is (#52).
+- Faces in pictures are found and filled black (ADR-0038): images, GIF
+  frames, PDF pages and pictures inside Office files and mails. Each face is
+  a `FACE` finding, and a picture with faces asks for a review. The face
+  detector is the new component `face` (YuNet, MIT, 0.2 MB): `veilq models
+  fetch face`. Faces are found, never recognised.
+
+### Changed
+
+- **Pictures need the face detector** unless the policy keeps faces
+  (`[picture] faces = "keep"`): without it a picture is refused, as
+  without OCR, and an image inside a document falls to `[office] embedded`.
 
 ### Fixed
 

@@ -253,8 +253,8 @@ pub fn engine_with(ner: bool) -> anyhow::Result<Engine> {
     with_ner(engine)
 }
 
-/// The engine of `check --ocr`: OCR and PDFium as installed (an error
-/// without them), and NER with `ner`.
+/// The engine of `check --ocr`: OCR, the face detector and PDFium as
+/// installed (an error without them), and NER with `ner`.
 pub fn engine_for(ner: bool, ocr: bool) -> anyhow::Result<Engine> {
     let engine = engine_with(ner)?;
     if !ocr {
@@ -271,10 +271,18 @@ pub fn engine_for(ner: bool, ocr: bool) -> anyhow::Result<Engine> {
             dict: &dict,
             runtime: &runtime,
         })?;
+        let (model, runtime) = veilq_core::models::face_files(&dir).ok_or_else(|| {
+            anyhow::anyhow!("the face detector is not installed in {}", dir.display())
+        })?;
+        let faces = veilq_core::face::Faces::load(&veilq_core::face::ModelFiles {
+            model: &model,
+            runtime: &runtime,
+        })?;
         let library = veilq_core::models::pdf_library(&dir)
             .ok_or_else(|| anyhow::anyhow!("PDFium is not installed in {}", dir.display()))?;
         Ok(engine
             .with_ocr(std::sync::Arc::new(ocr))
+            .with_faces(std::sync::Arc::new(faces))
             .with_pdfium(veilq_core::pdf::pdfium(&library)?))
     }
     #[cfg(not(feature = "ocr"))]

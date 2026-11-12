@@ -77,3 +77,4 @@ keep it to about a page.
 | [0035](0035-a-release-is-signed-in-its-own-environment-once-switched-on.md) | A release is signed in its own environment, once switched on | Accepted |
 | [0036](0036-input-and-output-are-one-view.md) | Input and output are one view | Accepted |
 | [0037](0037-a-misread-checksum-and-a-compound-label-still-redact.md) | A misread checksum and a compound label still redact | Accepted |
+| [0038](0038-faces-in-pictures-are-found-and-filled-black.md) | Faces in pictures are found and filled black | Accepted |

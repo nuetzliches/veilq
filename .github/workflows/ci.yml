@@ -104,7 +104,7 @@ jobs:
         run: cargo build --release --locked -p veilq -p veilq-eval
       - name: fetch models
         if: steps.models.outputs.cache-hit != 'true'
-        run: for m in ner ocr pdf; do target/release/veilq models fetch "$m"; done
+        run: for m in ner ocr face pdf; do target/release/veilq models fetch "$m"; done
       - name: save models
         if: steps.models.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' && matrix.seeds == '7005'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

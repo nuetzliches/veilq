@@ -17,11 +17,14 @@ use sha2::{Digest, Sha256};
 use crate::Error;
 
 /// The detectors a policy can name.
-pub const DETECTORS: &[&str] = &["pattern", "ner", "ocr", "verifier"];
+pub const DETECTORS: &[&str] = &["pattern", "ner", "ocr", "face", "verifier"];
 
 /// What `veilq models` fetches: the detectors with a model, and `pdf`
 /// (PDFium, which renders a PDF's pages for OCR; ADR-0023).
-pub const COMPONENTS: &[&str] = &["ner", "ocr", "pdf"];
+pub const COMPONENTS: &[&str] = &["ner", "ocr", "face", "pdf"];
+
+/// The detectors that run in ONNX Runtime.
+const ON_RUNTIME: &[&str] = &["ner", "ocr", "face"];
 
 /// A file a detector needs, as compiled into the binary.
 #[derive(Debug)]
@@ -59,6 +62,10 @@ const NER_ONNX: &str = "https://huggingface.co/onnx-community/gliner_multi_pii-v
 const OCR_DET: &str = "https://huggingface.co/monkt/paddleocr-onnx/resolve/7b02d0a30a07ba2b92ad1ff5a8941ae2c633de65/detection/v3";
 const OCR_LATIN: &str = "https://huggingface.co/monkt/paddleocr-onnx/resolve/7b02d0a30a07ba2b92ad1ff5a8941ae2c633de65/languages/latin";
 
+/// YuNet 2023mar (MIT), the face detector of the OpenCV Zoo, as `opencv`
+/// publishes it on Hugging Face, at a fixed revision (ADR-0038).
+const FACE: &str = "https://huggingface.co/opencv/face_detection_yunet/resolve/3cc26e7f1014a5ee5d74a42acee58bafc9d0a310";
+
 /// PDFium (BSD-3-Clause, with the licences of its parts in the archive), as
 /// `bblanchon/pdfium-binaries` (MIT) builds it, at the version whose API
 /// pdfium-render binds (ADR-0023).
@@ -90,6 +97,15 @@ pub const PINNED: &[PinnedFile] = &[
         base: OCR_LATIN,
         name: "dict.txt",
         sha256: "3c0a8a79b612653c25f765271714f71281e4e955962c153e272b7b8c1d2b13ff",
+        member: None,
+        target: None,
+    },
+    PinnedFile {
+        detector: "face",
+        file: "face/yunet-2023mar/model.onnx",
+        base: FACE,
+        name: "face_detection_yunet_2023mar.onnx",
+        sha256: "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
         member: None,
         target: None,
     },
@@ -191,7 +207,7 @@ pub fn pinned_for(detector: &str) -> Vec<&'static PinnedFile> {
     PINNED
         .iter()
         .filter(|f| {
-            f.detector == detector || (f.detector == "runtime" && matches!(detector, "ner" | "ocr"))
+            f.detector == detector || (f.detector == "runtime" && ON_RUNTIME.contains(&detector))
         })
         .filter(|f| {
             f.target.is_none_or(|(os, arch)| {
@@ -256,6 +272,17 @@ pub fn ocr_files(model_dir: &Path) -> Option<(PathBuf, PathBuf, PathBuf, PathBuf
         find("dict.txt")?,
         runtime,
     ))
+}
+
+/// The installed files of the face detector: model, runtime.
+pub fn face_files(model_dir: &Path) -> Option<(PathBuf, PathBuf)> {
+    if !installed("face", model_dir) {
+        return None;
+    }
+    let files = pinned_for("face");
+    let model = files.iter().find(|f| f.detector == "face")?;
+    let runtime = files.iter().find(|f| f.detector == "runtime")?;
+    Some((model_dir.join(model.file), model_dir.join(runtime.file)))
 }
 
 /// The installed PDFium library.
