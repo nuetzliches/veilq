@@ -6,6 +6,14 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-12
+
+**Before you update:** veilq now fills faces in pictures black, and a
+picture is refused until the face detector is installed. Run `veilq models
+fetch face` once (0.2 MB; in the UI: Settings → Models → Faces in
+pictures), or set
+`[picture] faces = "keep"` in your policy to leave faces as they are.
+
 ### Added
 
 - veilq can be offered in the Microsoft Store as an MSIX package
