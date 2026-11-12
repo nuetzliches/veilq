@@ -3,7 +3,7 @@
 Find and redact personal data in text, documents, images and screen
 recordings: on your machine, in CI and as an MCP tool for any agent.
 
-> **Status:** 0.1.8. Text, logs, NDJSON, JSON, CSV, Word, Excel,
+> **Status:** 0.1.9. Text, logs, NDJSON, JSON, CSV, Word, Excel,
 > PowerPoint, mails, images (PNG, JPEG, WebP), GIF screen recordings and
 > PDF are scanned and redacted with German and English patterns, from the
 > CLI, a local web UI and an MCP server; pseudonyms can be put back with an
