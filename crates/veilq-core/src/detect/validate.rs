@@ -17,6 +17,16 @@ pub const VALIDATORS: &[&str] = &[
     "email_host",
 ];
 
+/// The checks that are checksums: one misread character fails them. The
+/// others check a form (a date, a district code, a host) that a misread
+/// character rarely gives a value without it (ADR-0037).
+const CHECKSUMS: &[&str] = &["iban", "luhn", "tax_id_de", "ssn_de", "id_card_de"];
+
+/// Whether the check `name` is a checksum.
+pub fn is_checksum(name: &str) -> bool {
+    CHECKSUMS.contains(&name)
+}
+
 /// Whether `value` passes the check `name`. An unknown name never passes
 /// (policies are checked against [`VALIDATORS`] when they load).
 pub fn check(name: &str, value: &str) -> bool {

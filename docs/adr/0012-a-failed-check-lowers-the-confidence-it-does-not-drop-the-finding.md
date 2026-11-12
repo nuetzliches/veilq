@@ -1,6 +1,6 @@
 # ADR-0012: A failed check lowers the confidence; it does not drop the finding
 
-- **Status:** Accepted (card M1, point 4, approved 2026-11-09)
+- **Status:** Accepted (card M1, point 4, approved 2026-11-09); amended by [ADR-0037](0037-a-misread-checksum-and-a-compound-label-still-redact.md) for text read by OCR and compound labels
 - **Date:** 2026-11-09
 - **Deciders:** project owner
 - **Related:** [ADR-0011](0011-policy-patterns-take-context-and-a-validator-a-policy-names-its-locales.md)

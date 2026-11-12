@@ -30,6 +30,24 @@ const PACKS: &[(&str, &str)] = &[
 /// below the default threshold, one with context stays above it.
 pub const VALIDATION_PENALTY: f32 = 0.3;
 
+/// What a failed checksum costs in text read by OCR (ADR-0037): a misread
+/// character fails the check as surely as a wrong value, so an IBAN read
+/// from a picture stays above the default threshold without context.
+pub const OCR_CHECKSUM_PENALTY: f32 = 0.15;
+
+/// From this many characters on a context word also counts at the end of a
+/// word: the head of a German compound (`Senderkonto`, `Mobiltelefon`). A
+/// shorter one (`ip`, `tel`, `name`) would sit inside too many others.
+const COMPOUND_TAIL: usize = 5;
+
+/// Where a text comes from: written, or read from a picture by OCR.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Source {
+    #[default]
+    Text,
+    Ocr,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PackFile {
@@ -199,8 +217,14 @@ impl Detector {
 
     /// Every candidate in `text`. `context` is what stands before the text
     /// and is not part of it: a column's or a key's name. A failing model is
-    /// an error (ADR-0003).
-    pub fn candidates(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
+    /// an error (ADR-0003). In text read by OCR a failed checksum costs
+    /// less (ADR-0037).
+    pub fn candidates(
+        &self,
+        text: &str,
+        context: &str,
+        source: Source,
+    ) -> Result<Vec<Candidate>, Error> {
         let mut out = Vec::new();
         #[cfg(feature = "ner")]
         if let Some(ner) = &self.ner {
@@ -227,7 +251,11 @@ impl Detector {
                 if let Some(v) = &rule.validate
                     && !validate::check(v, m.as_str())
                 {
-                    confidence -= VALIDATION_PENALTY;
+                    confidence -= if source == Source::Ocr && validate::is_checksum(v) {
+                        OCR_CHECKSUM_PENALTY
+                    } else {
+                        VALIDATION_PENALTY
+                    };
                 }
                 out.push(Candidate {
                     start: m.start(),
@@ -248,9 +276,14 @@ impl Detector {
     /// Overlaps are resolved before the threshold: a long candidate below it
     /// (an IBAN with a wrong checksum) still claims its span, so that a short
     /// rule does not find a phone number in its digits.
-    pub fn findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
+    pub fn findings(
+        &self,
+        text: &str,
+        context: &str,
+        source: Source,
+    ) -> Result<Vec<Candidate>, Error> {
         Ok(self
-            .decide(text, context)?
+            .decide(text, context, source)?
             .into_iter()
             .filter(|d| d.verdict == Verdict::Kept)
             .map(|d| d.candidate)
@@ -260,10 +293,15 @@ impl Detector {
     /// Every candidate in `text` with what [`findings`](Self::findings)
     /// decided on it and why, sorted by position: what `scan --explain`
     /// shows (#40). The candidates kept are exactly the findings.
-    pub fn decide(&self, text: &str, context: &str) -> Result<Vec<Decision>, Error> {
+    pub fn decide(
+        &self,
+        text: &str,
+        context: &str,
+        source: Source,
+    ) -> Result<Vec<Decision>, Error> {
         let mut out = Vec::new();
         let mut kept = Vec::new();
-        for c in self.candidates(text, context)? {
+        for c in self.candidates(text, context, source)? {
             let value = &text[c.start..c.end];
             let dropped = if c.entity.as_str() != "PERSON" {
                 None
@@ -593,7 +631,10 @@ fn round(x: f32) -> f32 {
 }
 
 /// Whether one of `c.words` is in the last `c.window` characters before the
-/// match: of `context` (a column's name) and the text before it.
+/// match: of `context` (a column's name) and the text before it. A word that
+/// starts with a letter or digit must start a word, or, from
+/// [`COMPOUND_TAIL`] characters on, end one: `Senderkonto` holds `konto`,
+/// `Zip` does not hold `ip` (ADR-0037).
 fn has_context(c: &Context, context: &str, before: &str) -> bool {
     let joined = format!("{context}\n{before}").to_lowercase();
     let start = joined
@@ -604,12 +645,17 @@ fn has_context(c: &Context, context: &str, before: &str) -> bool {
     let window = &joined[start..];
     c.words.iter().any(|w| {
         let starts_word = w.chars().next().is_some_and(char::is_alphanumeric);
+        let tail = w.chars().count() >= COMPOUND_TAIL;
         window.match_indices(w.as_str()).any(|(i, _)| {
-            !starts_word
-                || window[..i]
-                    .chars()
-                    .next_back()
-                    .is_none_or(|p| !p.is_alphanumeric())
+            let at_start = window[..i]
+                .chars()
+                .next_back()
+                .is_none_or(|p| !p.is_alphanumeric());
+            let at_end = window[i + w.len()..]
+                .chars()
+                .next()
+                .is_none_or(|n| !n.is_alphanumeric());
+            !starts_word || at_start || (tail && at_end)
         })
     })
 }
@@ -619,8 +665,12 @@ mod tests {
     use super::*;
 
     fn findings(text: &str, context: &str) -> Vec<(String, String)> {
+        read(text, context, Source::Text)
+    }
+
+    fn read(text: &str, context: &str, source: Source) -> Vec<(String, String)> {
         let d = Detector::new(&Policy::default()).unwrap();
-        d.findings(text, context)
+        d.findings(text, context, source)
             .unwrap()
             .into_iter()
             .map(|c| {
@@ -916,6 +966,50 @@ mod tests {
     }
 
     #[test]
+    fn long_context_words_end_compounds() {
+        let c = Context {
+            words: vec!["konto".into(), "name".into()],
+            boost: 0.05,
+            window: 20,
+        };
+        assert!(has_context(&c, "Senderkonto*", "Bank - "));
+        assert!(has_context(&c, "", "Empfängerkonto: "));
+        assert!(has_context(&c, "", "Kontoinhaber "));
+        // Inside a word, or a short word at a compound's end, is no context.
+        assert!(!has_context(&c, "", "Bankkontonummern "));
+        assert!(!has_context(&c, "", "Dateiname: "));
+    }
+
+    #[test]
+    fn a_compound_label_lifts_a_mistyped_iban() {
+        // DE89 3704 0044 0532 0130 00 with one 0 lost.
+        let iban = "DE89 3704 0044 0532 0130 0";
+        assert_eq!(
+            findings(&format!("Senderkonto: {iban}"), ""),
+            vec![("IBAN_CODE".into(), iban.into())]
+        );
+        assert_eq!(findings(&format!("Bank - {iban}"), ""), vec![]);
+    }
+
+    #[test]
+    fn a_failed_checksum_read_by_ocr_costs_less() {
+        // OCR loses a 0 of a run: the checksum fails, the IBAN is still one.
+        let iban = "DE8937040044053201300";
+        assert_eq!(findings(iban, ""), vec![]);
+        assert_eq!(
+            read(iban, "", Source::Ocr),
+            vec![("IBAN_CODE".into(), iban.into())]
+        );
+        // A card number and a tax ID without context stay below the
+        // threshold, read or written.
+        assert_eq!(read("Nummer 4111 1111 1111 1112", "", Source::Ocr), vec![]);
+        assert_eq!(read("Nummer 57381942657", "", Source::Ocr), vec![]);
+        // A form check costs what it always does: an impossible date beside
+        // its label is no birth date, read or written.
+        assert_eq!(read("geboren 31.02.1987", "", Source::Ocr), vec![]);
+    }
+
+    #[test]
     fn the_policy_adds_patterns_and_allows_values() {
         let policy = Policy::parse(
             r#"
@@ -934,7 +1028,7 @@ values = ["Mira Albers"]
         .unwrap();
         let d = Detector::new(&policy).unwrap();
         let text = "Vertrag 2026-0815 mit Frau Mira Albers";
-        let f = d.findings(text, "").unwrap();
+        let f = d.findings(text, "", Source::Text).unwrap();
         assert_eq!(f.len(), 1, "{f:?}");
         assert_eq!(f[0].detector, "policy:contract");
         assert_eq!(&text[f[0].start..f[0].end], "2026-0815");

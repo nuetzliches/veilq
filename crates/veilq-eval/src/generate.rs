@@ -338,7 +338,18 @@ impl Person {
 
 /// A German IBAN with valid check digits.
 fn iban(r: &mut Rng) -> String {
-    let bban = r.digits(18);
+    iban_of(&r.digits(18))
+}
+
+/// A German IBAN of a bank code and an account number with leading zeros,
+/// unspaced, as a payment form shows it: a run of zeros OCR may read one
+/// short (ADR-0037).
+fn iban_with_zeros(r: &mut Rng) -> String {
+    iban_of(&format!("{}000000{}", r.digits(8), r.digits(4)))
+}
+
+/// The IBAN of the German `bban` (18 digits), with its check digits.
+fn iban_of(bban: &str) -> String {
     let mut rem = 0u64;
     for c in format!("{bban}131400").chars() {
         rem = (rem * 10 + u64::from(c.to_digit(10).unwrap())) % 97;
@@ -881,6 +892,7 @@ pub fn corpus(seed: u64) -> Vec<Doc> {
         ("de/jpeg/form-1.jpg", visual::form_jpeg(&mut r)),
         ("de/gif/recording-1.gif", visual::recording_gif(&mut r)),
         ("de/pdf/scan-1.pdf", visual::scan_pdf(&mut r)),
+        ("de/png/transfer-1.png", visual::transfer_png(&mut r)),
     ] {
         docs.push(Doc {
             path: path.to_owned(),
