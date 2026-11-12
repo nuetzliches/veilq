@@ -30,10 +30,9 @@ pub fn double_clicked() -> bool {
 /// one, so this process should end.
 pub fn handed_on() -> bool {
     #[cfg(windows)]
-    if windows::console_processes() == 1 && windows::relaunch_without_console(&["desktop"]).is_ok()
-    {
-        return true;
-    }
+    return windows::console_processes() == 1
+        && windows::relaunch_without_console(&["desktop"]).is_ok();
+    #[cfg(not(windows))]
     false
 }
 
