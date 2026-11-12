@@ -52,15 +52,45 @@ fn place(f: &Finding) -> String {
             width,
             height,
             ..
-        } => {
-            let at = format!("{width}x{height} at {x},{y}");
-            match frame {
-                Some(n) => format!("{at} (frame or page {n})"),
-                None => at,
-            }
-        }
+        } => at(
+            &Rect {
+                x: *x,
+                y: *y,
+                w: *width,
+                h: *height,
+            },
+            *frame,
+        ),
         _ => String::new(),
     }
+}
+
+/// A region as the messages say it.
+fn at(r: &Rect, frame: Option<u64>) -> String {
+    let at = format!("{}x{} at {},{}", r.w, r.h, r.x, r.y);
+    match frame {
+        Some(n) => format!("{at} (frame or page {n})"),
+        None => at,
+    }
+}
+
+/// The review reason for the lines OCR read badly (`weak_lines`), once per
+/// file: personal data in them may have been read as something else and
+/// not found (#52). A picture is not failed for it; a person looks.
+pub fn weak_reason(out: &mut Outcome) {
+    let Some(first) = out.weak_lines.first() else {
+        return;
+    };
+    let reason = match out.weak_lines.len() {
+        1 => format!(
+            "OCR read a line with low confidence at {first} (handwriting, small or blurred text): personal data there may not have been found"
+        ),
+        n => format!(
+            "OCR read {n} lines with low confidence, the first at {first} (handwriting, small or blurred text): personal data there may not have been found"
+        ),
+    };
+    out.review_reasons.push(reason);
+    out.weak_lines.clear();
 }
 
 fn error(message: impl std::fmt::Display) -> Error {
@@ -341,6 +371,19 @@ fn settle(
             });
             new.extend(rects);
         }
+        // Read badly where nothing is filled: on the first reading only, as
+        // a later one reads the boxes' edges.
+        if round == 1 {
+            for l in &lines {
+                if l.weak().any(|r| !covered(r, new.iter())) {
+                    let r = Rect {
+                        y: l.rect.y + band.top,
+                        ..l.rect
+                    };
+                    out.weak_lines.push(at(&r, frame));
+                }
+            }
+        }
         if new.is_empty() || !apply {
             return Ok(Some(filled));
         }
@@ -384,6 +427,7 @@ fn outcome() -> Outcome {
         findings: Vec::new(),
         mapping: Vec::new(),
         review_reasons: Vec::new(),
+        weak_lines: Vec::new(),
     }
 }
 
@@ -484,6 +528,7 @@ fn redact_changed(
             image::imageops::replace(img, &part, 0, i64::from(top));
         }
         out.findings.extend(found.findings);
+        out.weak_lines.extend(found.weak_lines);
         for r in found.review_reasons {
             if !out.review_reasons.contains(&r) {
                 out.review_reasons.push(r);
@@ -551,6 +596,7 @@ fn gif(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Outcome,
     }
     drop(encoder);
     out.output = buf;
+    weak_reason(&mut out);
     Ok(out)
 }
 
@@ -593,6 +639,7 @@ pub fn image(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Ou
     if apply {
         out.output = encode(&rgba, format)?;
     }
+    weak_reason(&mut out);
     Ok(out)
 }
 
@@ -646,9 +693,42 @@ mod tests {
                 w: 10 * text.chars().count() as u32,
                 h: 20,
             },
+            scores: vec![1.0; text.chars().count()],
             chars,
             score: 1.0,
         }
+    }
+
+    #[test]
+    fn a_line_read_badly_is_one_review_reason_per_file() {
+        let mut l = line("Lena Albrecht", 0, 0);
+        assert_eq!(l.weak().count(), 0);
+        l.scores[5] = 0.6;
+        assert_eq!(l.weak().collect::<Vec<_>>(), vec![&l.chars[5].2]);
+        // A separator read badly holds no personal data; a line of one
+        // character is an icon or a cursor.
+        let mut sep = line("Lindenweg 12 · Bremen", 0, 0);
+        sep.scores[13] = 0.5;
+        assert_eq!(sep.weak().count(), 0);
+        let mut one = line("e", 0, 0);
+        one.scores[0] = 0.3;
+        assert_eq!(one.weak().count(), 0);
+
+        let mut out = outcome();
+        weak_reason(&mut out);
+        assert!(out.review_reasons.is_empty(), "nothing read badly");
+        out.weak_lines = vec![
+            "130x20 at 0,0".into(),
+            "80x20 at 0,40 (frame or page 2)".into(),
+        ];
+        weak_reason(&mut out);
+        assert_eq!(
+            out.review_reasons,
+            vec![
+                "OCR read 2 lines with low confidence, the first at 130x20 at 0,0 (handwriting, small or blurred text): personal data there may not have been found"
+            ]
+        );
+        assert!(out.weak_lines.is_empty());
     }
 
     #[test]

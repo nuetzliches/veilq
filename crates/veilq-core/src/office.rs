@@ -36,6 +36,9 @@ pub struct Outcome {
     pub findings: Vec<Finding>,
     pub mapping: Vec<Entry>,
     pub review_reasons: Vec<String>,
+    /// Lines of a picture OCR read badly, where nothing was filled: their
+    /// place, as the messages say it; one review reason at the end (#52).
+    pub weak_lines: Vec<String>,
 }
 
 const PARAGRAPHS: &[&str] = &["p", "si"];
@@ -147,6 +150,7 @@ pub fn process(engine: &Engine, input: &[u8], apply: bool) -> Result<Outcome, Er
         findings: Vec::new(),
         mapping: Vec::new(),
         review_reasons: Vec::new(),
+        weak_lines: Vec::new(),
     };
     let names: Vec<String> = entries.iter().map(|e| e.0.clone()).collect();
     let workbook = Workbook::read(&entries)?;

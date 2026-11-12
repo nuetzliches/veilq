@@ -9,7 +9,8 @@
 //! gives per time step a distribution over blank, the dictionary and a space;
 //! the greedy path collapses repeats and drops blanks. The time steps a
 //! character holds give its horizontal extent, so a finding inside a line is
-//! blacked out alone, not the whole line.
+//! blacked out alone, not the whole line. Its probability on that path is its
+//! score; a character below [`WEAK`] was read badly (#52).
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -29,6 +30,14 @@ const BOX: f32 = 0.5;
 /// How far DB widens a box: area x ratio / perimeter.
 const UNCLIP: f32 = 1.6;
 const REC_HEIGHT: u32 = 48;
+/// The score below which a letter or digit counts as read badly. Measured
+/// (#52): printed text kept every letter and digit at 0.73 and above (an
+/// `ä` in a screen recording's 13-pixel sidebar the lowest); handwriting-style
+/// fonts and small text in a scaled screenshot gave lines with letters and
+/// digits from 0.16 to 0.63, misread ones among them. A line's mean does not
+/// tell: misread lines averaged 0.95. Punctuation is left out, as printed
+/// separators (`·`) scored down to 0.53 and hold no personal data.
+pub const WEAK: f32 = 0.7;
 
 fn error(message: impl std::fmt::Display) -> Error {
     Error::Format(format!("OCR: {message}"))
@@ -86,6 +95,23 @@ pub struct Line {
     pub rect: Rect,
     pub chars: Vec<(usize, usize, Rect)>,
     pub score: f32,
+    /// Per character, as `chars`, its score.
+    pub scores: Vec<f32>,
+}
+
+impl Line {
+    /// The boxes of the letters and digits read badly (below [`WEAK`]); none
+    /// in a line of one character, which is mostly an icon or a cursor.
+    pub fn weak(&self) -> impl Iterator<Item = &Rect> {
+        let many = self.chars.len() > 1;
+        self.chars
+            .iter()
+            .zip(&self.scores)
+            .filter(move |((start, end, _), s)| {
+                many && **s < WEAK && self.text[*start..*end].chars().all(char::is_alphanumeric)
+            })
+            .map(|((_, _, r), _)| r)
+    }
 }
 
 pub struct Ocr {
@@ -260,6 +286,7 @@ impl Ocr {
             rect,
             chars,
             score,
+            scores: runs.iter().map(|r| r.3).collect(),
         }))
     }
 }
