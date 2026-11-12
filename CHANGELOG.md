@@ -6,6 +6,14 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- The macOS Intel build (`veilq-x86_64-apple-darwin.tar.gz`): ONNX Runtime
+  publishes none for Intel Macs, so NER, OCR, pictures and PDF could not run
+  there (#53). The download page offered it to most Macs, Apple Silicon ones
+  too, since a Mac browser reports "Intel" either way; it now offers the
+  Apple Silicon build.
+
 ## [0.1.9] - 2026-11-12
 
 ### Changed
