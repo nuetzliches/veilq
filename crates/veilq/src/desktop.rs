@@ -30,10 +30,9 @@ pub fn double_clicked() -> bool {
 /// one, so this process should end.
 pub fn handed_on() -> bool {
     #[cfg(windows)]
-    if windows::console_processes() == 1 && windows::relaunch_without_console(&["desktop"]).is_ok()
-    {
-        return true;
-    }
+    return windows::console_processes() == 1
+        && windows::relaunch_without_console(&["desktop"]).is_ok();
+    #[cfg(not(windows))]
     false
 }
 
@@ -49,7 +48,8 @@ pub fn report_error(message: &str) {
 /// veilq's own directory for the user: the token, the running instance.
 pub fn app_dir() -> PathBuf {
     let base = if cfg!(windows) {
-        std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
+        // In an MSIX package: the package's own folder (ADR-0039).
+        crate::package::local_data().or_else(|| std::env::var_os("LOCALAPPDATA").map(PathBuf::from))
     } else if cfg!(target_os = "macos") {
         std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support"))
     } else {
@@ -235,6 +235,12 @@ pub struct Uninstall {
     pub models: bool,
 }
 
+/// Whether this veilq offers setup: on Windows, unless the Microsoft Store
+/// installed it (ADR-0039).
+pub fn setup_available() -> bool {
+    cfg!(windows) && !crate::package::packaged()
+}
+
 pub fn status() -> Status {
     let exe = std::env::current_exe().unwrap_or_default();
     let dir = install_dir();
@@ -247,7 +253,7 @@ pub fn status() -> Status {
     #[cfg(not(windows))]
     let (start_menu, desktop, on_path) = (false, false, false);
     Status {
-        available: cfg!(windows),
+        available: setup_available(),
         installed: dir.join(exe_name()).is_file(),
         runs_installed: same_file(&exe, &dir.join(exe_name())),
         exe: plain(&exe),
@@ -262,6 +268,7 @@ pub fn status() -> Status {
 /// there) and sets up what `request` asks for; what it does not ask for is
 /// removed, so the page's switches are the state.
 pub fn install(request: &Install) -> anyhow::Result<Status> {
+    crate::package::refuse("installs")?;
     #[cfg(windows)]
     {
         let dir = install_dir();
@@ -292,6 +299,7 @@ pub fn install(request: &Install) -> anyhow::Result<Status> {
 /// Removes shortcuts, the PATH entry, the uninstall entry and (after this
 /// process ended) the installed program; the models too if asked.
 pub fn uninstall(request: &Uninstall) -> anyhow::Result<()> {
+    crate::package::refuse("uninstalls")?;
     #[cfg(windows)]
     {
         let dir = install_dir();

@@ -162,8 +162,8 @@ an extra box. Real personal data never goes into the repository.
 As the other nuetzliches tools: GitHub releases for the four targets (no macOS on
 Intel, #53) with
 `SHA256SUMS` and build provenance attestations, `install.sh` / `install.ps1`,
-a Homebrew formula in `nuetzliches/homebrew-tap`, winget, and a GitHub Action
-for CI. Models are release-independent downloads, pinned in the binary.
+a Homebrew formula in `nuetzliches/homebrew-tap`, winget, the Microsoft Store
+(MSIX, ADR-0039), and a GitHub Action for CI. Models are release-independent downloads, pinned in the binary.
 
 ## 8. Open questions
 

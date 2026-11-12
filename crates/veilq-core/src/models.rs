@@ -409,13 +409,26 @@ pub fn unpack(archive: &Path, name: &str, member: &str, out: &Path) -> Result<bo
     Ok(false)
 }
 
+/// The folder that stands for `%LOCALAPPDATA%` on Windows, once set.
+static LOCAL_DATA: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Puts the models under `dir` instead of `%LOCALAPPDATA%` on Windows: a
+/// veilq in an MSIX package names its package's own folder, which every
+/// process it starts sees as well (ADR-0039). The first call wins.
+pub fn set_local_data(dir: PathBuf) {
+    let _ = LOCAL_DATA.set(dir);
+}
+
 /// Where models live: `VEILQ_MODEL_DIR`, else the user's cache directory.
 pub fn model_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("VEILQ_MODEL_DIR") {
         return PathBuf::from(dir);
     }
     let base = if cfg!(windows) {
-        std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
+        LOCAL_DATA
+            .get()
+            .cloned()
+            .or_else(|| std::env::var_os("LOCALAPPDATA").map(PathBuf::from))
     } else if cfg!(target_os = "macos") {
         std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Caches"))
     } else {

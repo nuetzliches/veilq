@@ -8,6 +8,11 @@ Notable changes per release. The format follows
 
 ### Added
 
+- veilq can be offered in the Microsoft Store as an MSIX package
+  (ADR-0039): the release workflow packs `veilq.exe` (`scripts/msix.ps1`),
+  the Store signs and updates it. In a package, veilq keeps its files and
+  models in the package's folder, `veilq` on the command line comes from the
+  package's alias, and setup, `update` and `uninstall` are left to the Store.
 - A picture, GIF or PDF page whose text OCR reads with low confidence
   (handwriting, small or blurred text) is no longer passed silently: where
   a letter or digit scores below 0.7 and nothing was blacked out there, the

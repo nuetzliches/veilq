@@ -184,6 +184,7 @@ export const en = {
   'updates.title': 'Updates',
   'updates.about':
     'veilq {version}. Checking asks GitHub for the newest release and sends nothing else; an update is checked against the release\'s checksums before it replaces this program.',
+  'updates.store': 'veilq {version}, installed from the Microsoft Store: the Store updates it.',
   'updates.check': 'Check for updates',
   'updates.checking': 'Checking …',
   'updates.newest': 'veilq {version} is the newest release.',
