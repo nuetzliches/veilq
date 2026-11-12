@@ -14,7 +14,7 @@ use image::codecs::jpeg::JpegEncoder;
 use image::{Delay, Frame, Rgb, RgbImage, RgbaImage};
 use veilq_core::{EntityType, Location};
 
-use super::{Lookalikes, Person, Rng, Truth};
+use super::{Lookalikes, Person, Rng, Truth, iban_with_zeros};
 
 const FONT: &[u8] = include_bytes!("../../assets/NotoSans-Regular.ttf");
 
@@ -267,6 +267,37 @@ pub(super) fn form_jpeg(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
     }];
     truth.extend(c.truth);
     (with_exif(&jpeg(&c.img)), truth)
+}
+
+/// A screenshot of a transfer form: the sender's account in a drop-down,
+/// small, under a compound label (`Senderkonto`), its IBAN unspaced with a
+/// run of zeros, and the payee. At 11 px OCR reads the zeros one short; the
+/// IBAN is redacted all the same (ADR-0037).
+pub(super) fn transfer_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
+    let (p, x) = (Person::de(r), Lookalikes::new(r));
+    let iban = iban_with_zeros(r);
+    let mut c = Canvas::new(760, 300, [255, 255, 255]);
+    c.lit(20.0, 16.0, 15.0, "Neue Überweisung erstellen", INK);
+    c.lit(20.0, 60.0, 11.0, "FÄLLIGKEIT", MUTED);
+    c.lit(200.0, 56.0, 12.0, "Fälligkeit *", INK);
+    c.lit(
+        200.0,
+        76.0,
+        12.0,
+        &format!("{} {} €", x.date, x.amount),
+        INK,
+    );
+    c.lit(20.0, 124.0, 11.0, "VON", MUTED);
+    c.lit(200.0, 120.0, 12.0, "Senderkonto *", INK);
+    let end = c.lit(200.0, 140.0, 11.0, "Musterbank - ", INK);
+    let end = c.pii("IBAN_CODE", end, 140.0, 11.0, &iban, INK);
+    c.lit(end, 140.0, 11.0, " (Beispiel Handel GmbH)", INK);
+    c.lit(20.0, 188.0, 11.0, "AN", MUTED);
+    c.lit(200.0, 184.0, 12.0, "Empfänger *", INK);
+    c.pii("PERSON", 200.0, 204.0, 12.0, &p.name(), INK);
+    c.lit(200.0, 250.0, 12.0, "Verwendungszweck *", INK);
+    c.lit(200.0, 270.0, 12.0, &format!("Rechnung {}", x.invoice), INK);
+    (png(&c.img), c.truth)
 }
 
 /// `jpeg` with an EXIF segment: a camera's make and model.

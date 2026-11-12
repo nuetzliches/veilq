@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "region",
+        "x": 253,
+        "y": 142,
+        "width": 101,
+        "height": 7
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "x": 200,
+        "y": 206,
+        "width": 67,
+        "height": 8
+      }
+    }
+  ]
+}

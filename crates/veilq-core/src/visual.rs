@@ -294,7 +294,7 @@ fn candidates(
     let p = page(lines);
     let mut out = Vec::new();
     for text in std::iter::once(p.text.clone()).chain(unmarked(&p.text)) {
-        for c in engine.findings(&text, "")? {
+        for c in engine.ocr_findings(&text, "")? {
             let rects = boxes(&p, c.start, c.end, w, h);
             out.push((c, rects));
         }
@@ -306,7 +306,7 @@ fn candidates(
         };
         let context = neighbours(lines, i);
         for text in std::iter::once(line.text.clone()).chain(unmarked(&line.text)) {
-            for c in engine.findings(&text, &context)? {
+            for c in engine.ocr_findings(&text, &context)? {
                 let rects = boxes(&one, c.start, c.end, w, h);
                 out.push((c, rects));
             }

@@ -19,7 +19,7 @@ use std::io::{BufRead, Write};
 use std::ops::Range;
 use std::path::Path;
 
-use crate::detect::{Candidate, Detector, Verdict};
+use crate::detect::{Candidate, Detector, Source, Verdict};
 use crate::fake::Faker;
 use crate::finding::{Finding, Location, Report};
 use crate::mapping::Entry;
@@ -509,7 +509,7 @@ impl Engine {
         let mut at = 0;
         for seg in segments {
             let mut found: Vec<Candidate> = self
-                .decided(&seg.text, &seg.context, false)?
+                .decided(&seg.text, &seg.context, false, Source::Text)?
                 .into_iter()
                 .filter(|c| seg.raw_of(c.start) < upto)
                 .collect();
@@ -705,7 +705,13 @@ impl Engine {
 
     /// The findings in `text`, decided (for formats beside this module).
     pub(crate) fn findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
-        self.decided(text, context, true)
+        self.decided(text, context, true, Source::Text)
+    }
+
+    /// [`findings`](Self::findings) in text OCR read off a picture: a
+    /// failed checksum costs less (ADR-0037).
+    pub(crate) fn ocr_findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
+        self.decided(text, context, true, Source::Ocr)
     }
 
     /// The detector's findings in `text`, written to the explanation when
@@ -717,12 +723,13 @@ impl Engine {
         text: &str,
         context: &str,
         placeholders: bool,
+        source: Source,
     ) -> Result<Vec<Candidate>, Error> {
         static PLACEHOLDER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
             regex::Regex::new(r"\\?<[A-Z][A-Z0-9_]*\\?>|\[[A-Z][A-Z0-9_]*:[0-9a-f]{8}\]")
                 .expect("a valid regex")
         });
-        let mut decisions = self.detector.decide(text, context)?;
+        let mut decisions = self.detector.decide(text, context, source)?;
         if placeholders && text.contains(['<', '[']) {
             let spans: Vec<Range<usize>> = PLACEHOLDER.find_iter(text).map(|m| m.range()).collect();
             for d in &mut decisions {
@@ -840,7 +847,7 @@ impl Engine {
             new_at += p.len();
         }
         let mut out = Vec::new();
-        for f in self.decided(&new, context, false)? {
+        for f in self.decided(&new, context, false, Source::Text)? {
             let Some((range, old)) = kept
                 .iter()
                 .find(|(r, _)| r.start <= f.start && f.end <= r.end)

@@ -13,6 +13,17 @@ Notable changes per release. The format follows
   a letter or digit scores below 0.7 and nothing was blacked out there, the
   report says `review_required` and where the first such line is (#52).
 
+### Fixed
+
+- An IBAN in a picture that OCR reads one character short is redacted
+  (ADR-0037). A run of zeros in small print lost a zero, the checksum
+  failed, and the IBAN stayed below the threshold. In text read by OCR a
+  failed checksum now costs 0.15 instead of 0.3; form checks (dates, IPs,
+  plates) cost what they did.
+- A context word of five or more characters counts at the end of a compound
+  too: `Senderkonto` is context for an IBAN, `Mobiltelefon` for a phone
+  number (ADR-0037).
+
 ### Removed
 
 - The macOS Intel build (`veilq-x86_64-apple-darwin.tar.gz`): ONNX Runtime
