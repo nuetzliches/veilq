@@ -12,6 +12,7 @@ mod explain;
 mod fetch;
 #[cfg(feature = "mcp")]
 mod mcp;
+mod package;
 mod sarif;
 #[cfg(feature = "ui")]
 mod ui;
@@ -271,6 +272,10 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> anyhow::Result<Outcome> {
+    // In an MSIX package the models live in the package's folder (ADR-0039).
+    if let Some(dir) = package::local_data() {
+        models::set_local_data(dir);
+    }
     update::clean_up();
     let Some(command) = cli.command else {
         #[cfg(feature = "ui")]
@@ -387,6 +392,7 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
             Ok(Outcome::Clean)
         }
         Command::Update { check } => {
+            package::refuse("updates")?;
             let found = update::check()?;
             if !found.newer {
                 println!("veilq {} is the newest release", found.current);

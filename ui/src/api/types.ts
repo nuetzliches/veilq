@@ -31,8 +31,10 @@ export interface Info {
   max_input: number;
   /** Started by a double click: the page says it is open, and can quit veilq. */
   desktop?: boolean;
-  /** Whether setup (install, Start menu) is built for this platform. */
+  /** Whether setup (install, Start menu) is built for this platform and offered. */
   setup?: boolean;
+  /** Installed from the Microsoft Store, which updates and removes veilq (ADR-0039). */
+  store?: boolean;
   /** Shown in veilq's own window: closing it ends veilq. */
   window?: boolean;
   /** The models are still loading; a run waits for them (ADR-0032). */

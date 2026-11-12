@@ -78,3 +78,4 @@ keep it to about a page.
 | [0036](0036-input-and-output-are-one-view.md) | Input and output are one view | Accepted |
 | [0037](0037-a-misread-checksum-and-a-compound-label-still-redact.md) | A misread checksum and a compound label still redact | Accepted |
 | [0038](0038-faces-in-pictures-are-found-and-filled-black.md) | Faces in pictures are found and filled black | Accepted |
+| [0039](0039-veilq-is-offered-in-the-microsoft-store-as-msix.md) | veilq is offered in the Microsoft Store as MSIX | Accepted |

@@ -545,8 +545,12 @@ struct Info {
     /// Started by a double click: the UI says it is open, offers to quit,
     /// and opens setup on the first start.
     desktop: bool,
-    /// Whether this platform's setup is built (ADR-0027).
+    /// Whether this platform's setup is built (ADR-0027) and offered: not
+    /// in a package of the Microsoft Store (ADR-0039).
     setup: bool,
+    /// Installed from the Microsoft Store: it updates and removes veilq
+    /// (ADR-0039).
+    store: bool,
     /// Shown in veilq's own window (ADR-0029): closing it ends veilq.
     window: bool,
     /// The models are still loading: a run waits for them (ADR-0032).
@@ -580,7 +584,8 @@ async fn info(State(state): State<Arc<AppState>>) -> axum::Json<Info> {
             ModelState::Failed(e) => Some(e),
             _ => None,
         },
-        setup: cfg!(windows),
+        setup: crate::desktop::setup_available(),
+        store: crate::package::packaged(),
     })
 }
 

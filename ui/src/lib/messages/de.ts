@@ -187,6 +187,7 @@ export const de: Record<MessageKey, string> = {
   'updates.title': 'Aktualisierungen',
   'updates.about':
     'veilq {version}. Die Prüfung fragt GitHub nach der neuesten Version und sendet sonst nichts; eine Aktualisierung wird gegen die Prüfsummen der Version geprüft, bevor sie dieses Programm ersetzt.',
+  'updates.store': 'veilq {version}, installiert aus dem Microsoft Store: der Store aktualisiert es.',
   'updates.check': 'Nach Aktualisierungen suchen',
   'updates.checking': 'Wird geprüft …',
   'updates.newest': 'veilq {version} ist die neueste Version.',

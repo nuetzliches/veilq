@@ -2,8 +2,9 @@
 //! and the entry in "Installed apps". All of it is the user's own (HKCU,
 //! the user's Start menu): no administrator rights.
 //!
-//! The five calls into the Windows API are the only `unsafe` code in
-//! veilq (ADR-0027, ADR-0029, ADR-0031); each says why it is sound.
+//! These five calls into the Windows API and the one in `package.rs` are
+//! the only `unsafe` code in veilq (ADR-0027, ADR-0029, ADR-0031,
+//! ADR-0039); each says why it is sound.
 #![allow(unsafe_code)]
 
 use std::path::{Path, PathBuf};

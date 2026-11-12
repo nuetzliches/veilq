@@ -125,6 +125,7 @@ fn check_of(r: &Release) -> Check {
 /// returns the path of the new program, to start it. The old one stays as
 /// `veilq.old(.exe)` until the next start removes it.
 pub fn install_latest() -> anyhow::Result<(Check, PathBuf)> {
+    crate::package::refuse("updates")?;
     let r = release()?;
     let found = check_of(&r);
     if !found.newer {

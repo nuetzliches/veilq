@@ -1,7 +1,7 @@
 """Draws veilq's app icon as ui/public/favicon.svg has it (three lines of
 text on blue, the middle one blacked out) into crates/veilq/assets/veilq.ico
-and veilq.png. Run it after changing the favicon: `python scripts/icon.py`
-(needs Pillow).
+and veilq.png, and the MSIX package's logos into packaging/msix/Assets.
+Run it after changing the favicon: `python scripts/icon.py` (needs Pillow).
 """
 
 from pathlib import Path
@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "crates" / "veilq" / "assets"
+MSIX = ROOT / "packaging" / "msix" / "Assets"
 S = 1024  # drawn large, scaled down per size
 U = S / 32  # one unit of the favicon's 32x32 view box
 
@@ -36,6 +37,10 @@ def main() -> None:
         OUT / "veilq.ico", sizes=[(s, s) for s in sizes]
     )
     img.resize((512, 512), Image.LANCZOS).save(OUT / "veilq.png")
+    # The MSIX package's logos (ADR-0039): Start menu, tile, Store.
+    MSIX.mkdir(parents=True, exist_ok=True)
+    for name, size in [("Square44x44Logo", 44), ("Square150x150Logo", 150), ("StoreLogo", 50)]:
+        img.resize((size, size), Image.LANCZOS).save(MSIX / f"{name}.png")
 
 
 main()

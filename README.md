@@ -97,6 +97,13 @@ release notes say so and SmartScreen or Gatekeeper ask once.
 Settings → "Check for updates". It installs the newest release where veilq
 is, after checking it against the release's `SHA256SUMS`.
 
+**Microsoft Store** (ADR-0039): the release workflow also packs veilq as
+MSIX for the Store, which signs it. Installed from there, the Store updates
+and removes veilq, `veilq` on the command line and for MCP clients comes
+from the package, and its models live in the package's folder.
+`pwsh scripts/msix.ps1 -Exe target/release/veilq.exe -Out veilq.msix` packs
+one locally (test identity).
+
 Or build it: `cargo install --locked --git https://github.com/nuetzliches/veilq veilq`
 (Rust 1.98 or later; the web UI is embedded when `ui/dist` was built first,
 `npm ci && npm run build` in `ui/`).
