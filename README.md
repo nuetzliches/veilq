@@ -9,7 +9,8 @@ recordings: on your machine, in CI and as an MCP tool for any agent.
 > CLI, a local web UI and an MCP server; pseudonyms can be put back with an
 > encrypted mapping. Names that no word marks are found by an optional NER
 > model, pictures are read by an optional OCR model, and faces in them
-> are filled black by an optional face detector. Video follows (M5); see
+> are filled black by an optional face detector. Handwriting (M5) and
+> audio (M6) follow, each with a transcript reviewed before the redaction; see
 > [docs/plan.md](docs/plan.md).
 
 ## Without a command line

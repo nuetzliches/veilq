@@ -92,7 +92,9 @@ mapping file comes in M2, encrypted (age); it never goes into a report.
 | Images | OCR, character boxes filled black, encoded anew (ADR-0023); faces found and filled black (ADR-0038) | EXIF/XMP metadata including GPS; a face the detector misses |
 | GIF | decode frames, OCR changed frames only, boxes persist while their pixels stand still, re-encode (ADR-0023) | one frame without the box shows the value |
 | PDF | rasterise pages with PDFium and redact the images; a new PDF of page images (text layer gone, stated in the report; ADR-0023) | incremental updates and metadata keep old content |
-| Video | M5: through an external `ffmpeg` | as GIF, plus audio |
+| Handwriting | M5: a transcript first (3.6), then redacted as a picture | a word misread is a word not found |
+| Audio | M6: a transcript first (3.6), each finding's time span bleeped, encoded anew | speech no word was read from; ID3 and other metadata |
+| Video | M7 (later, optional): frames as GIF, sound as audio | as GIF, plus audio |
 
 ### 3.5 Streaming
 
@@ -101,6 +103,58 @@ starts writing before the input ends and holds constant memory. Container
 formats (Office, PDF, images) are read whole; there, MCP progress
 notifications report where a long run is. A streamed run cannot verify the
 whole output at the end; it verifies each chunk.
+
+### 3.6 Transcribed media: handwriting and audio
+
+Handwriting and speech are read by a model that makes mistakes a person can
+see and fix, and a word read wrongly is a word no detector finds. For these
+media the transcript is a stage of its own, reviewed before anything is
+redacted:
+
+```
+medium -> recogniser -> transcript --[review 1: fix the text]--> detection -> redaction --[review 2: check the findings]--> output
+          (HTR / ASR)   words with a box or a                     (as today)   back onto box
+                        time span and a confidence                              or time span
+```
+
+- **Every word of a transcript keeps its anchor:** a box in the picture or a
+  time span in the audio, with the recogniser's confidence and its origin
+  (machine or corrected).
+- **A corrected word takes the anchor of the words it replaces.** Where a
+  correction cannot be placed, the whole line or segment is redacted (fail
+  closed).
+- **The mode follows the input.** An audio file opens the audio mode; a
+  picture or PDF with handwriting (lines read with low confidence, #52, or a
+  classifier for print and hand) opens the handwriting mode. A printed form
+  filled in by hand is the common case: the transcript shows every line and
+  asks to confirm the handwritten and badly read ones.
+- **The UI:** handwriting in three parts (original, transcript to edit,
+  redacted output), coupled as in ADR-0036 with the line as the anchor;
+  audio with a player above the transcript that follows the words and seeks
+  on a click, and a player for the redacted audio beside the output. A run
+  has two steps: "Confirm the transcript", then the redaction and its
+  findings.
+- **Without a person** (CLI, MCP) the machine transcript is used and the
+  report says `review_required`; a confirmed transcript can be passed in
+  (`--transcript <file>`).
+- **The output** is the redacted medium and the redacted transcript (text;
+  WebVTT for audio). Audio is bleeped over each finding's span plus a
+  margin, so the gap is heard; speech without a recognised word is a review
+  reason.
+
+**Both reviews feed the learning loop** (#34, #35), as cases of one
+versioned format:
+
+| | Review 1: transcript | Review 2: redaction |
+|---|---|---|
+| Signal | excerpt (picture or audio clip), machine text, corrected text | a mark or a released box (#34) |
+| Trains | the recogniser (HTR / ASR: fine-tune or adapter) | rules (#34), the decider (#35) |
+| Synthetic twin | handwriting fonts, synthetic speech; counts only if it reproduces the mistake | as in #34 |
+| Rings | PC and organisation; upstream only as a twin | PC, organisation, upstream (#35) |
+
+Handwriting and a voice identify the person, not only what they wrote or
+said; a voice can be biometric data. Review-1 cases never leave the
+organisation, not even encrypted to us.
 
 ## 4. Interfaces
 
@@ -148,7 +202,9 @@ patterns, which detectors are required.
 | M2 | MCP (stdio + HTTP); mapping file for reversible pseudonyms | **done 2026-11-09**: card approved, ADR-0016 to ADR-0018; an agent redacts a file through MCP (stdio test), mapping and reveal round-trip |
 | M3 | DOCX, XLSX, PPTX, EML; metadata stripping; NER | M3a **done 2026-11-09** (card approved, ADR-0019, ADR-0020): Office files and mails redacted in place, metadata replaced, corpus and gate cover them; M3b **done 2026-11-10** (ADR-0022): NER with GLiNER in ONNX, optional, pinned |
 | M4 | Images and GIF with OCR; PDF by rasterising | **done 2026-11-10** (card approved, ADR-0023): a screen-recording GIF redacted without a leaking frame; pictures in the corpus, every value covered with NER and OCR |
-| M5 | Video through ffmpeg; optional `veilq serve`, a stateless server for video and audio (own card) | an MP4 screen recording redacted |
+| M5 | Handwriting (3.6, #59): a handwriting recogniser, the transcript as a stage, the three-part UI, both reviews as cases; needs #52 and the case format (#35) | a hand-filled synthetic form redacted after its transcript was confirmed, both corrections stored as cases |
+| M6 | Audio (3.6, #60): a speech recogniser with word timestamps, bleeping, the player in the UI, both reviews as cases | a synthetic recording redacted, its transcript in WebVTT, no finding audible |
+| M7 | Video (later, optional): frames as GIF, sound as M6, through an external `ffmpeg` | an MP4 screen recording redacted |
 
 ## 6. Evaluation
 
@@ -175,3 +231,12 @@ a Homebrew formula in `nuetzliches/homebrew-tap`, winget, the Microsoft Store
   environment variable) or per mapping file.
 - O-4: whether `veilq` also ships rules for an OpenTelemetry collector's
   redaction processor, so the same patterns guard telemetry at ingest.
+- O-5: which handwriting recogniser (TrOCR, Kraken models, a small vision
+  language model): licence of the weights, quality on German forms, ONNX
+  export, size.
+- O-6: which speech recogniser and runtime (Whisper in ONNX Runtime or
+  whisper.cpp), and how audio is decoded and written: `symphonia` is
+  MPL-2.0 and needs an exception in `deny.toml`, an external `ffmpeg` is
+  planned for video anyway.
+- O-7: how a recogniser learns from review 1: fine-tuning or an adapter, on
+  the PC or only on the organisation's server.
