@@ -92,6 +92,7 @@ pub fn redact(
         findings: Vec::new(),
         mapping: Vec::new(),
         review_reasons: vec![IMAGE_ONLY.into()],
+        weak_lines: Vec::new(),
     };
     let mut output = if apply {
         Some(pdfium.create_new_pdf().map_err(error)?)
@@ -118,5 +119,6 @@ pub fn redact(
     if let Some(doc) = output {
         out.output = doc.save_to_bytes().map_err(error)?;
     }
+    crate::visual::weak_reason(&mut out);
     Ok(out)
 }

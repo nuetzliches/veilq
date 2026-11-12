@@ -42,6 +42,7 @@ pub fn process(engine: &Engine, input: &[u8], apply: bool) -> Result<Outcome, Er
         findings: Vec::new(),
         mapping: Vec::new(),
         review_reasons: Vec::new(),
+        weak_lines: Vec::new(),
     };
     let eol = if input.windows(2).any(|w| w == b"\r\n") {
         "\r\n"
