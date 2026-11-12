@@ -6,6 +6,13 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A picture, GIF or PDF page whose text OCR reads with low confidence
+  (handwriting, small or blurred text) is no longer passed silently: where
+  a letter or digit scores below 0.7 and nothing was blacked out there, the
+  report says `review_required` and where the first such line is (#52).
+
 ### Fixed
 
 - An IBAN in a picture that OCR reads one character short is redacted

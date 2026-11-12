@@ -129,6 +129,11 @@ Without a network: `veilq models install <component> --from <dir>` takes
 the same files from a directory. A run never downloads anything. Without
 OCR an image is an error; without NER the report says `review_required`.
 
+The OCR reads printed text. Handwriting, very small or blurred text is read
+badly, and personal data in it may be missed: where OCR reads letters or
+digits with low confidence and nothing was blacked out there, the report
+says `review_required` and where.
+
 ## Use
 
 - **`veilq scan <path>`** lists findings (type, place, detector,
