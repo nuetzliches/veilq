@@ -1,0 +1,53 @@
+# The purpose `development` (ADR-0040): logs, tickets, code and the chat
+# with an agent. Secrets leak there as often as names: access keys, tokens,
+# private keys. A false positive costs more than elsewhere (a class or a
+# product name blacked out breaks the text a developer needs), which is
+# recorded as a cost, not as a higher threshold: a purpose does not loosen.
+
+about = "Logs, tickets and code: secrets (access keys, tokens, private keys) as well as personal data; a false positive costs more than elsewhere."
+
+[[patterns]]
+name = "aws-access-key"
+entity = "SECRET"
+regex = '\b(?:AKIA|ASIA)[0-9A-Z]{16}\b'
+confidence = 0.95
+
+[[patterns]]
+name = "github-token"
+entity = "SECRET"
+regex = '\bgh[pousr]_[A-Za-z0-9]{36,}\b'
+confidence = 0.95
+
+[[patterns]]
+name = "slack-token"
+entity = "SECRET"
+regex = '\bxox[abposr]-[A-Za-z0-9-]{10,}\b'
+confidence = 0.95
+
+[[patterns]]
+name = "private-key"
+entity = "SECRET"
+regex = '-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----'
+confidence = 0.99
+
+# A JSON Web Token: three base64url parts, the first a JSON header (`eyJ`).
+[[patterns]]
+name = "jwt"
+entity = "SECRET"
+regex = '\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}'
+confidence = 0.95
+
+# A bearer token after its scheme (an `Authorization` header in a log).
+[[patterns]]
+name = "bearer-token"
+entity = "SECRET"
+regex = '(?i)\bbearer\s+(?P<pii>[A-Za-z0-9._~+/-]{20,}=*)'
+confidence = 0.9
+
+[costs.SECRET]
+miss = 50.0
+false_positive = 1.0
+
+[costs.PERSON]
+miss = 10.0
+false_positive = 3.0

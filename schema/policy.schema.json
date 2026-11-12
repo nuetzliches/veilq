@@ -77,6 +77,25 @@
       ],
       "type": "object"
     },
+    "Cost": {
+      "additionalProperties": false,
+      "description": "What a mistake on a type costs: missing a value, and blacking out what\nis none. Their ratio is what a decider weighs (#35).",
+      "properties": {
+        "false_positive": {
+          "format": "float",
+          "type": "number"
+        },
+        "miss": {
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "required": [
+        "miss",
+        "false_positive"
+      ],
+      "type": "object"
+    },
     "Defaults": {
       "additionalProperties": false,
       "properties": {
@@ -272,6 +291,16 @@
         "values": []
       }
     },
+    "costs": {
+      "additionalProperties": false,
+      "description": "Per entity type: what a miss and a false positive cost (ADR-0040),\nbefore the purposes' costs. Data for a learned decider; no\nthreshold follows from them yet.",
+      "patternProperties": {
+        "^[A-Z][A-Z0-9_]*$": {
+          "$ref": "#/$defs/Cost"
+        }
+      },
+      "type": "object"
+    },
     "defaults": {
       "$ref": "#/$defs/Defaults",
       "default": {
@@ -357,6 +386,16 @@
         }
       ],
       "description": "Required when any action is `pseudonymize`."
+    },
+    "purposes": {
+      "default": [
+        "general"
+      ],
+      "description": "What veilq is used for (ADR-0040): `general`, the defaults, is\nalways one; `legal` and `development` add their packs. Between packs\nthe stricter rule wins, and this policy's own settings come first.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     },
     "version": {
       "description": "The format's version; `1`.",

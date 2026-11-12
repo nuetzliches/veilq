@@ -67,6 +67,8 @@ export interface PolicyPattern {
 
 export interface Policy {
   version: number;
+  /** What veilq is used for (ADR-0040); `general` is always one. */
+  purposes?: string[];
   defaults: { action: string; min_confidence: number };
   locales: string[];
   entities: Record<string, { action?: string; min_confidence?: number }>;
@@ -86,6 +88,20 @@ export interface PolicyView {
   locales: string[];
   actions: string[];
   validators: string[];
+  /** The purposes a policy can name, each with what it adds to `general`. */
+  purposes: PurposeInfo[];
+}
+
+/** A purpose (ADR-0040): what it is for and what it changes against `general`. */
+export interface PurposeInfo {
+  name: string;
+  about: string;
+  entities: Record<string, { action?: string; min_confidence?: number }>;
+  /** Its patterns: name and type. */
+  patterns: [string, string][];
+  /** How many values and patterns it takes for no personal data. */
+  allow: number;
+  costs: Record<string, { miss: number; false_positive: number }>;
 }
 
 export interface PolicyTried {

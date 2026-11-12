@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 import type { Api, Policy, PolicyTried, PolicyView } from '@/api';
 import { t } from '@/lib/i18n';
+import PurposesPicker from '@/components/PurposesPicker.vue';
 import { actionLabel, entityLabel } from '@/lib/labels';
 
 // The user's policy as a form (ADR-0028): what veilq replaces and how,
@@ -93,6 +94,7 @@ onMounted(async () => {
     const p = clone(view.value.policy);
     // Every type gets a row; empty ones are left out again when saved.
     for (const e of view.value.entities) p.entities[e] ??= {};
+    p.purposes ??= ['general'];
     policy.value = p;
     allowValues.value = view.value.policy.allow.values.join('\n');
     allowPatterns.value = view.value.policy.allow.patterns.join('\n');
@@ -111,6 +113,11 @@ onMounted(async () => {
     </p>
     <p v-if="error" class="failure">{{ error }}</p>
     <template v-if="policy && view">
+      <fieldset class="purposes">
+        <legend>{{ t('purposes.title') }}</legend>
+        <p class="hint">{{ t('purposes.hint') }}</p>
+        <PurposesPicker v-model="policy.purposes!" :purposes="view.purposes" />
+      </fieldset>
       <div class="grid">
         <label>
           {{ t('rules.replaceWith') }}
@@ -259,6 +266,13 @@ fieldset {
 fieldset label {
   flex-direction: row;
   align-items: center;
+}
+fieldset.purposes {
+  display: block;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+}
+fieldset.purposes .hint {
+  margin-bottom: var(--space-3);
 }
 input,
 select,

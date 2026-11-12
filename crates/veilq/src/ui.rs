@@ -1417,6 +1417,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_rules_offer_purposes_and_a_purpose_is_tried() {
+        let dir = tempfile::tempdir().unwrap();
+        let (status, body) = send(
+            app(dir.path()),
+            authed("GET", "/api/policy").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let names: Vec<&str> = body["purposes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["general", "legal", "development"]);
+        assert!(
+            body["entities"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e == "SECRET")
+        );
+        // A policy for development finds a key in the sample.
+        let policy = serde_json::json!({ "version": 1, "purposes": ["development"] });
+        let (status, body) = send(
+            app(dir.path()),
+            json(
+                "POST",
+                "/api/policy/try",
+                serde_json::json!({ "policy": policy, "sample": "key AKIAIOSFODNN7EXAMPLE" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["output"], "key <SECRET>");
+        // An unknown purpose is refused.
+        let bad = serde_json::json!({ "version": 1, "purposes": ["medical"] });
+        let (status, _) = send(
+            app(dir.path()),
+            json(
+                "POST",
+                "/api/policy/try",
+                serde_json::json!({ "policy": bad }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
     async fn a_folder_run_writes_beside_and_lists_what_it_cannot_read() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("in");

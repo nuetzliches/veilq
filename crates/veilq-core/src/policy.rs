@@ -22,7 +22,7 @@ pub const FILE_NAME: &str = "veilq.toml";
 /// The locales whose built-in patterns run when a policy names none.
 pub const DEFAULT_LOCALES: &[&str] = &["de", "en"];
 pub const POLICY_VERSION: u32 = 1;
-const DEFAULT_MIN_CONFIDENCE: f32 = 0.7;
+pub(crate) const DEFAULT_MIN_CONFIDENCE: f32 = 0.7;
 const DEFAULT_PATTERN_CONFIDENCE: f32 = 0.9;
 const DEFAULT_CONTEXT_BOOST: f32 = 0.3;
 const DEFAULT_CONTEXT_WINDOW: usize = 48;
@@ -32,6 +32,11 @@ const DEFAULT_CONTEXT_WINDOW: usize = 48;
 pub struct Policy {
     /// The format's version; `1`.
     pub version: u32,
+    /// What veilq is used for (ADR-0040): `general`, the defaults, is
+    /// always one; `legal` and `development` add their packs. Between packs
+    /// the stricter rule wins, and this policy's own settings come first.
+    #[serde(default = "default_purposes")]
+    pub purposes: Vec<String>,
     #[serde(default)]
     pub defaults: Defaults,
     /// The locales whose built-in patterns run (ADR-0010); the
@@ -63,6 +68,15 @@ pub struct Policy {
     /// Bodies that carry their verdict (`veilq mark`, ADR-0024).
     #[serde(default)]
     pub markers: Markers,
+    /// Per entity type: what a miss and a false positive cost (ADR-0040),
+    /// before the purposes' costs. Data for a learned decider; no
+    /// threshold follows from them yet.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub costs: BTreeMap<EntityType, crate::purpose::Cost>,
+}
+
+fn default_purposes() -> Vec<String> {
+    vec![crate::purpose::GENERAL.to_owned()]
 }
 
 /// How `veilq mark` reads a body's first line.
@@ -295,6 +309,8 @@ impl Default for Policy {
             office: Office::default(),
             picture: Picture::default(),
             markers: Markers::default(),
+            purposes: default_purposes(),
+            costs: BTreeMap::new(),
         }
     }
 }
@@ -383,6 +399,14 @@ impl Policy {
                 check_confidence(&format!("entities.{}.min_confidence", entity.as_str()), c)?;
             }
         }
+        for p in &self.purposes {
+            crate::purpose::purpose(p)?;
+        }
+        for (entity, c) in &self.costs {
+            if !(c.miss > 0.0 && c.false_positive > 0.0) {
+                return Err(format!("`costs.{}` must be above zero", entity.as_str()));
+            }
+        }
         for l in &self.locales {
             if !LOCALES.contains(&l.as_str()) {
                 return Err(format!(
@@ -434,6 +458,50 @@ impl Policy {
             _ => {}
         }
         Ok(())
+    }
+
+    /// The purposes in effect: `general` first, then the policy's.
+    pub fn effective_purposes(&self) -> Vec<String> {
+        crate::purpose::effective(&self.purposes)
+    }
+
+    /// This policy with its purposes' rules in it (ADR-0040): per type the
+    /// purposes' merged threshold and action where this policy sets none,
+    /// their allow lists added, their costs where this policy names none.
+    /// The purposes' patterns are not copied: the detector runs them under
+    /// their own names.
+    pub fn resolved(&self) -> Result<Policy, String> {
+        let merged = crate::purpose::merge(&self.effective_purposes())?;
+        let mut out = self.clone();
+        for (entity, rule) in merged.entities {
+            let own = out.entities.entry(entity).or_default();
+            own.min_confidence = own.min_confidence.or(rule.min_confidence);
+            own.action = own.action.or(rule.action);
+        }
+        for v in merged.allow.values {
+            if !out.allow.values.contains(&v) {
+                out.allow.values.push(v);
+            }
+        }
+        for v in merged.allow.patterns {
+            if !out.allow.patterns.contains(&v) {
+                out.allow.patterns.push(v);
+            }
+        }
+        for (entity, c) in merged.costs {
+            out.costs.entry(entity).or_insert(c);
+        }
+        Ok(out)
+    }
+
+    /// What a mistake on `entity` costs (ADR-0040): this policy's, else its
+    /// purposes', else [`crate::purpose::DEFAULT_COST`]. Call on a
+    /// [`Policy::resolved`] policy to see the purposes'.
+    pub fn cost(&self, entity: &EntityType) -> crate::purpose::Cost {
+        self.costs
+            .get(entity)
+            .copied()
+            .unwrap_or(crate::purpose::DEFAULT_COST)
     }
 
     /// The action for findings of `entity`.

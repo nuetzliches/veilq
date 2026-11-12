@@ -2,7 +2,16 @@
 // files with synthetic data and a toy detector, so the UI can be built before
 // the detectors of M1 exist. Every value here is made up.
 
-import { ApiError, type Api, type Entry, type Finding, type Reading, type Redaction, type Source } from './types';
+import {
+  ApiError,
+  type Api,
+  type Entry,
+  type Finding,
+  type PurposeInfo,
+  type Reading,
+  type Redaction,
+  type Source,
+} from './types';
 
 const FILES: Record<string, string> = {
   'exports/app.log': [
@@ -220,6 +229,28 @@ export function mockApi(): Api {
         locales: ['de', 'en'],
         actions: ['mask', 'pseudonymize', 'fake', 'remove'],
         validators: ['iban', 'luhn'],
+        purposes: [
+          { name: 'general', about: 'Personal data under the GDPR.', entities: {}, patterns: [], allow: 0, costs: {} },
+          {
+            name: 'legal',
+            about: 'Law firms and public authorities.',
+            entities: { PERSON: { min_confidence: 0.6 }, COURT_FILE_NUMBER: { min_confidence: 0.5 } },
+            patterns: [],
+            allow: 0,
+            costs: { PERSON: { miss: 20, false_positive: 1 } },
+          },
+          {
+            name: 'development',
+            about: 'Logs, tickets and code.',
+            entities: {},
+            patterns: [
+              ['github-token', 'SECRET'],
+              ['jwt', 'SECRET'],
+            ],
+            allow: 0,
+            costs: { SECRET: { miss: 50, false_positive: 1 } },
+          },
+        ] as PurposeInfo[],
       };
     },
     async tryPolicy() {

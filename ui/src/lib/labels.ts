@@ -32,6 +32,18 @@ export function modelAbout(name: string, about: string): string {
   return known(key) ? t(key) : about;
 }
 
+/** `legal` → "Law firm, authority". */
+export function purposeLabel(name: string): string {
+  const key = `purpose.${name}`;
+  return known(key) ? t(key) : name;
+}
+
+/** What a purpose is for; veilq's own English text where there is no translation. */
+export function purposeAbout(name: string, about: string): string {
+  const key = `purpose.${name}.about`;
+  return known(key) ? t(key) : about;
+}
+
 /** Where a finding is, in words. */
 export function describeLocation(location: Location): string {
   const part = 'part' in location && location.part ? `${location.part}, ` : '';

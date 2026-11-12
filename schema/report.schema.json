@@ -200,6 +200,13 @@
       },
       "type": "array"
     },
+    "purposes": {
+      "description": "What the run was for (ADR-0040): the purposes of its policy,\n`general` first. A coarse label, nothing about who ran it.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "review_reasons": {
       "description": "Why `review_required` is set, one sentence each.",
       "items": {

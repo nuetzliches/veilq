@@ -1,0 +1,26 @@
+# The purpose `legal` (ADR-0040): law firms and public authorities. Parties,
+# addresses and file numbers are the substance of a file; a miss costs more
+# than a word blacked out too many, so their thresholds are lower.
+
+about = "Law firms and public authorities: parties, addresses and file numbers; a miss costs more than a false positive."
+
+[entities.PERSON]
+min_confidence = 0.6
+
+[entities.ADDRESS]
+min_confidence = 0.6
+
+[entities.COURT_FILE_NUMBER]
+min_confidence = 0.5
+
+[costs.PERSON]
+miss = 20.0
+false_positive = 1.0
+
+[costs.ADDRESS]
+miss = 20.0
+false_positive = 1.0
+
+[costs.COURT_FILE_NUMBER]
+miss = 20.0
+false_positive = 1.0

@@ -6,6 +6,19 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Purposes (ADR-0040, #67): what veilq is used for, as packs built into
+  veilq. A policy names them (`purposes = ["legal", "development"]`), a run
+  takes `--purpose`; `general` always applies and is today's behaviour.
+  `legal` lowers the thresholds for names, addresses and court file
+  numbers; `development` finds secrets (`SECRET`: AWS access keys, GitHub
+  and Slack tokens, private keys, JWTs, bearer tokens). A purpose only
+  tightens, the policy's own settings come first, and each purpose states
+  what a miss and a false positive cost, for a later learned decider. The
+  report names the purposes of the run. The UI asks on the first start and
+  shows each purpose's rules under Settings → Rules.
+
 ### Fixed
 
 - A table cell in a picture whose text wraps over several lines is read as
