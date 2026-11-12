@@ -372,8 +372,14 @@ fn candidates(
 ) -> Result<Vec<(crate::detect::Candidate, Vec<Rect>)>, Error> {
     let p = page(lines);
     let mut out = Vec::new();
+    // The names the page holds: a line read alone does not know them, and
+    // `Brandts Kapuze` there is cut to `Brandts` by them.
+    let mut names: Vec<String> = Vec::new();
     for text in std::iter::once(p.text.clone()).chain(unmarked(&p.text)) {
         for c in engine.ocr_findings(&text, "")? {
+            if c.entity.as_str() == "PERSON" {
+                names.extend(crate::detect::name_words(&text[c.start..c.end]).map(str::to_owned));
+            }
             let rects = boxes(&p, c.start, c.end, w, h);
             out.push((c, rects));
         }
@@ -385,7 +391,18 @@ fn candidates(
         };
         let context = neighbours(lines, i);
         for text in std::iter::once(line.text.clone()).chain(unmarked(&line.text)) {
-            for c in engine.ocr_findings(&text, &context)? {
+            for mut c in engine.ocr_findings(&text, &context)? {
+                if c.entity.as_str() == "PERSON" {
+                    let span = &text[c.start..c.end];
+                    let own: Vec<&str> = crate::detect::name_words(span).collect();
+                    let others = names
+                        .iter()
+                        .map(String::as_str)
+                        .filter(|n| !own.contains(n));
+                    if let Some(n) = crate::detect::genitive_head(span, others) {
+                        c.end = c.start + n;
+                    }
+                }
                 let rects = boxes(&one, c.start, c.end, w, h);
                 out.push((c, rects));
             }
@@ -881,6 +898,59 @@ mod tests {
         assert_eq!(
             unmarked("Kanzlei Muster · Lindenweg 12 · 28195 Bremen"),
             None
+        );
+    }
+
+    /// With the real NER model (VEILQ_NER_DIR, VEILQ_ORT_DYLIB): a line
+    /// read alone takes what a name owns for the name; the names of the
+    /// page cut it off.
+    #[cfg(feature = "ner")]
+    #[test]
+    fn a_line_does_not_take_what_a_name_owns() {
+        let (Ok(dir), Ok(dylib)) = (
+            std::env::var("VEILQ_NER_DIR"),
+            std::env::var("VEILQ_ORT_DYLIB"),
+        ) else {
+            return;
+        };
+        let dir = std::path::Path::new(&dir);
+        let ner = crate::ner::Ner::load(&crate::ner::ModelFiles {
+            model: &dir.join("model.onnx"),
+            tokenizer: &dir.join("tokenizer.json"),
+            runtime: std::path::Path::new(&dylib),
+        })
+        .unwrap();
+        let engine = Engine::new(&crate::Policy::default(), None, b"test", None)
+            .unwrap()
+            .with_ner(std::sync::Arc::new(ner));
+        let lines = [
+            line(
+                "Mira Albers trifft Jonas Brandt: alle starrten auf die Kapuze",
+                0,
+                0,
+            ),
+            line(
+                "Brandts Kapuze, seine Hände und einen vierfarbigen Kugelschreiber.",
+                0,
+                40,
+            ),
+        ];
+        let found: Vec<Rect> = candidates(&engine, &lines, 2000, 100)
+            .unwrap()
+            .into_iter()
+            .filter(|(c, _)| c.entity.as_str() == "PERSON")
+            .flat_map(|(_, rects)| rects)
+            .collect();
+        // `Mira Albers` on the first line; on the second, `Brandts` is
+        // characters 0 to 7 (x 0 to 70), `Kapuze` starts at x 80.
+        assert!(found.iter().any(|r| r.y < 20 && r.x == 0), "{found:?}");
+        assert!(found.iter().any(|r| r.y >= 38), "{found:?}");
+        assert!(
+            found
+                .iter()
+                .filter(|r| r.y >= 38)
+                .all(|r| r.right() <= 72 + PAD),
+            "{found:?}"
         );
     }
 

@@ -138,6 +138,7 @@ impl Ner {
             start = end - OVERLAP;
         }
         out.sort_by_key(|c| c.start);
+        cut_genitives(text, &mut out);
         Ok(out)
     }
 
@@ -237,6 +238,22 @@ fn confidence(score: f32) -> f32 {
     ((0.7 + 0.3 * score) * 1000.0).round() / 1000.0
 }
 
+/// Each candidate that starts with the genitive of a name found elsewhere
+/// in `text` (`Brandts Kapuze` beside `Jonas Brandt`) cut to that word.
+pub(crate) fn cut_genitives(text: &str, found: &mut [Candidate]) {
+    let spans: Vec<(usize, usize)> = found.iter().map(|c| (c.start, c.end)).collect();
+    for (i, c) in found.iter_mut().enumerate() {
+        let others = spans
+            .iter()
+            .enumerate()
+            .filter(|(j, _)| *j != i)
+            .flat_map(|(_, (s, e))| crate::detect::name_words(&text[*s..*e]));
+        if let Some(n) = crate::detect::genitive_head(&text[c.start..c.end], others) {
+            c.end = c.start + n;
+        }
+    }
+}
+
 /// Lowercase words inside a name.
 const PARTICLES: &[&str] = &[
     "von", "van", "vom", "zu", "zur", "der", "den", "de", "del", "della", "di", "da", "du", "la",
@@ -247,8 +264,13 @@ const PARTICLES: &[&str] = &[
 /// (`von der`), and one word written like a name (`Kern`, not `IBAN`) that
 /// is no role word. On a few words the model calls anything a person (a
 /// column `name`, an id `1`), and a line that starts with `customer's IBAN`
-/// once read as one.
+/// once read as one. A dot right before a lowercase letter is a domain's
+/// (`Lesehaus.de`), never a name's: an initial has a space after it.
 fn can_be_name(span: &str) -> bool {
+    let chars: Vec<char> = span.chars().collect();
+    if chars.windows(2).any(|p| p[0] == '.' && p[1].is_lowercase()) {
+        return false;
+    }
     let words: Vec<&str> = span
         .split(|c: char| !c.is_alphabetic())
         .filter(|w| w.chars().count() >= 2)
@@ -441,5 +463,75 @@ mod tests {
         // One word has no context: no guess.
         assert!(ner.candidates("Name").unwrap().is_empty());
         assert!(ner.candidates("Mira").unwrap().is_empty());
+        // Lines of a news page as OCR reads them: a shop's domain, what a
+        // name owns, a title alone are no names.
+        for text in [
+            "Lesehaus.de  COPPELMANN  4,6·53",
+            "Der Pater, der das Treffen zwischen Mira Albers und Jonas Brandt arrangierte, spricht über",
+            "Mira Albers trifft Jonas Brandt. Brandts Kapuze, seine Hände und einen vierfarbigen Kugelschreiber.",
+        ] {
+            let found: Vec<&str> = ner
+                .candidates(text)
+                .unwrap()
+                .iter()
+                .map(|c| &text[c.start..c.end])
+                .collect();
+            assert!(
+                found
+                    .iter()
+                    .all(|f| !f.contains(".de") && !f.contains("Kapuze") && !f.contains("Pater")),
+                "{text}: {found:?}"
+            );
+            if text.contains("Mira Albers") {
+                assert!(found.contains(&"Mira Albers"), "{text}: {found:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_domain_is_no_name() {
+        assert!(!can_be_name("Lesehaus.de"));
+        assert!(!can_be_name("Lesehaus.de  COPPELMANN"));
+        assert!(!can_be_name("Mira.albers"));
+        // An initial has a space after it.
+        assert!(can_be_name("J. Brandt"));
+        assert!(can_be_name("Ole de Vries"));
+        assert!(can_be_name("Pater Ole"));
+        assert!(!can_be_name("Der Pater"));
+    }
+
+    #[test]
+    fn what_a_name_owns_is_cut_off() {
+        let text = "Mira Albers trifft Jonas Brandt, und Brandts Kapuze und Albers’ Hut";
+        let span = |v: &str| {
+            let start = text.find(v).unwrap();
+            Candidate {
+                start,
+                end: start + v.len(),
+                entity: EntityType::new("PERSON").unwrap(),
+                confidence: 0.9,
+                detector: "ner".into(),
+            }
+        };
+        let mut found = vec![
+            span("Mira Albers"),
+            span("Jonas Brandt"),
+            span("Brandts Kapuze"),
+            span("Albers’ Hut"),
+        ];
+        cut_genitives(text, &mut found);
+        let spans: Vec<&str> = found.iter().map(|c| &text[c.start..c.end]).collect();
+        assert_eq!(spans, ["Mira Albers", "Jonas Brandt", "Brandts", "Albers’"]);
+        // Without the name elsewhere, a first name that ends in s stays whole.
+        let text = "Jonas Brandt";
+        let mut alone = vec![Candidate {
+            start: 0,
+            end: text.len(),
+            entity: EntityType::new("PERSON").unwrap(),
+            confidence: 0.9,
+            detector: "ner".into(),
+        }];
+        cut_genitives(text, &mut alone);
+        assert_eq!(alone[0].end, text.len());
     }
 }

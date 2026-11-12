@@ -482,6 +482,16 @@ pub(crate) const NOT_NAMES: &[&str] = &[
     "doktor",
     "prof",
     "professor",
+    // Clergy: a title before a name (`Pater Ole`), no name alone
+    // (`Der Pater, der …`).
+    "pater",
+    "pfarrer",
+    "pfarrerin",
+    "priester",
+    "priesterin",
+    "papst",
+    "pope",
+    "priest",
     "kunde",
     "kundin",
     "kunden",
@@ -612,6 +622,33 @@ pub(crate) fn person_noun(word: &str) -> bool {
                     .iter()
                     .any(|e| !e.is_empty() && w.strip_suffix(e).is_some_and(|s| s.ends_with(stem)))
         })
+}
+
+/// The length in bytes of `span`'s first word when it is the genitive of
+/// one of `names` (`Brandts`, `Albers'` beside `Jonas Brandt`, `Mira
+/// Albers`) and more words follow: German puts what a name owns after it
+/// (`Brandts Kapuze`), and NER takes both for the name. `None` otherwise.
+pub(crate) fn genitive_head<'a>(
+    span: &str,
+    mut names: impl Iterator<Item = &'a str>,
+) -> Option<usize> {
+    let end = span.find(char::is_whitespace)?;
+    if !span[end..].chars().any(char::is_alphabetic) {
+        return None;
+    }
+    let word = &span[..end];
+    let stems: Vec<&str> = ["'s", "’s", "s", "'", "’"]
+        .iter()
+        .filter_map(|s| word.strip_suffix(s))
+        .filter(|s| s.chars().count() >= 2 && s.chars().all(char::is_alphabetic))
+        .collect();
+    names.any(|n| stems.contains(&n)).then_some(end)
+}
+
+/// The words of a name: its runs of letters, two or more long.
+pub(crate) fn name_words(span: &str) -> impl Iterator<Item = &str> {
+    span.split(|c: char| !c.is_alphabetic())
+        .filter(|w| w.chars().count() >= 2)
 }
 
 /// Whether `span` is nothing but role, title and greeting words
@@ -1032,5 +1069,19 @@ values = ["Mira Albers"]
         assert_eq!(f.len(), 1, "{f:?}");
         assert_eq!(f[0].detector, "policy:contract");
         assert_eq!(&text[f[0].start..f[0].end], "2026-0815");
+    }
+
+    #[test]
+    fn a_genitive_of_a_name_is_its_head() {
+        let names = ["Mira", "Albers", "Jonas", "Brandt"];
+        let head = |span: &str| genitive_head(span, names.iter().copied());
+        assert_eq!(head("Brandts Kapuze"), Some("Brandts".len()));
+        assert_eq!(head("Albers’ Hut"), Some("Albers’".len()));
+        assert_eq!(head("Brandt's Hut"), Some("Brandt's".len()));
+        // A name of its own, one word, or a genitive of no name found.
+        assert_eq!(head("Jonas Brandt"), None);
+        assert_eq!(head("Brandts"), None);
+        assert_eq!(head("Vogts Kapuze"), None);
+        assert_eq!(head("Brandts  4,6"), None);
     }
 }
