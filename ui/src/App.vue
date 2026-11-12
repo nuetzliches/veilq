@@ -16,11 +16,26 @@ import { copyablePicture, copyIsOurs, pngBlob } from '@/lib/clipboard';
 import { locale, plural, t } from '@/lib/i18n';
 import { actionLabel, missingModels } from '@/lib/labels';
 import { pastedName } from '@/lib/paste';
+import {
+  clampZoom,
+  dragPan,
+  findingIn,
+  linkPanes,
+  pageAnchor,
+  pointIn,
+  scrollFor,
+  shownFindings,
+  type ViewPoint,
+  type Zoom,
+  ZOOM_STEP,
+} from '@/lib/view';
 
 // One working surface (ADR-0033): the input on the left takes text, a
 // dropped or pasted file and a screenshot alike; the redacted output on the
 // right; the findings in a panel beside it. Opening a file, a folder run and
-// the settings are behind the menu and the gear.
+// the settings are behind the menu and the gear. Both sides are one view
+// (ADR-0036): one zoom, one place, and a finding selected in the list, in a
+// pane or with N and P shows on both.
 
 const api = createApi();
 const info = ref<Info | null>(null);
@@ -41,6 +56,8 @@ const unsettled = ref(false);
 /** The source of the last run, shown above the input while it runs or failed. */
 const sourceName = ref<string | null>(null);
 const hovered = ref<number | null>(null);
+/** The finding the panes show, picked in the list, in a pane, or with N and P. */
+const selected = ref<number | null>(null);
 const copied = ref(false);
 /** The action of a run: `''` for the policy's, else one of `info.actions`. */
 const action = ref('');
@@ -58,6 +75,8 @@ const menu = ref(false);
 const panel = ref(false);
 
 const findings = computed(() => result.value?.report.findings ?? []);
+/** Per finding, whether the panes can show it. */
+const shown = computed(() => shownFindings(result.value));
 /** An image the browser shows: set side by side. */
 const image = computed(() => {
   const r = result.value;
@@ -90,14 +109,26 @@ async function loadInfo() {
   if (info.value?.loading) setTimeout(() => void loadInfo(), 1000);
 }
 
-/** Whatever is open on top closes first. */
+/** Whatever is open on top closes first; N and P step through the findings. */
 function onKeyDown(event: KeyboardEvent) {
+  const over = menu.value || browsing.value || folderRun.value || welcome.value || settings.value;
+  const key = event.key.toLowerCase();
+  if ((key === 'n' || key === 'p') && !over && findings.value.length) {
+    const target = event.target as HTMLElement | null;
+    if (event.ctrlKey || event.metaKey || event.altKey || target?.closest('textarea, input, select')) return;
+    event.preventDefault();
+    const n = findings.value.length;
+    const at = selected.value ?? (key === 'n' ? -1 : n);
+    void select((at + (key === 'n' ? 1 : n - 1)) % n);
+    return;
+  }
   if (event.key !== 'Escape' || viewer.value) return;
   if (menu.value) menu.value = false;
   else if (browsing.value) browsing.value = false;
   else if (folderRun.value) folderRun.value = false;
   else if (welcome.value) welcome.value = false;
   else if (settings.value) settings.value = false;
+  else if (selected.value !== null) selected.value = null;
 }
 
 /** The side the viewer shows, or none. */
@@ -117,6 +148,106 @@ const outputPictures = computed<Pictures | null>(() => {
   return null;
 });
 
+// One view over both sides (ADR-0036).
+const inputBody = ref<HTMLElement | null>(null);
+const outputBody = ref<HTMLElement | null>(null);
+const zoom = ref<Zoom>('fit');
+const linked = linkPanes(() => [inputBody.value, outputBody.value]);
+/** The sides show pictures: the zoom scales them, else the text. */
+const pictured = computed(() => !!(inputPictures.value || outputPictures.value));
+/** The sides show something to zoom. */
+const viewable = computed(() => !editing.value && (pictured.value || (!!result.value && !result.value.output_base64)));
+const zoomLabel = computed(() =>
+  zoom.value === 'fit' ? (pictured.value ? t('viewer.fit') : '100 %') : `${Math.round(zoom.value * 100)} %`,
+);
+/** A picture's zoom in a pane: without a scale it fits the pane's width. */
+const paneZoom = computed(() => (zoom.value === 'fit' ? undefined : zoom.value));
+/** A text's size. */
+const textScale = computed(() => (zoom.value === 'fit' ? 1 : zoom.value));
+/** Pictures are panned by dragging once they are zoomed. */
+const pan = dragPan(() => pictured.value && zoom.value !== 'fit');
+
+/** The pane that leads a change of the view: the input, unless it shows nothing to anchor. */
+function leadPane(): HTMLElement | null {
+  return [inputBody.value, outputBody.value].find((p) => p?.querySelector('[data-anchor]')) ?? null;
+}
+
+/** The scale the panes show now: in `fit`, a picture's as measured. */
+function currentScale(): number {
+  if (typeof zoom.value === 'number') return zoom.value;
+  const img = pictured.value ? leadPane()?.querySelector('img') : null;
+  return img && img.naturalWidth ? img.clientWidth / img.naturalWidth : 1;
+}
+
+/** Zooms both panes, keeping the point under `anchor` of pane `from` (else its middle) in place. */
+async function zoomTo(next: Zoom, from: HTMLElement | null = leadPane(), anchor?: { x: number; y: number }) {
+  const point = from && pointIn(from, anchor?.x, anchor?.y);
+  zoom.value = next === 'fit' ? next : clampZoom(next, !pictured.value);
+  await nextTick();
+  if (!from || !point) return;
+  const s = scrollFor(from, point, anchor?.x, anchor?.y);
+  if (s) linked.scrollTo(from, s.left, s.top);
+  linked.follow(from);
+}
+
+function onPaneWheel(event: WheelEvent) {
+  if ((!event.ctrlKey && !event.metaKey) || !viewable.value) return;
+  event.preventDefault();
+  const el = event.currentTarget as HTMLElement;
+  const r = el.getBoundingClientRect();
+  const step = event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+  void zoomTo(currentScale() * step, el, { x: event.clientX - r.left, y: event.clientY - r.top });
+}
+
+/**
+ * Selects finding `index` and shows it on both sides. Clicked in pane
+ * `from`, that pane stays where it is and the other lines its finding up.
+ */
+async function select(index: number, from?: HTMLElement | null) {
+  selected.value = index;
+  panel.value = true;
+  await nextTick();
+  const panes = [inputBody.value, outputBody.value].filter((p): p is HTMLElement => !!p);
+  const clicked = from && findingIn(from, index);
+  // Both sides put it at one height: where it was clicked, else the input's middle.
+  const at =
+    from && clicked
+      ? { x: clicked.x - from.scrollLeft, y: clicked.y - from.scrollTop }
+      : panes[0] && { x: panes[0].clientWidth / 2, y: panes[0].clientHeight / 2 };
+  for (const el of panes) {
+    const p = findingIn(el, index);
+    if (p && at && el !== from) linked.scrollTo(el, p.x - at.x, p.y - at.y);
+  }
+  // A side without the finding (no span there) follows a side with it.
+  const lead = panes.find((el) => findingIn(el, index));
+  if (lead && panes.some((el) => !findingIn(el, index))) linked.follow(lead);
+}
+
+/** A finding clicked in pane `side`. */
+function selectIn(side: 'input' | 'output', index: number) {
+  void select(index, side === 'input' ? inputBody.value : outputBody.value);
+}
+
+/** Where the viewer opens: the place the pane it was opened from shows. */
+const viewerAt = ref<ViewPoint | null>(null);
+
+function openViewer(side: 'input' | 'output') {
+  const el = side === 'input' ? inputBody.value : outputBody.value;
+  viewerAt.value = el && pointIn(el);
+  viewer.value = side;
+}
+
+/** The viewer closed on `at`: the panes show that place. */
+async function closeViewer(at: ViewPoint | null) {
+  viewer.value = null;
+  await nextTick();
+  const el = leadPane();
+  const s = el && at && scrollFor(el, at);
+  if (!el || !s) return;
+  linked.scrollTo(el, s.left, s.top);
+  linked.follow(el);
+}
+
 async function run(source: Source, name: string | null, unverified = false, explain = false) {
   busy.value = true;
   viewer.value = null;
@@ -124,6 +255,9 @@ async function run(source: Source, name: string | null, unverified = false, expl
   unsettled.value = false;
   result.value = null;
   hovered.value = null;
+  selected.value = null;
+  // Another source starts at its own size; the same one again keeps the zoom.
+  if (lastRun.value?.source !== source) zoom.value = 'fit';
   sourceName.value = name;
   lastRun.value = { source, name };
   try {
@@ -417,14 +551,31 @@ onBeforeUnmount(() => {
           <h2>{{ t('input.title') }}</h2>
           <span v-if="result?.name ?? sourceName" class="mono name">{{ result?.name ?? sourceName }}</span>
           <span class="spacer" />
-          <button v-if="inputPictures" class="small" :title="t('pane.zoomTitle')" @click="viewer = 'input'">
+          <span v-if="viewable" class="zoom">
+            <button class="small" :title="t('viewer.zoomOut')" @click="zoomTo(currentScale() / ZOOM_STEP)">−</button>
+            <button class="small mono level" :title="t('pane.zoomLevelTitle')" @click="zoomTo('fit')">
+              {{ zoomLabel }}
+            </button>
+            <button class="small" :title="t('viewer.zoomIn')" @click="zoomTo(currentScale() * ZOOM_STEP)">+</button>
+          </span>
+          <button v-if="inputPictures" class="small" :title="t('pane.zoomTitle')" @click="openViewer('input')">
             {{ t('pane.zoom') }}
           </button>
           <button v-if="filled" class="small" :disabled="busy" :title="t('input.newTitle')" @click="clear">
             {{ t('input.new') }}
           </button>
         </header>
-        <div class="pane-body" :class="{ editing }">
+        <div
+          ref="inputBody"
+          class="pane-body"
+          :class="{ editing, pan: pictured && zoom !== 'fit' }"
+          @scroll="linked.onScroll"
+          @wheel="onPaneWheel"
+          @pointerdown="pan.down"
+          @pointermove="pan.move"
+          @pointerup="pan.up"
+          @pointercancel="pan.up"
+        >
           <template v-if="editing">
             <textarea
               ref="editor"
@@ -449,26 +600,34 @@ onBeforeUnmount(() => {
           </template>
           <ImagePane
             v-else-if="image"
+            :anchor="pageAnchor(0)"
             side="input"
             :data="image.input_base64!"
             :media-type="image.media_type!"
             :findings="findings"
             :hovered="hovered"
+            :selected="selected"
             @hover="hovered = $event"
-            @open="viewer = 'input'"
+            @select="selectIn('input', $event)"
+            :zoom="paneZoom"
+            @open="openViewer('input')"
           />
           <div v-else-if="pdf" class="pages">
             <ImagePane
               v-for="(p, i) in pdf.input_pages"
               :key="i"
+              :anchor="pageAnchor(i)"
               side="input"
               :data="p"
               media-type="image/png"
               :page="i + 1"
               :findings="findings"
               :hovered="hovered"
+              :selected="selected"
               @hover="hovered = $event"
-              @open="viewer = 'input'"
+              @select="selectIn('input', $event)"
+              :zoom="paneZoom"
+              @open="openViewer('input')"
             />
             <p v-if="(pdf.page_count ?? 0) > pdf.input_pages!.length" class="note">
               {{ t('pdf.morePages', { from: pdf.input_pages!.length + 1, to: pdf.page_count! }) }}
@@ -490,7 +649,10 @@ onBeforeUnmount(() => {
               :spans="result?.input_spans ?? []"
               :findings="findings"
               :hovered="hovered"
+              :selected="selected"
+              :scale="textScale"
               @hover="hovered = $event"
+              @select="selectIn('input', $event)"
             />
           </div>
           <ComparePane
@@ -500,19 +662,24 @@ onBeforeUnmount(() => {
             :spans="result.input_spans"
             :findings="findings"
             :hovered="hovered"
+            :selected="selected"
+            :scale="textScale"
             @hover="hovered = $event"
+            @select="selectIn('input', $event)"
           />
           <div v-else-if="preview" class="pages">
             <ImagePane
               v-for="(p, i) in preview.pages"
               :key="i"
+              :anchor="pageAnchor(i)"
               side="input"
               :data="p"
               :media-type="preview.mediaType"
               :page="preview.pageCount ? i + 1 : undefined"
               :findings="[]"
               :hovered="null"
-              @open="viewer = 'input'"
+              :zoom="paneZoom"
+              @open="openViewer('input')"
             />
           </div>
           <div v-else class="waiting">
@@ -532,7 +699,7 @@ onBeforeUnmount(() => {
             </select>
           </label>
           <span class="spacer" />
-          <button v-if="outputPictures" class="small" :title="t('pane.zoomTitle')" @click="viewer = 'output'">
+          <button v-if="outputPictures" class="small" :title="t('pane.zoomTitle')" @click="openViewer('output')">
             {{ t('pane.zoom') }}
           </button>
           <button
@@ -546,7 +713,17 @@ onBeforeUnmount(() => {
             {{ plural(findings.length, 'output.findingsOne', 'output.findingsOther') }}
           </button>
         </header>
-        <div class="pane-body">
+        <div
+          ref="outputBody"
+          class="pane-body"
+          :class="{ pan: pictured && zoom !== 'fit' }"
+          @scroll="linked.onScroll"
+          @wheel="onPaneWheel"
+          @pointerdown="pan.down"
+          @pointermove="pan.move"
+          @pointerup="pan.up"
+          @pointercancel="pan.up"
+        >
           <div v-if="result?.report.review_required" class="review" role="status">
             <strong>{{ t('output.review') }}</strong>
             <span v-for="(r, i) in result.report.review_reasons ?? []" :key="i">{{ r }}</span>
@@ -563,26 +740,34 @@ onBeforeUnmount(() => {
           <template v-if="!error">
             <ImagePane
               v-if="image"
+              :anchor="pageAnchor(0)"
               side="output"
               :data="image.output_base64!"
               :media-type="image.media_type!"
               :findings="findings"
               :hovered="hovered"
+              :selected="selected"
               @hover="hovered = $event"
-              @open="viewer = 'output'"
+              @select="selectIn('output', $event)"
+              :zoom="paneZoom"
+              @open="openViewer('output')"
             />
             <div v-else-if="pdf" class="pages">
               <ImagePane
                 v-for="(p, i) in pdf.output_pages"
                 :key="i"
+                :anchor="pageAnchor(i)"
                 side="output"
                 :data="p"
                 media-type="image/png"
                 :page="i + 1"
                 :findings="findings"
                 :hovered="hovered"
+                :selected="selected"
                 @hover="hovered = $event"
-                @open="viewer = 'output'"
+                @select="selectIn('output', $event)"
+                :zoom="paneZoom"
+                @open="openViewer('output')"
               />
             </div>
             <div v-else-if="result?.output_base64" class="binary">
@@ -597,7 +782,10 @@ onBeforeUnmount(() => {
               :spans="result.output_spans"
               :findings="findings"
               :hovered="hovered"
+              :selected="selected"
+              :scale="textScale"
               @hover="hovered = $event"
+              @select="selectIn('output', $event)"
             />
             <div v-else class="waiting">
               <strong v-if="busy">{{ t('output.redacting') }}</strong>
@@ -620,9 +808,12 @@ onBeforeUnmount(() => {
       v-if="panel && result"
       :findings="findings"
       :hovered="hovered"
+      :selected="selected"
+      :shown="shown"
       :readings="result.explain ?? null"
       :busy="busy"
       @hover="hovered = $event"
+      @select="select"
       @close="panel = false"
       @explain="runExplained"
     />
@@ -636,10 +827,14 @@ onBeforeUnmount(() => {
       :input="inputPictures"
       :output="outputPictures"
       :side="viewer"
+      v-model:zoom="zoom"
       :findings="result ? findings : []"
       :hovered="hovered"
+      :selected="selected"
+      :at="viewerAt"
       @hover="hovered = $event"
-      @close="viewer = null"
+      @select="select"
+      @close="closeViewer"
     />
 
     <ModalDialog v-if="folderRun && info" :title="t('folder.title')" wide @close="folderRun = false">
@@ -831,6 +1026,22 @@ button.icon {
   overflow: auto;
   background: var(--surface);
 }
+.pane-body.pan {
+  cursor: grab;
+}
+.pane-body.pan:active {
+  cursor: grabbing;
+}
+.zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.zoom .level {
+  min-width: 64px;
+  color: var(--text-muted);
+}
 .pane-body.editing {
   display: flex;
   flex-direction: column;
@@ -932,6 +1143,7 @@ button.icon {
 .review {
   position: sticky;
   top: 0;
+  left: 0;
   z-index: 1;
   display: flex;
   flex-wrap: wrap;

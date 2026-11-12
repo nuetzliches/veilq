@@ -75,3 +75,4 @@ keep it to about a page.
 | [0033](0033-the-ui-is-one-working-surface-for-people-without-a-command-line.md) | The UI is one working surface for people without a command line | Accepted |
 | [0034](0034-scan-explains-what-it-read-and-why-it-decided.md) | `scan --explain` says what veilq read and why it decided | Accepted |
 | [0035](0035-a-release-is-signed-in-its-own-environment-once-switched-on.md) | A release is signed in its own environment, once switched on | Accepted |
+| [0036](0036-input-and-output-are-one-view.md) | Input and output are one view | Accepted |

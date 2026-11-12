@@ -3,6 +3,17 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Finding } from '@/api';
 import ImagePane from '@/components/ImagePane.vue';
 import { t } from '@/lib/i18n';
+import {
+  clampZoom,
+  dragPan,
+  findingIn,
+  pageAnchor,
+  pointIn,
+  scrollFor,
+  type ViewPoint,
+  type Zoom,
+  ZOOM_STEP,
+} from '@/lib/view';
 
 /** The pictures of one side: an image, or a PDF's pages. */
 export interface Pictures {
@@ -13,23 +24,23 @@ export interface Pictures {
 
 // An image (or a PDF's pages) over the whole window, to zoom into: fitted
 // to the window, at its natural size or scaled, with the same frames as in
-// the panes. Input and output can be switched without losing the zoom.
+// the panes. Input and output can be switched without losing the zoom. The
+// zoom is the panes' (ADR-0036): the viewer opens on the place the panes
+// show, and gives back the place it shows when it closes.
 const props = defineProps<{
   input: Pictures | null;
   output: Pictures | null;
   side: 'input' | 'output';
   findings: Finding[];
   hovered: number | null;
+  selected: number | null;
+  /** The place to open on: the middle of the pane it was opened from. */
+  at: ViewPoint | null;
 }>();
-const emit = defineEmits<{ close: []; hover: [index: number | null] }>();
-
-const MIN = 0.1;
-const MAX = 8;
-const STEP = 1.25;
+const emit = defineEmits<{ close: [at: ViewPoint | null]; hover: [index: number | null]; select: [index: number] }>();
+const zoom = defineModel<Zoom>('zoom', { required: true });
 
 const side = ref(props.side);
-/** `fit`, or a scale of the natural size. */
-const zoom = ref<'fit' | number>('fit');
 const root = ref<HTMLElement | null>(null);
 const body = ref<HTMLElement | null>(null);
 const fullscreen = ref(false);
@@ -44,51 +55,48 @@ function currentScale(): number {
   return img && img.naturalWidth ? img.clientWidth / img.naturalWidth : 1;
 }
 
-async function zoomTo(scale: number, anchor?: { x: number; y: number }) {
+/** Shows `point` at (`x`, `y`) of the window, the middle by default. */
+function show(point: ViewPoint, x?: number, y?: number) {
   const el = body.value;
-  const before = currentScale();
-  const next = Math.min(MAX, Math.max(MIN, scale));
-  // Keep the point under the anchor (the pointer, else the middle) in place.
-  const ax = anchor?.x ?? (el ? el.clientWidth / 2 : 0);
-  const ay = anchor?.y ?? (el ? el.clientHeight / 2 : 0);
-  const px = el ? (el.scrollLeft + ax) / before : 0;
-  const py = el ? (el.scrollTop + ay) / before : 0;
-  zoom.value = next;
-  await nextTick();
-  if (el) {
-    el.scrollLeft = px * next - ax;
-    el.scrollTop = py * next - ay;
+  const s = el && scrollFor(el, point, x, y);
+  if (el && s) {
+    el.scrollLeft = s.left;
+    el.scrollTop = s.top;
   }
 }
 
-const zoomIn = () => zoomTo(currentScale() * STEP);
-const zoomOut = () => zoomTo(currentScale() / STEP);
-const fit = () => (zoom.value = 'fit');
+async function zoomTo(next: Zoom, anchor?: { x: number; y: number }) {
+  const el = body.value;
+  // Keep the point under the anchor (the pointer, else the middle) in place.
+  const point = el && pointIn(el, anchor?.x, anchor?.y);
+  zoom.value = next === 'fit' ? next : clampZoom(next);
+  await nextTick();
+  if (point) show(point, anchor?.x, anchor?.y);
+}
+
+const zoomIn = () => zoomTo(currentScale() * ZOOM_STEP);
+const zoomOut = () => zoomTo(currentScale() / ZOOM_STEP);
+const fit = () => zoomTo('fit');
 const actual = () => zoomTo(1);
 
 function onWheel(e: WheelEvent) {
   if (!e.ctrlKey && !e.metaKey) return;
   e.preventDefault();
   const r = body.value!.getBoundingClientRect();
-  void zoomTo(currentScale() * (e.deltaY < 0 ? STEP : 1 / STEP), { x: e.clientX - r.left, y: e.clientY - r.top });
+  void zoomTo(currentScale() * (e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP), { x: e.clientX - r.left, y: e.clientY - r.top });
 }
 
 // Drag to pan once the picture is larger than the window.
-let drag: { x: number; y: number; left: number; top: number } | null = null;
-function onPointerDown(e: PointerEvent) {
+const pan = dragPan(() => zoom.value !== 'fit');
+
+/** Brings finding `index` into the middle of the window. */
+function reveal(index: number) {
   const el = body.value;
-  if (!el || e.button !== 0) return;
-  drag = { x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop };
-  el.setPointerCapture(e.pointerId);
-}
-function onPointerMove(e: PointerEvent) {
-  const el = body.value;
-  if (!drag || !el) return;
-  el.scrollLeft = drag.left - (e.clientX - drag.x);
-  el.scrollTop = drag.top - (e.clientY - drag.y);
-}
-function onPointerUp() {
-  drag = null;
+  const p = el && findingIn(el, index);
+  if (el && p) {
+    el.scrollLeft = p.x - el.clientWidth / 2;
+    el.scrollTop = p.y - el.clientHeight / 2;
+  }
 }
 
 async function toggleFullscreen() {
@@ -102,7 +110,7 @@ function onFullscreenChange() {
 
 function close() {
   if (document.fullscreenElement) void document.exitFullscreen();
-  emit('close');
+  emit('close', body.value && pointIn(body.value));
 }
 
 function onKey(e: KeyboardEvent) {
@@ -129,6 +137,19 @@ watch(
   () => props.side,
   (s) => (side.value = s),
 );
+watch(
+  () => props.selected,
+  (i) => i !== null && reveal(i),
+);
+
+// The place to open on needs the pictures at their size, set once each has loaded.
+let unsized = (shown.value?.pages.length ?? 0) || 1;
+async function onSized() {
+  if (--unsized !== 0) return;
+  await nextTick();
+  if (props.at) show(props.at);
+  else if (props.selected !== null) reveal(props.selected);
+}
 
 onMounted(() => {
   window.addEventListener('keydown', onKey);
@@ -180,23 +201,27 @@ onBeforeUnmount(() => {
       class="viewer-body"
       :class="{ pan: zoom !== 'fit' }"
       @wheel="onWheel"
-      @pointerdown="onPointerDown"
-      @pointermove="onPointerMove"
-      @pointerup="onPointerUp"
-      @pointercancel="onPointerUp"
+      @pointerdown="pan.down"
+      @pointermove="pan.move"
+      @pointerup="pan.up"
+      @pointercancel="pan.up"
     >
       <template v-if="shown">
         <ImagePane
           v-for="(p, i) in shown.pages"
           :key="`${side}-${i}`"
+          :anchor="pageAnchor(i)"
           :side="side"
           :data="p"
           :media-type="shown.mediaType"
           :page="shown.paged ? i + 1 : undefined"
           :findings="findings"
           :hovered="hovered"
+          :selected="selected"
           :zoom="zoom"
           @hover="emit('hover', $event)"
+          @select="emit('select', $event)"
+          @sized="onSized"
         />
       </template>
     </div>
