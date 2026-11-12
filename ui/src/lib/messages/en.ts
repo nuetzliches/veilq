@@ -215,6 +215,8 @@ export const en = {
   'folder.more': 'More options',
   'folder.unverified': 'Write pictures that do not settle anyway, marked for a review',
   'folder.start': 'Redact folder',
+  'folder.needSource': 'First choose under "From" which folder is redacted.',
+  'folder.needTarget': 'Say under "To" where the redacted files go.',
   'folder.stop': 'Stop',
   'folder.running': 'Redacting …',
   'folder.stopped': 'Stopped',
