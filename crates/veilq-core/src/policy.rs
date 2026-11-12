@@ -57,6 +57,9 @@ pub struct Policy {
     /// Office files (ADR-0019).
     #[serde(default)]
     pub office: Office,
+    /// Pictures (ADR-0023, ADR-0038).
+    #[serde(default)]
+    pub picture: Picture,
     /// Bodies that carry their verdict (`veilq mark`, ADR-0024).
     #[serde(default)]
     pub markers: Markers,
@@ -82,6 +85,28 @@ pub struct Office {
     /// other objects stay an error.
     #[serde(default)]
     pub embedded: Embedded,
+}
+
+/// How pictures are read: images, GIF frames, PDF pages, and images inside
+/// Office files and mails.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Picture {
+    /// Faces (ADR-0038): `redact` (the default) fills every face the face
+    /// detector finds black, as `FACE` findings; a picture is then an error
+    /// while the detector is not installed (`veilq models fetch face`).
+    /// `keep` leaves faces as they are, for pictures that show no people
+    /// or whose people may be seen.
+    #[serde(default)]
+    pub faces: FacePolicy,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FacePolicy {
+    #[default]
+    Redact,
+    Keep,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -268,6 +293,7 @@ impl Default for Policy {
             pseudonymize: None,
             mapping: None,
             office: Office::default(),
+            picture: Picture::default(),
             markers: Markers::default(),
         }
     }

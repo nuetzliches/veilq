@@ -141,6 +141,13 @@
       "pattern": "^[A-Z][A-Z0-9_]*$",
       "type": "string"
     },
+    "FacePolicy": {
+      "enum": [
+        "redact",
+        "keep"
+      ],
+      "type": "string"
+    },
     "Mapping": {
       "additionalProperties": false,
       "description": "The mapping file: what `pseudonymize` and `fake` replacements stood for.",
@@ -227,6 +234,18 @@
         "entity",
         "regex"
       ],
+      "type": "object"
+    },
+    "Picture": {
+      "additionalProperties": false,
+      "description": "How pictures are read: images, GIF frames, PDF pages, and images inside\nOffice files and mails.",
+      "properties": {
+        "faces": {
+          "$ref": "#/$defs/FacePolicy",
+          "default": "redact",
+          "description": "Faces (ADR-0038): `redact` (the default) fills every face the face\ndetector finds black, as `FACE` findings; a picture is then an error\nwhile the detector is not installed (`veilq models fetch face`).\n`keep` leaves faces as they are, for pictures that show no people\nor whose people may be seen."
+        }
+      },
       "type": "object"
     },
     "Pseudonymize": {
@@ -320,6 +339,13 @@
         "$ref": "#/$defs/PatternRule"
       },
       "type": "array"
+    },
+    "picture": {
+      "$ref": "#/$defs/Picture",
+      "default": {
+        "faces": "redact"
+      },
+      "description": "Pictures (ADR-0023, ADR-0038)."
     },
     "pseudonymize": {
       "anyOf": [

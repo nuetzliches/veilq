@@ -10,6 +10,8 @@ pub mod action;
 pub mod detect;
 pub mod engine;
 pub mod error;
+#[cfg(feature = "ocr")]
+pub mod face;
 pub mod fake;
 pub mod finding;
 pub mod mail;

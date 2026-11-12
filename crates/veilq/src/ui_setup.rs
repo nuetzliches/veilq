@@ -114,6 +114,9 @@ fn about(component: &str) -> &'static str {
         "ocr" => {
             "Text in images, GIFs and PDF pages; without it they are refused. PaddleOCR in ONNX (Apache-2.0), with ONNX Runtime (MIT). About 45 MB."
         }
+        "face" => {
+            "Faces in images, GIFs and PDF pages, filled black; found, never recognised. Without it pictures are refused unless the policy keeps faces. YuNet (MIT), with ONNX Runtime (MIT). Under 1 MB."
+        }
         "pdf" => "PDF files, page by page (needs OCR too). PDFium (BSD-3-Clause). About 7 MB.",
         _ => "",
     }
@@ -135,6 +138,7 @@ pub async fn models(State(state): State<Arc<AppState>>) -> axum::Json<Models> {
                 active: match name {
                     "ner" => engine.has_ner(),
                     "ocr" => engine.has_ocr(),
+                    "face" => engine.has_faces(),
                     "pdf" => engine.has_pdf(),
                     _ => false,
                 },

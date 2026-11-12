@@ -520,6 +520,14 @@ fn engine(policy: &Policy, action: Option<Action>) -> anyhow::Result<Engine> {
         })?;
         engine = engine.with_ocr(std::sync::Arc::new(ocr));
     }
+    #[cfg(feature = "ocr")]
+    if let Some((model, runtime)) = models::face_files(&dir) {
+        let faces = veilq_core::face::Faces::load(&veilq_core::face::ModelFiles {
+            model: &model,
+            runtime: &runtime,
+        })?;
+        engine = engine.with_faces(std::sync::Arc::new(faces));
+    }
     #[cfg(feature = "pdf")]
     if let Some(library) = models::pdf_library(&dir) {
         engine = engine.with_pdfium(veilq_core::pdf::pdfium(&library)?);

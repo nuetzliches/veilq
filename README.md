@@ -103,7 +103,7 @@ Or build it: `cargo install --locked --git https://github.com/nuetzliches/veilq 
 
 ### Optional models
 
-Patterns need nothing else. Two detectors and one reader need files that
+Patterns need nothing else. Three detectors and one reader need files that
 veilq does not ship; `veilq models fetch` downloads them from their
 publishers, checks them against the SHA-256 compiled into the binary, and
 keeps them in the model directory (`veilq models list` shows where;
@@ -113,21 +113,25 @@ keeps them in the model directory (`veilq models list` shows where;
 |---|---|---|---|
 | `ner` | names that no word marks (`Beim Termin war auch Lena Vogt`) | GLiNER `urchade/gliner_multi_pii-v1` in ONNX (onnx-community), Apache-2.0 | 570 MB |
 | `ocr` | images, GIF, PDF pages | PaddleOCR PP-OCRv3 detector and PP-OCRv5 Latin recogniser in ONNX (`monkt/paddleocr-onnx`), Apache-2.0 | 10 MB |
+| `face` | faces in images, GIF, PDF pages, filled black (found, never recognised) | YuNet 2023mar (OpenCV Zoo, `opencv/face_detection_yunet`), MIT | 0.2 MB |
 | `pdf` | PDF (with `ocr`) | PDFium (`bblanchon/pdfium-binaries`), BSD-3-Clause | 7 MB |
 
-`ner` and `ocr` share ONNX Runtime (Microsoft, MIT, 33 MB), fetched with
+`ner`, `ocr` and `face` share ONNX Runtime (Microsoft, MIT, 33 MB), fetched with
 the first of them. ONNX Runtime and PDFium are pinned for Windows x86_64,
 Linux x86_64 and arm64, and macOS on Apple Silicon.
 
 ```sh
 veilq models fetch ner
 veilq models fetch ocr
+veilq models fetch face
 veilq models fetch pdf
 ```
 
 Without a network: `veilq models install <component> --from <dir>` takes
 the same files from a directory. A run never downloads anything. Without
-OCR an image is an error; without NER the report says `review_required`.
+OCR an image is an error, and so it is without `face` unless the policy
+keeps faces (`[picture] faces = "keep"`); without NER the report says
+`review_required`.
 
 The OCR reads printed text. Handwriting, very small or blurred text is read
 badly, and personal data in it may be missed: where OCR reads letters or

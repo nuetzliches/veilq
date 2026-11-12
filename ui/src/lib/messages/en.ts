@@ -109,6 +109,7 @@ export const en = {
   'entity.CUSTOMER_NUMBER': 'Customer number',
   'entity.ACCOUNT_NUMBER': 'Account number',
   'entity.FILE_NUMBER': 'File number',
+  'entity.FACE': 'Face',
   'entity.METADATA': 'Document properties',
   'entity.IMAGE': 'Embedded picture',
 
