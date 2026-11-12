@@ -6,6 +6,8 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-11-12
+
 ### Changed
 
 - In the UI, input and output are one view (ADR-0036): they share a zoom
