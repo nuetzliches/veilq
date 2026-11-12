@@ -76,7 +76,8 @@ veilq ui
 
 Download the archive for your platform from the
 [latest release](https://github.com/nuetzliches/veilq/releases/latest)
-(Windows x86_64, Linux x86_64 and arm64, macOS Apple Silicon and Intel),
+(Windows x86_64, Linux x86_64 and arm64, macOS Apple Silicon; there is no
+build for Intel Macs, ONNX Runtime publishes none for them),
 check it against `SHA256SUMS` and put `veilq` on your `PATH`. Every file has
 a build provenance attestation:
 

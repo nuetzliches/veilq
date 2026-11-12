@@ -113,9 +113,10 @@ veilq mcp            # an MCP server for any agent</pre>
     const other = document.getElementById('other');
     const primary = document.getElementById('primary');
     if (mac || linux) {
+      // macOS: Apple Silicon only; a Mac browser says "Intel" either way.
       const arm = /arm|aarch64/.test(navigator.userAgent.toLowerCase());
       const name = mac
-        ? `veilq-${arm ? 'aarch64' : 'x86_64'}-apple-darwin.tar.gz`
+        ? 'veilq-aarch64-apple-darwin.tar.gz'
         : `veilq-${arm ? 'aarch64' : 'x86_64'}-unknown-linux-gnu.tar.gz`;
       primary.textContent = `Download veilq for ${mac ? 'macOS' : 'Linux'}`;
       primary.href = `https://github.com/nuetzliches/veilq/releases/latest/download/${name}`;
