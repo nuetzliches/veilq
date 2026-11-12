@@ -120,6 +120,9 @@ export const en = {
 
   'model.ocr': 'Text in pictures',
   'model.ocr.about': 'Reads text in pictures, GIFs and PDF pages; without it they are refused. About 45 MB.',
+  'model.face': 'Faces in pictures',
+  'model.face.about':
+    'Finds faces in pictures, GIFs and PDF pages and fills them black; never tells whose. Without it pictures are refused, unless the rules keep faces. Under 1 MB.',
   'model.pdf': 'PDF files',
   'model.pdf.about': 'Opens PDF files page by page (needs the text in pictures too). About 7 MB.',
   'model.ner': 'Names without a title',

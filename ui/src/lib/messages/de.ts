@@ -120,6 +120,9 @@ export const de: Record<MessageKey, string> = {
 
   'model.ocr': 'Text in Bildern',
   'model.ocr.about': 'Liest Text in Bildern, GIFs und PDF-Seiten; ohne ihn werden sie abgelehnt. Etwa 45 MB.',
+  'model.face': 'Gesichter in Bildern',
+  'model.face.about':
+    'Findet Gesichter in Bildern, GIFs und PDF-Seiten und schwärzt sie; erkennt nie, wer es ist. Ohne ihn werden Bilder abgelehnt, außer die Regeln behalten Gesichter. Unter 1 MB.',
   'model.pdf': 'PDF-Dateien',
   'model.pdf.about': 'Öffnet PDF-Dateien Seite für Seite (braucht auch „Text in Bildern“). Etwa 7 MB.',
   'model.ner': 'Namen ohne Anrede',
