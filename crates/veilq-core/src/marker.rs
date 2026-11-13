@@ -162,6 +162,7 @@ pub fn mark(engine: &Engine, body: &str) -> Result<Marked, Error> {
     let mut report = Report::new(findings);
     report.review_required = redacted.report.review_required || !reasons.is_empty();
     report.review_reasons = reasons;
+    report.purposes = redacted.report.purposes.clone();
     Ok(Marked {
         state,
         text: write.clone(),

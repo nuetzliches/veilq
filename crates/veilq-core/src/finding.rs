@@ -136,6 +136,10 @@ pub struct Report {
     /// Why `review_required` is set, one sentence each.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub review_reasons: Vec<String>,
+    /// What the run was for (ADR-0040): the purposes of its policy,
+    /// `general` first. A coarse label, nothing about who ran it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub purposes: Vec<String>,
 }
 
 impl Report {
@@ -145,6 +149,7 @@ impl Report {
             findings,
             review_required: false,
             review_reasons: Vec::new(),
+            purposes: Vec::new(),
         }
     }
 

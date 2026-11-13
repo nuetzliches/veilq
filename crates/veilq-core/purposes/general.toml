@@ -1,0 +1,10 @@
+# The purpose `general` (ADR-0040): personal data under the GDPR, veilq's
+# defaults. Every policy has it; another purpose adds to it. It changes
+# nothing by itself: the locale packs and the defaults are what it means.
+#
+# A purpose pack is written like a policy: [entities.TYPE] (min_confidence,
+# action), [[patterns]], [allow], and [costs.TYPE] (what a miss and a false
+# positive cost, data for a learned decider; no threshold follows from them
+# yet). A pack tightens; it loosens only through [allow] and [costs].
+
+about = "Personal data under the GDPR: names, contact data, numbers, faces."

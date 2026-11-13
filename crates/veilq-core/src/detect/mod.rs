@@ -166,6 +166,9 @@ impl Detector {
             path: "veilq.toml".into(),
             message,
         };
+        // The purposes' rules in the policy, their patterns under their own
+        // names (ADR-0040).
+        let policy = &policy.resolved().map_err(invalid)?;
         let mut rules = Vec::new();
         let locales = std::iter::once("intl").chain(policy.locales.iter().map(String::as_str));
         for locale in locales {
@@ -173,6 +176,13 @@ impl Detector {
                 let detector = format!("pattern:{locale}.{}", rule.name);
                 rules.push(Rule::compile(&rule, detector).map_err(invalid)?);
             }
+        }
+        for (purpose, rule) in crate::purpose::merge(&policy.effective_purposes())
+            .map_err(invalid)?
+            .patterns
+        {
+            let detector = format!("purpose:{purpose}.{}", rule.name);
+            rules.push(Rule::compile(&rule, detector).map_err(invalid)?);
         }
         for rule in &policy.patterns {
             let detector = format!("policy:{}", rule.name);

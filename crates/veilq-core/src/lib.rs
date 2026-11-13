@@ -28,6 +28,7 @@ pub mod outcome;
 pub mod pdf;
 pub mod policy;
 pub mod pseudonym;
+pub mod purpose;
 pub mod root;
 #[cfg(feature = "models")]
 pub mod runtime;

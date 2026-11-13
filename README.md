@@ -162,6 +162,12 @@ says `review_required` and where.
   sets locales, actions per type, thresholds, allow lists and own patterns
   ([`schema/policy.schema.json`](schema/policy.schema.json));
   `veilq policy check` validates it.
+- **Purposes** (ADR-0040): what veilq is used for, as built-in packs a
+  policy names (`purposes = ["legal"]`) or a run takes (`--purpose
+  development`). `general` always applies; `legal` lowers the thresholds
+  for names, addresses and court file numbers, `development` adds secrets
+  (access keys, tokens, private keys, JWTs). A purpose only tightens; the
+  policy's own settings come first.
 - **`veilq mark <body>`** decides on a ticket's description for a gateway
   between a tracker and an agent: a body whose first line is a matching
   `veilq: cleaned|pass <hash>` (or an exempt prefix from the policy's

@@ -207,6 +207,23 @@ struct InputArgs {
     /// in the git repository's root, else the built-in defaults.
     #[arg(long)]
     policy: Option<PathBuf>,
+    /// What this run is for, instead of the policy's purposes (ADR-0040):
+    /// `legal`, `development`; `general` is always one. Repeat it for more
+    /// than one.
+    #[arg(long = "purpose", value_parser = clap::builder::PossibleValuesParser::new(veilq_core::purpose::PURPOSES))]
+    purposes: Vec<String>,
+}
+
+impl InputArgs {
+    /// The policy of the run: the one found, its purposes replaced by
+    /// `--purpose` when given.
+    fn policy(&self) -> anyhow::Result<Policy> {
+        let (mut policy, _) = load_policy(self.policy.as_deref())?;
+        if !self.purposes.is_empty() {
+            policy.purposes = self.purposes.clone();
+        }
+        Ok(policy)
+    }
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -674,7 +691,7 @@ fn scan(
     sarif: bool,
     explain: bool,
 ) -> anyhow::Result<Outcome> {
-    let (policy, _) = load_policy(input.policy.as_deref())?;
+    let policy = input.policy()?;
     let explanation = veilq_core::Explain::new();
     let mut engine = engine(&policy, None)?;
     if explain {
@@ -823,7 +840,7 @@ fn redact(
     if !is_stdin(path) && path.is_dir() {
         anyhow::bail!("{}: redact takes one file", path.display());
     }
-    let (policy, _) = load_policy(input.policy.as_deref())?;
+    let policy = input.policy()?;
     // Before anything runs: a mapping needs someone to encrypt it to.
     let recipients = match mapping_path {
         Some(_) => Some(

@@ -770,6 +770,7 @@ impl Engine {
         let mut report = Report::new(findings);
         report.review_required = !reasons.is_empty();
         report.review_reasons = reasons;
+        report.purposes = self.detector.policy().effective_purposes();
         report
     }
 

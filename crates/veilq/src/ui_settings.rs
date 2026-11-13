@@ -38,6 +38,53 @@ pub struct PolicyView {
     locales: &'static [&'static str],
     actions: Vec<&'static str>,
     validators: &'static [&'static str],
+    /// The purposes a policy can name, each with what it changes against
+    /// `general` (ADR-0040).
+    purposes: Vec<PurposeView>,
+}
+
+/// A purpose as the form shows it: what it is for and what it adds.
+#[derive(Serialize)]
+pub struct PurposeView {
+    name: &'static str,
+    about: String,
+    /// Per type the threshold and action it sets.
+    entities: std::collections::BTreeMap<String, veilq_core::policy::EntityRule>,
+    /// Its patterns: name and type.
+    patterns: Vec<(String, String)>,
+    /// Values and patterns it takes for no personal data.
+    allow: usize,
+    /// Per type what a miss and a false positive cost.
+    costs: std::collections::BTreeMap<String, veilq_core::purpose::Cost>,
+}
+
+fn purposes() -> Vec<PurposeView> {
+    veilq_core::purpose::PURPOSES
+        .iter()
+        .filter_map(|&name| {
+            let p = veilq_core::purpose::purpose(name).ok()?;
+            Some(PurposeView {
+                name,
+                about: p.about,
+                entities: p
+                    .entities
+                    .into_iter()
+                    .map(|(e, r)| (e.as_str().to_owned(), r))
+                    .collect(),
+                patterns: p
+                    .patterns
+                    .into_iter()
+                    .map(|r| (r.name, r.entity.as_str().to_owned()))
+                    .collect(),
+                allow: p.allow.values.len() + p.allow.patterns.len(),
+                costs: p
+                    .costs
+                    .into_iter()
+                    .map(|(e, c)| (e.as_str().to_owned(), c))
+                    .collect(),
+            })
+        })
+        .collect()
 }
 
 /// The entity types the built-in detectors find.
@@ -46,6 +93,13 @@ fn entities() -> Vec<String> {
         .chain(veilq_core::detect::LOCALES.iter().copied())
         .flat_map(|l| veilq_core::detect::pack(l).unwrap_or_default())
         .map(|r| r.entity.as_str().to_owned())
+        .chain(veilq_core::purpose::PURPOSES.iter().flat_map(|p| {
+            veilq_core::purpose::purpose(p)
+                .map(|p| p.patterns)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|r| r.entity.as_str().to_owned())
+        }))
         .chain(["PERSON".to_owned()])
         .collect();
     out.sort();
@@ -79,6 +133,7 @@ pub async fn policy_view(State(state): State<Arc<AppState>>) -> Response {
         locales: veilq_core::detect::LOCALES,
         actions: vec!["mask", "pseudonymize", "fake", "remove"],
         validators: veilq_core::detect::validate::VALIDATORS,
+        purposes: purposes(),
     })
     .into_response()
 }
