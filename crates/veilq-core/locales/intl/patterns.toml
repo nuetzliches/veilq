@@ -62,7 +62,19 @@ name = "name-field"
 entity = "PERSON"
 regex = '^\p{Lu}\p{Ll}+(?:[ -]\p{Lu}\p{Ll}+){1,3}$'
 confidence = 0.35
-context = { words = ["name", "vorname", "nachname", "kunde", "kundin", "person", "inhaber", "inhaberin", "mandant", "mandantin", "empfänger", "absender", "ansprechpartner", "author", "user", "by", "von", "contact", "customer"], boost = 0.5, window = 32 }
+context = { words = ["name", "vorname", "nachname", "familienname", "kunde", "kundin", "person", "inhaber", "inhaberin", "mandant", "mandantin", "gegner", "gegnerin", "schuldner", "schuldnerin", "gläubiger", "gläubigerin", "kläger", "klägerin", "beklagte", "beklagter", "beteiligte", "beteiligter", "empfänger", "absender", "ansprechpartner", "author", "user", "by", "von", "contact", "customer"], boost = 0.5, window = 32 }
+
+# One word alone under a column that names a person: a list keeps the
+# surname in a column of its own (`Gegner`, `Nachname`). Without such a
+# column it is no candidate (confidence 0); fewer words than `name-field`,
+# as a word beside `von` or `by` is not in a column. A role word as a
+# column's own head is dropped as one (`detect::NOT_NAMES`).
+[[patterns]]
+name = "name-column"
+entity = "PERSON"
+regex = '^\p{Lu}\p{Ll}+$'
+confidence = 0.0
+context = { words = ["name", "vorname", "nachname", "familienname", "surname", "mandant", "mandantin", "gegner", "gegnerin", "schuldner", "schuldnerin", "gläubiger", "gläubigerin", "kläger", "klägerin", "beklagte", "beklagter", "beteiligte", "beteiligter", "inhaber", "inhaberin", "empfänger", "empfängerin", "absender", "absenderin", "ansprechpartner", "ansprechpartnerin"], boost = 0.85, window = 32 }
 
 # A name after a key in running text: `"name":"Ida Sommer"`, `user=Lena Vogt`.
 [[patterns]]
