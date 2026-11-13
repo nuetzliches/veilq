@@ -112,6 +112,7 @@ export const en = {
   'entity.COURT_FILE_NUMBER': 'Court file number',
   'entity.SECRET': 'Secret',
   'entity.FACE': 'Face',
+  'entity.UNREAD_TEXT': 'Unreadable text',
   'entity.METADATA': 'Document properties',
   'entity.IMAGE': 'Embedded picture',
 
@@ -266,6 +267,8 @@ export const en = {
   'purposes.threshold': '{type}: threshold {value}',
   'purposes.patterns': '{n} patterns: {types}',
   'purposes.allow': '{n} exceptions (no personal data)',
+  'purposes.lowConfidenceBox': 'Text read badly in pictures is filled black',
+  'purposes.lowConfidenceError': 'Text read badly in pictures stops the run',
   'purposes.cost': '{type}: a miss costs {miss}, a false positive {fp}',
   'purpose.general': 'General (GDPR)',
   'purpose.general.about': 'Personal data: names, contact data, numbers, faces.',

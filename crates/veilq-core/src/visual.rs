@@ -41,6 +41,7 @@ use crate::Error;
 use crate::finding::{EntityType, Finding, Location};
 use crate::ocr::{Line, Ocr, Rect};
 use crate::office::Outcome;
+use crate::policy::LowConfidence;
 
 const PAD: u32 = 2;
 
@@ -51,6 +52,11 @@ pub const FACES_FOUND: &str = "faces were found and filled black; the face detec
 /// Verify rounds at most: reading a filled picture again moves rows and
 /// labels, so a round can find what the one before did not (ADR-0026).
 const ROUNDS: usize = 6;
+
+/// The type of a line OCR read badly, filled with `[picture]
+/// low_confidence = "box"` (ADR-0045), and its detector.
+pub const UNREAD_TEXT: &str = "UNREAD_TEXT";
+const UNREAD_DETECTOR: &str = "ocr:low-confidence";
 
 /// Where a finding is, as the report and the messages say it.
 fn place(f: &Finding) -> String {
@@ -612,15 +618,8 @@ fn settle(
         // Read badly where nothing is filled: on the first reading only, as
         // a later one reads the boxes' edges.
         if round == 1 {
-            for l in &lines {
-                if l.weak().any(|r| !covered(r, new.iter())) {
-                    let r = Rect {
-                        y: l.rect.y + band.top,
-                        ..l.rect
-                    };
-                    out.weak_lines.push(at(&r, frame));
-                }
-            }
+            let unread = unread(engine, &lines, &new, &band, frame, (w, h), out)?;
+            new.extend(unread);
         }
         if new.is_empty() || !apply {
             return Ok(Some(filled));
@@ -652,6 +651,54 @@ fn settle(
         }
     }
     Ok(Some(filled))
+}
+
+/// The lines OCR read badly where nothing in `new` covers them, as the
+/// policy says (ADR-0045): `review` notes each for the report's reason,
+/// `box` reports each as `UNREAD_TEXT` and returns its box to fill, `error`
+/// stops at the first.
+fn unread(
+    engine: &Engine,
+    lines: &[Line],
+    new: &[Rect],
+    band: &Band,
+    frame: Option<u64>,
+    (w, h): (u32, u32),
+    out: &mut Outcome,
+) -> Result<Vec<Rect>, Error> {
+    let low = engine.policy().picture.low_confidence.unwrap_or_default();
+    let mut boxes = Vec::new();
+    for l in lines {
+        if !l.weak().any(|r| !covered(r, new.iter())) {
+            continue;
+        }
+        let r = Rect {
+            y: l.rect.y + band.top,
+            ..l.rect
+        };
+        match low {
+            LowConfidence::Review => out.weak_lines.push(at(&r, frame)),
+            LowConfidence::Error => return Err(Error::Unread { at: at(&r, frame) }),
+            LowConfidence::Box => {
+                out.findings.push(Finding {
+                    entity: EntityType::new(UNREAD_TEXT).expect("a valid type"),
+                    location: Location::Region {
+                        part: None,
+                        frame,
+                        x: r.x,
+                        y: r.y,
+                        width: r.w,
+                        height: r.h,
+                    },
+                    confidence: 1.0,
+                    detector: UNREAD_DETECTOR.into(),
+                    pseudonym: None,
+                });
+                boxes.push(l.rect.pad(PAD, w, h));
+            }
+        }
+    }
+    Ok(boxes)
 }
 
 /// The format of an image file, from its bytes.
@@ -1297,5 +1344,51 @@ mod tests {
             assert_eq!(image::guess_format(&bytes).unwrap(), f);
             assert!(!bytes.windows(4).any(|w| w == b"Exif"));
         }
+    }
+
+    #[test]
+    fn text_read_badly_is_reviewed_filled_or_an_error_as_the_policy_says() {
+        let engine = |toml: &str| {
+            let policy = crate::Policy::parse(&format!("version = 1\n{toml}")).unwrap();
+            Engine::new(&policy, None, b"test", None).unwrap()
+        };
+        // A handwritten line: one letter read with 0.4. A second line read
+        // well, and a third read badly but filled already.
+        let mut weak = line("Jonas Brandt", 10, 40);
+        weak.scores[2] = 0.4;
+        let mut done = line("Mira Albers", 10, 80);
+        done.scores[1] = 0.4;
+        let lines = [line("Termin am Montag", 10, 0), weak, done];
+        let filled = [lines[2].rect.pad(PAD, 400, 200)];
+        let run = |e: &Engine| {
+            let mut out = outcome();
+            let r = unread(e, &lines, &filled, &Band::WHOLE, None, (400, 200), &mut out);
+            (r, out)
+        };
+
+        let (r, out) = run(&engine(""));
+        assert!(r.unwrap().is_empty());
+        assert_eq!(out.weak_lines, ["120x20 at 10,40"]);
+        assert!(out.findings.is_empty());
+
+        for toml in [
+            "[picture]\nlow_confidence = \"box\"",
+            "purposes = [\"legal\"]",
+        ] {
+            let (r, out) = run(&engine(toml));
+            assert_eq!(r.unwrap(), [lines[1].rect.pad(PAD, 400, 200)], "{toml}");
+            assert!(out.weak_lines.is_empty());
+            assert_eq!(out.findings.len(), 1);
+            assert_eq!(out.findings[0].entity.as_str(), UNREAD_TEXT);
+        }
+        // The policy's own value comes before its purposes'.
+        let (_, out) = run(&engine(
+            "purposes = [\"legal\"]\n[picture]\nlow_confidence = \"review\"",
+        ));
+        assert!(out.findings.is_empty() && out.weak_lines.len() == 1);
+
+        let (r, _) = run(&engine("[picture]\nlow_confidence = \"error\""));
+        let err = r.unwrap_err().to_string();
+        assert!(err.contains("120x20 at 10,40"), "{err}");
     }
 }

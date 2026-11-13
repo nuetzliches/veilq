@@ -29,6 +29,8 @@ function changes(p: PurposeInfo): string[] {
   const types = [...new Set(p.patterns.map(([, entity]) => entityLabel(entity)))];
   if (p.patterns.length) out.push(t('purposes.patterns', { n: p.patterns.length, types: types.join(', ') }));
   if (p.allow) out.push(t('purposes.allow', { n: p.allow }));
+  if (p.low_confidence === 'box') out.push(t('purposes.lowConfidenceBox'));
+  if (p.low_confidence === 'error') out.push(t('purposes.lowConfidenceError'));
   for (const [entity, c] of Object.entries(p.costs)) {
     out.push(t('purposes.cost', { type: entityLabel(entity), miss: c.miss, fp: c.false_positive }));
   }

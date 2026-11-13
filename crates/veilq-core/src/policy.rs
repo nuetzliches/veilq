@@ -118,6 +118,25 @@ pub struct Picture {
     /// or whose people may be seen.
     #[serde(default)]
     pub faces: FacePolicy,
+    /// Text OCR reads badly (a letter or digit below 0.7, ADR-0045) where
+    /// nothing was filled: `review` (the default) says so in the report,
+    /// `box` fills the line black as `UNREAD_TEXT`, `error` stops the run.
+    /// A purpose may set it (`legal`: `box`); this policy's value comes
+    /// first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub low_confidence: Option<LowConfidence>,
+}
+
+/// What happens to text OCR reads badly (ADR-0045), from the mildest.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum LowConfidence {
+    #[default]
+    Review,
+    Box,
+    Error,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -579,6 +598,7 @@ impl Policy {
         for (entity, c) in merged.costs {
             out.costs.entry(entity).or_insert(c);
         }
+        out.picture.low_confidence = out.picture.low_confidence.or(merged.low_confidence);
         Ok(out)
     }
 

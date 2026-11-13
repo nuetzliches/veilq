@@ -13,6 +13,11 @@ min_confidence = 0.6
 [entities.COURT_FILE_NUMBER]
 min_confidence = 0.5
 
+# Text OCR reads badly is filled black (ADR-0045): a handwritten name in a
+# scanned file is a party as much as a printed one.
+[picture]
+low_confidence = "box"
+
 [costs.PERSON]
 miss = 20.0
 false_positive = 1.0

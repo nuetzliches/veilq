@@ -145,7 +145,9 @@ keeps faces (`[picture] faces = "keep"`); without NER the report says
 The OCR reads printed text. Handwriting, very small or blurred text is read
 badly, and personal data in it may be missed: where OCR reads letters or
 digits with low confidence and nothing was blacked out there, the report
-says `review_required` and where.
+says `review_required` and where. `[picture] low_confidence = "box"` fills
+such a line black instead (as `UNREAD_TEXT`; the purpose `legal` does so),
+`"error"` stops the run.
 
 ## Use
 

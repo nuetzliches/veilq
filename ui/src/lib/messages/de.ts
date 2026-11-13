@@ -112,6 +112,7 @@ export const de: Record<MessageKey, string> = {
   'entity.COURT_FILE_NUMBER': 'Gerichtsaktenzeichen',
   'entity.SECRET': 'Geheimnis',
   'entity.FACE': 'Gesicht',
+  'entity.UNREAD_TEXT': 'Unleserlicher Text',
   'entity.METADATA': 'Dokumenteigenschaften',
   'entity.IMAGE': 'Eingebettetes Bild',
 
@@ -270,6 +271,8 @@ export const de: Record<MessageKey, string> = {
   'purposes.threshold': '{type}: Schwelle {value}',
   'purposes.patterns': '{n} Muster: {types}',
   'purposes.allow': '{n} Ausnahmen (keine Personendaten)',
+  'purposes.lowConfidenceBox': 'Schlecht lesbarer Text in Bildern wird geschwärzt',
+  'purposes.lowConfidenceError': 'Schlecht lesbarer Text in Bildern hält den Lauf an',
   'purposes.cost': '{type}: eine Lücke kostet {miss}, ein Fehlfund {fp}',
   'purpose.general': 'Allgemein (DSGVO)',
   'purpose.general.about': 'Personenbezogene Daten: Namen, Kontaktdaten, Nummern, Gesichter.',

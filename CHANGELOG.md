@@ -14,6 +14,11 @@ Notable changes per release. The format follows
   `İ`/`ı` folded and the genitive (`Mehmets`, `Mehmet's`), and each part of a
   full name alone; at confidence 1.0, even where `allow` names it. A file
   veilq cannot read is an error. The UI shows a list by its size only.
+- `[picture] low_confidence` (ADR-0045, #52): what happens to text OCR reads
+  badly where nothing was filled. `review` (the default) says so in the
+  report as before, `box` fills the line black as `UNREAD_TEXT`, `error`
+  stops the run. The purpose `legal` sets `box`; a policy's own value comes
+  first.
 - Purposes (ADR-0040, #67): what veilq is used for, as packs built into
   veilq. A policy names them (`purposes = ["legal", "development"]`), a run
   takes `--purpose`; `general` always applies and is today's behaviour.

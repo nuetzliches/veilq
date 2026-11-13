@@ -56,6 +56,9 @@ pub struct PurposeView {
     allow: usize,
     /// Per type what a miss and a false positive cost.
     costs: std::collections::BTreeMap<String, veilq_core::purpose::Cost>,
+    /// What it does with text OCR reads badly (ADR-0045), where it sets it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    low_confidence: Option<veilq_core::policy::LowConfidence>,
 }
 
 fn purposes() -> Vec<PurposeView> {
@@ -82,6 +85,7 @@ fn purposes() -> Vec<PurposeView> {
                     .into_iter()
                     .map(|(e, c)| (e.as_str().to_owned(), c))
                     .collect(),
+                low_confidence: p.picture.low_confidence,
             })
         })
         .collect()

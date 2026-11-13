@@ -199,6 +199,15 @@
       ],
       "type": "string"
     },
+    "LowConfidence": {
+      "description": "What happens to text OCR reads badly (ADR-0045), from the mildest.",
+      "enum": [
+        "review",
+        "box",
+        "error"
+      ],
+      "type": "string"
+    },
     "Mapping": {
       "additionalProperties": false,
       "description": "The mapping file: what `pseudonymize` and `fake` replacements stood for.",
@@ -295,6 +304,17 @@
           "$ref": "#/$defs/FacePolicy",
           "default": "redact",
           "description": "Faces (ADR-0038): `redact` (the default) fills every face the face\ndetector finds black, as `FACE` findings; a picture is then an error\nwhile the detector is not installed (`veilq models fetch face`).\n`keep` leaves faces as they are, for pictures that show no people\nor whose people may be seen."
+        },
+        "low_confidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LowConfidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Text OCR reads badly (a letter or digit below 0.7, ADR-0045) where\nnothing was filled: `review` (the default) says so in the report,\n`box` fills the line black as `UNREAD_TEXT`, `error` stops the run.\nA purpose may set it (`legal`: `box`); this policy's value comes\nfirst."
         }
       },
       "type": "object"

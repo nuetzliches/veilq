@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Action;
 use crate::finding::EntityType;
-use crate::policy::{Allow, EntityRule, PatternRule};
+use crate::policy::{Allow, EntityRule, LowConfidence, PatternRule};
 
 /// The purposes a policy can name; `general` is in every policy.
 pub const PURPOSES: &[&str] = &["general", "legal", "development"];
@@ -70,6 +70,17 @@ pub struct Purpose {
     pub allow: Allow,
     #[serde(default)]
     pub costs: BTreeMap<EntityType, Cost>,
+    #[serde(default)]
+    pub picture: PurposePicture,
+}
+
+/// What a purpose sets for pictures.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PurposePicture {
+    /// Text OCR reads badly (ADR-0045); any value tightens `review`.
+    #[serde(default)]
+    pub low_confidence: Option<LowConfidence>,
 }
 
 /// The pack of the purpose `name`, checked: its patterns compile, and it
@@ -142,6 +153,8 @@ pub struct Merged {
     pub patterns: Vec<(String, PatternRule)>,
     pub allow: Allow,
     pub costs: BTreeMap<EntityType, Cost>,
+    /// The strictest of the purposes' (`error` over `box` over `review`).
+    pub low_confidence: Option<LowConfidence>,
 }
 
 pub fn merge(names: &[String]) -> Result<Merged, String> {
@@ -150,6 +163,7 @@ pub fn merge(names: &[String]) -> Result<Merged, String> {
         patterns: Vec::new(),
         allow: Allow::default(),
         costs: BTreeMap::new(),
+        low_confidence: None,
     };
     for name in names {
         let p = purpose(name)?;
@@ -182,6 +196,7 @@ pub fn merge(names: &[String]) -> Result<Merged, String> {
                 .and_modify(|old| *old = old.stricter(c))
                 .or_insert(c);
         }
+        m.low_confidence = m.low_confidence.max(p.picture.low_confidence);
     }
     Ok(m)
 }
