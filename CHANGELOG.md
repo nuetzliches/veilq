@@ -26,7 +26,9 @@ Notable changes per release. The format follows
   and `redact` take the same as `--min-confidence`, `/api/redact` as
   `min_confidence`. A threshold above the policy's makes the report ask
   for a review (`threshold raised from 70 % to 85 % for this run`). It
-  saves nothing; a lasting threshold goes through Settings → Rules.
+  saves nothing; a lasting threshold goes through Settings → Rules. `--explain` marks a check's reading (a verify
+  round, a picture read again) as `read again:` (`"verify": true` in
+  JSON), and the slider's preview counts each candidate once.
 - Purposes (ADR-0040, #67): what veilq is used for, as packs built into
   veilq. A policy names them (`purposes = ["legal", "development"]`), a run
   takes `--purpose`; `general` always applies and is today's behaviour.

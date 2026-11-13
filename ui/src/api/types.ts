@@ -227,6 +227,8 @@ export interface Reading {
   text: string;
   /** What stood before the text and was read as its context. */
   context?: string;
+  /** A check's reading: a verify round's new text, or a picture read again after its boxes were filled. */
+  verify?: boolean;
   candidates: Explained[];
 }
 

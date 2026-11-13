@@ -21,7 +21,8 @@ export function change(readings: readonly Reading[], threshold: number): Change 
   const t = round(threshold);
   let added = 0;
   let dropped = 0;
-  for (const reading of readings) {
+  // A check reads what a reading before it read already: counted once.
+  for (const reading of readings.filter((r) => !r.verify)) {
     for (const c of reading.candidates) {
       if (c.verdict === 'kept' && c.confidence < t) dropped++;
       else if (c.verdict === 'below_threshold' && c.confidence >= t) added++;

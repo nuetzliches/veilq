@@ -1060,11 +1060,12 @@ button.icon {
   white-space: nowrap;
 }
 .action select {
-  min-width: 0;
+  min-width: 5em;
   max-width: 15em;
   text-overflow: ellipsis;
 }
-@container (max-width: 560px) {
+/* The labels give way first: the slider's preview needs room while it is dragged. */
+@container (max-width: 640px) {
   .action > span,
   .threshold > span:first-child {
     display: none;
@@ -1074,7 +1075,8 @@ button.icon {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-width: 0;
+  /* Not shrunk: its preview would run under the findings button; the action's select gives way. */
+  flex: none;
   margin-left: var(--space-2);
   font-size: 12.5px;
   color: var(--text-muted);

@@ -36,6 +36,12 @@ describe('change', () => {
     expect(change(readings, 0.95)).toEqual({ added: 0, dropped: 2 });
   });
 
+  it('does not count a check reading again what was read before', () => {
+    // A verify round reads the replaced text, where a candidate below the threshold stands again.
+    const again: Reading = { text: 'synthetic', verify: true, candidates: [candidate(0.6, 'below_threshold')] };
+    expect(change([...readings, again], 0.5)).toEqual({ added: 1, dropped: 0 });
+  });
+
   it('compares as the engine does, not in binary fractions', () => {
     // 0.3 + 0.4 is 0.7000000000000001: a finding at 0.7 stays.
     expect(change([{ text: '', candidates: [candidate(0.7, 'kept')] }], 0.3 + 0.4)).toEqual({

@@ -172,10 +172,17 @@ impl Explain {
         std::mem::take(&mut *self.0.lock().unwrap_or_else(|e| e.into_inner()))
     }
 
-    fn record(&self, text: &str, context: &str, decisions: &[crate::detect::Decision]) {
+    fn record(
+        &self,
+        text: &str,
+        context: &str,
+        decisions: &[crate::detect::Decision],
+        verify: bool,
+    ) {
         let reading = Reading {
             text: text.to_owned(),
             context: context.to_owned(),
+            verify,
             candidates: decisions
                 .iter()
                 .map(|d| Explained {
@@ -208,6 +215,11 @@ pub struct Reading {
     /// name, a picture's neighbouring lines).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub context: String,
+    /// A reading of a check: a verify round's new text, or a picture read
+    /// again after its boxes were filled. What it finds was mostly found by
+    /// a reading before it already.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub verify: bool,
     pub candidates: Vec<Explained>,
 }
 
@@ -526,7 +538,7 @@ impl Engine {
         let mut at = 0;
         for seg in segments {
             let mut found: Vec<Candidate> = self
-                .decided(&seg.text, &seg.context, false, Source::Text)?
+                .decided(&seg.text, &seg.context, false, Source::Text, false)?
                 .into_iter()
                 .filter(|c| seg.raw_of(c.start) < upto)
                 .collect();
@@ -800,13 +812,23 @@ impl Engine {
 
     /// The findings in `text`, decided (for formats beside this module).
     pub(crate) fn findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
-        self.decided(text, context, true, Source::Text)
+        self.decided(text, context, true, Source::Text, false)
     }
 
     /// [`findings`](Self::findings) in text OCR read off a picture: a
     /// failed checksum costs less (ADR-0037).
     pub(crate) fn ocr_findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
-        self.decided(text, context, true, Source::Ocr)
+        self.decided(text, context, true, Source::Ocr, false)
+    }
+
+    /// [`ocr_findings`](Self::ocr_findings) in a picture read again after
+    /// its boxes were filled (ADR-0026): the explanation marks it a check.
+    pub(crate) fn ocr_findings_again(
+        &self,
+        text: &str,
+        context: &str,
+    ) -> Result<Vec<Candidate>, Error> {
+        self.decided(text, context, true, Source::Ocr, true)
     }
 
     /// The detector's findings in `text`, written to the explanation when
@@ -819,6 +841,7 @@ impl Engine {
         context: &str,
         placeholders: bool,
         source: Source,
+        verify: bool,
     ) -> Result<Vec<Candidate>, Error> {
         static PLACEHOLDER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
             regex::Regex::new(r"\\?<[A-Z][A-Z0-9_]*\\?>|\[[A-Z][A-Z0-9_]*:[0-9a-f]{8}\]")
@@ -837,7 +860,7 @@ impl Engine {
             }
         }
         if let Some(explain) = &self.explain {
-            explain.record(text, context, &decisions);
+            explain.record(text, context, &decisions, verify);
         }
         Ok(decisions
             .into_iter()
@@ -942,7 +965,7 @@ impl Engine {
             new_at += p.len();
         }
         let mut out = Vec::new();
-        for f in self.decided(&new, context, false, Source::Text)? {
+        for f in self.decided(&new, context, false, Source::Text, true)? {
             let Some((range, old)) = kept
                 .iter()
                 .find(|(r, _)| r.start <= f.start && f.end <= r.end)
@@ -1498,6 +1521,24 @@ mod tests {
         );
         let readings = explain.take();
         assert!(explain.take().is_empty(), "take empties the list");
+        assert!(readings.iter().all(|r| !r.verify), "a scan reads once");
+
+        // A redaction reads its new text again: that reading is a check,
+        // and it finds the date below the threshold a second time.
+        let redacting = Explain::new();
+        engine()
+            .with_explain(redacting.clone())
+            .redact_str(text, Format::Text)
+            .unwrap();
+        let checks: Vec<Reading> = redacting.take().into_iter().filter(|r| r.verify).collect();
+        assert!(!checks.is_empty());
+        assert!(
+            checks
+                .iter()
+                .flat_map(|r| &r.candidates)
+                .any(|c| c.value == "02.05.2026"),
+            "{checks:?}"
+        );
         let verdict = |value: &str| {
             readings
                 .iter()
