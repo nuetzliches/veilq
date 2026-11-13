@@ -6,6 +6,16 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-13
+
+**Before you update:** a policy that names the purpose `legal` now fills a
+line OCR reads badly (handwriting, small or blurred text) black as
+`UNREAD_TEXT` instead of only asking for a review; set `[picture]
+low_confidence = "review"` to keep the review. A single word under a column
+that names a person (`Nachname`, `Gegner`) and a street under `Straße` are
+now found, in CSV, XLSX, JSON and pictures, and so is a given name alone
+after a greeting (`Hallo Lena,`): expect more findings in lists and messages.
+
 ### Added
 
 - Deny lists (ADR-0044, #49): `[[deny]]` in the policy names values that
@@ -26,9 +36,10 @@ Notable changes per release. The format follows
   and `redact` take the same as `--min-confidence`, `/api/redact` as
   `min_confidence`. A threshold above the policy's makes the report ask
   for a review (`threshold raised from 70 % to 85 % for this run`). It
-  saves nothing; a lasting threshold goes through Settings → Rules. `--explain` marks a check's reading (a verify
-  round, a picture read again) as `read again:` (`"verify": true` in
-  JSON), and the slider's preview counts each candidate once.
+  saves nothing; a lasting threshold goes through Settings → Rules.
+  `--explain` marks a check's reading (a verify round, a picture read
+  again) as `read again:` (`"verify": true` in JSON), and the slider's
+  preview counts each candidate once.
 - Purposes (ADR-0040, #67): what veilq is used for, as packs built into
   veilq. A policy names them (`purposes = ["legal", "development"]`), a run
   takes `--purpose`; `general` always applies and is today's behaviour.
@@ -42,6 +53,9 @@ Notable changes per release. The format follows
 
 ### Fixed
 
+- "Redact folder" in the UI says why it cannot start yet (#68): until a
+  source is chosen, its "Choose …" is the primary button and a hint beside
+  the start button names what is missing, for "From" and for "To".
 - A given name alone after a cue is found without NER (ADR-0043, #50):
   after a greeting when a comma, `!` or the line end follows (`Hallo Ayşe,`),
   after a kinship word (`mein Bruder Ali`) and in a self-introduction
