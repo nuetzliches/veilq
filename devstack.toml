@@ -1,4 +1,4 @@
-# devstack stack file. Reference: https://github.com/nuetzliches/devstack/blob/v0.46.0/docs/stack-file.md
+# devstack stack file. Reference: https://github.com/nuetzliches/devstack/blob/v0.47.0/docs/stack-file.md
 # Validate after every edit: `devstack check --compose`.
 #
 # Two services, both native: the web UI's dev server against the in-browser
@@ -16,7 +16,7 @@ version = 1
 [stack]
 name     = "veilq"
 requires = "0.44.0"   # link = { from_log }
-reviewed = "0.46.0"   # the devstack this file was last brought up to date with
+reviewed = "0.47.0"   # the devstack this file was last brought up to date with
 
 # The UI against src/api/mock.ts: for working on the UI, no Rust build.
 [services.ui]
