@@ -61,6 +61,10 @@ pub enum Error {
     #[error("reading or writing: {0}")]
     Stream(#[source] std::io::Error),
 
+    /// A threshold for one run outside its range (ADR-0046).
+    #[error("the threshold for this run must be between 0 and 0.95, got {0}")]
+    MinConfidence(f32),
+
     #[error("action `pseudonymize` needs a key")]
     KeyMissing,
 

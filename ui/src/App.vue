@@ -16,6 +16,7 @@ import { copyablePicture, copyIsOurs, pngBlob } from '@/lib/clipboard';
 import { locale, plural, t } from '@/lib/i18n';
 import { actionLabel, missingModels } from '@/lib/labels';
 import { pastedName } from '@/lib/paste';
+import { change, percent } from '@/lib/threshold';
 import {
   clampZoom,
   dragPan,
@@ -65,6 +66,15 @@ const action = ref('');
 const preview = ref<{ pages: string[]; mediaType: string; pageCount?: number } | null>(null);
 /** The last run's source, run again when the action changes or a model arrives. */
 const lastRun = ref<{ source: Source; name: string | null } | null>(null);
+/**
+ * The threshold of this source's runs (ADR-0046): `null` for the policy's. It saves nothing, and
+ * another source starts at the policy's again.
+ */
+const threshold = ref<number | null>(null);
+/** The slider's value while it is dragged; `null` when it rests. */
+const dragged = ref<number | null>(null);
+/** The findings panel shows what veilq read and why: asked for with its switch (ADR-0034). */
+const explained = ref(false);
 
 /** What is open over the surface. */
 const settings = ref(false);
@@ -75,6 +85,13 @@ const menu = ref(false);
 const panel = ref(false);
 
 const findings = computed(() => result.value?.report.findings ?? []);
+/** Where the threshold slider stands: dragged, set for this run, or the policy's default. */
+const sliderValue = computed(() => dragged.value ?? threshold.value ?? info.value?.min_confidence ?? 0.7);
+/** While the slider is dragged: what its value would change against the last run, from its explanation. */
+const thresholdChange = computed(() => {
+  const readings = result.value?.explain;
+  return dragged.value === null || !readings ? null : change(readings, dragged.value);
+});
 /** Per finding, whether the panes can show it. */
 const shown = computed(() => shownFindings(result.value));
 /** An image the browser shows: set side by side. */
@@ -256,12 +273,23 @@ async function run(source: Source, name: string | null, unverified = false, expl
   result.value = null;
   hovered.value = null;
   selected.value = null;
-  // Another source starts at its own size; the same one again keeps the zoom.
-  if (lastRun.value?.source !== source) zoom.value = 'fit';
+  // Another source starts at its own size and at the policy's threshold; the same one again keeps both.
+  if (lastRun.value?.source !== source) {
+    zoom.value = 'fit';
+    threshold.value = null;
+    explained.value = false;
+  }
+  if (explain) explained.value = true;
   sourceName.value = name;
   lastRun.value = { source, name };
   try {
-    result.value = await api.redact(source, action.value || undefined, unverified, explain);
+    // The explanation comes with every run: the threshold slider counts what it would change from it (ADR-0046).
+    result.value = await api.redact(source, {
+      action: action.value || undefined,
+      unverified,
+      explain: true,
+      minConfidence: threshold.value ?? undefined,
+    });
   } catch (e) {
     // Fail closed: no output at all when veilq could not redact.
     error.value = e instanceof Error ? e.message : String(e);
@@ -276,9 +304,25 @@ function runUnverified() {
   if (lastRun.value) void run(lastRun.value.source, lastRun.value.name, true);
 }
 
-/** The last source again, with what veilq read and why it decided (ADR-0034). */
+/** What veilq read and why it decided (ADR-0034): the last run's, else the last source again. */
 function runExplained() {
-  if (lastRun.value && !busy.value) void run(lastRun.value.source, lastRun.value.name, false, true);
+  if (result.value?.explain) explained.value = true;
+  else if (lastRun.value && !busy.value) void run(lastRun.value.source, lastRun.value.name, false, true);
+}
+
+/** The slider moves: say what it would change, without a run (OCR takes seconds). */
+function onThresholdInput(event: Event) {
+  dragged.value = Number((event.target as HTMLInputElement).value);
+}
+
+/** The slider is let go: the last source again at its threshold; the policy's default is the policy as it is. */
+function onThresholdChange(event: Event) {
+  const value = Number((event.target as HTMLInputElement).value);
+  dragged.value = null;
+  const next = info.value && percent(value) === percent(info.value.min_confidence) ? null : value;
+  if (next === threshold.value) return;
+  threshold.value = next;
+  runAgain();
 }
 
 /** The last source again: the action changed, or a model it needed arrived. */
@@ -698,6 +742,23 @@ onBeforeUnmount(() => {
               <option v-for="a in info.actions" :key="a" :value="a">{{ actionLabel(a) }}</option>
             </select>
           </label>
+          <label v-if="info && lastRun && !editing" class="threshold" :title="t('output.thresholdTitle')">
+            <span>{{ t('output.threshold') }}</span>
+            <input
+              type="range"
+              min="0"
+              :max="info.max_min_confidence"
+              step="0.01"
+              :value="sliderValue"
+              :disabled="busy"
+              @input="onThresholdInput"
+              @change="onThresholdChange"
+            />
+            <output :class="{ raised: percent(sliderValue) > percent(info.min_confidence) }">{{ percent(sliderValue) }} %</output>
+            <span v-if="thresholdChange" class="change">
+              {{ t('output.thresholdChange', { added: thresholdChange.added, dropped: thresholdChange.dropped }) }}
+            </span>
+          </label>
           <span class="spacer" />
           <button v-if="outputPictures" class="small" :title="t('pane.zoomTitle')" @click="openViewer('output')">
             {{ t('pane.zoom') }}
@@ -810,7 +871,7 @@ onBeforeUnmount(() => {
       :hovered="hovered"
       :selected="selected"
       :shown="shown"
-      :readings="result.explain ?? null"
+      :readings="explained ? (result.explain ?? null) : null"
       :busy="busy"
       @hover="hovered = $event"
       @select="select"
@@ -1004,9 +1065,36 @@ button.icon {
   text-overflow: ellipsis;
 }
 @container (max-width: 560px) {
-  .action > span {
+  .action > span,
+  .threshold > span:first-child {
     display: none;
   }
+}
+.threshold {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-left: var(--space-2);
+  font-size: 12.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.threshold input {
+  width: 7em;
+  min-width: 3em;
+}
+.threshold output {
+  min-width: 3.2em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.threshold output.raised {
+  color: var(--warn-text);
+  font-weight: 600;
+}
+.threshold .change {
+  font-variant-numeric: tabular-nums;
 }
 .action select {
   border: 1px solid var(--border-strong);

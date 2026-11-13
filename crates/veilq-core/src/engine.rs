@@ -228,6 +228,10 @@ pub struct Explained {
     pub raised: bool,
 }
 
+/// The highest threshold a run may set (ADR-0046): a finding at 1.0 (a
+/// valid checksum, a policy's list) never drops out.
+pub const MAX_RUN_CONFIDENCE: f32 = 0.95;
+
 /// The pipeline of one run: detector, policy, key and faker.
 #[derive(Clone)]
 pub struct Engine {
@@ -673,6 +677,23 @@ impl Engine {
         Ok(engine)
     }
 
+    /// This engine holding every type to `min_confidence` for one run, in
+    /// place of the policy's default and every type's own threshold, as
+    /// `--min-confidence` does (ADR-0046); `None`: the policy's. From 0 to
+    /// [`MAX_RUN_CONFIDENCE`], so that a finding at 1.0 (a valid checksum, a
+    /// policy's list) always stays. Above a threshold of the policy, the
+    /// report asks for a review and says by how much.
+    pub fn with_min_confidence(&self, min_confidence: Option<f32>) -> Result<Self, Error> {
+        if let Some(c) = min_confidence
+            && !(0.0..=MAX_RUN_CONFIDENCE).contains(&c)
+        {
+            return Err(Error::MinConfidence(c));
+        }
+        let mut engine = self.clone();
+        engine.detector.set_min_confidence(min_confidence);
+        Ok(engine)
+    }
+
     /// This engine writing a picture whose verify rounds did not settle,
     /// with the last round's boxes filled too and a review asked for
     /// (`--unverified`, ADR-0026), instead of failing.
@@ -767,6 +788,9 @@ impl Engine {
                 "NER did not run: names without a word that marks them (`Frau`, `Hallo`, a column `name`) may be left; `veilq models fetch ner`".into(),
             );
         }
+        // A threshold raised for this run lets through what the policy
+        // would have found (ADR-0046).
+        reasons.extend(self.detector.raised_thresholds());
         let mut report = Report::new(findings);
         report.review_required = !reasons.is_empty();
         report.review_reasons = reasons;
@@ -1490,6 +1514,94 @@ mod tests {
             .filter(|c| c.verdict == Verdict::Kept)
             .count();
         assert_eq!(kept, plain.report.findings.len());
+    }
+
+    #[test]
+    fn a_threshold_for_one_run_replaces_the_policys_and_a_raised_one_asks_for_a_review() {
+        let text = "Sehr geehrte Frau Mira Albers, geb. 14.03.1987.\n\
+                    Wir bestätigen Ihnen hiermit gerne den Termin am 02.05.2026.\n\
+                    IBAN DE89 3704 0044 0532 0130 00\n";
+        let raised = |r: &Report| {
+            r.review_reasons
+                .iter()
+                .filter(|s| s.contains("raised"))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let plain = engine().scan_str(text, Format::Text).unwrap().report;
+        assert!(raised(&plain).is_empty(), "{:?}", plain.review_reasons);
+        // The policy's own threshold, given for the run: nothing changes.
+        let same = engine()
+            .with_min_confidence(Some(0.7))
+            .unwrap()
+            .scan_str(text, Format::Text)
+            .unwrap()
+            .report;
+        assert_eq!(same, plain);
+        // Lower: more is found, and no review is asked for because of it.
+        let lower = engine()
+            .with_min_confidence(Some(0.1))
+            .unwrap()
+            .scan_str(text, Format::Text)
+            .unwrap()
+            .report;
+        assert!(lower.findings.len() > plain.findings.len());
+        assert!(raised(&lower).is_empty(), "{:?}", lower.review_reasons);
+        // Higher: less, the review says by how much, and a finding at 1.0
+        // (a valid IBAN) stays at the top of the range.
+        let higher = engine()
+            .with_min_confidence(Some(MAX_RUN_CONFIDENCE))
+            .unwrap()
+            .scan_str(text, Format::Text)
+            .unwrap()
+            .report;
+        assert!(higher.findings.len() < plain.findings.len());
+        assert!(higher.findings.iter().all(|f| f.confidence >= 0.95));
+        assert!(
+            higher
+                .findings
+                .iter()
+                .any(|f| f.entity.as_str() == "IBAN_CODE"),
+            "{:?}",
+            higher.findings
+        );
+        assert!(higher.review_required);
+        assert_eq!(
+            raised(&higher),
+            ["threshold raised from 70 % to 95 % for this run"]
+        );
+        for bad in [0.96, -0.1, f32::NAN] {
+            assert!(matches!(
+                engine().with_min_confidence(Some(bad)),
+                Err(Error::MinConfidence(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn a_run_threshold_below_the_default_still_raises_a_lower_type() {
+        // `legal` holds names and addresses to 0.6 and court file numbers to
+        // 0.5: 0.65 lets through what it would have found.
+        let policy = Policy::parse("version = 1\npurposes = [\"legal\"]\n").unwrap();
+        let e = Engine::new(&policy, None, b"s", None)
+            .unwrap()
+            .with_min_confidence(Some(0.65))
+            .unwrap();
+        let report = e.scan_str("Hallo", Format::Text).unwrap().report;
+        let raised: Vec<_> = report
+            .review_reasons
+            .iter()
+            .filter(|s| s.contains("raised"))
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            raised,
+            [
+                "threshold for ADDRESS raised from 60 % to 65 % for this run",
+                "threshold for COURT_FILE_NUMBER raised from 50 % to 65 % for this run",
+                "threshold for PERSON raised from 60 % to 65 % for this run",
+            ]
+        );
     }
 
     #[test]

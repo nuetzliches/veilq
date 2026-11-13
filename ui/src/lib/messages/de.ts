@@ -36,6 +36,10 @@ export const de: Record<MessageKey, string> = {
   'output.title': 'Geschwärzt',
   'output.replaceWith': 'Ersetzen durch',
   'output.asRules': 'wie in den Regeln ({action})',
+  'output.threshold': 'Schwelle',
+  'output.thresholdTitle':
+    'Wie sicher veilq sein muss, um etwas zu ersetzen, nur für diesen Lauf: niedriger ersetzt mehr, höher weniger. Gespeichert wird nichts; eine dauerhafte Schwelle steht unter Einstellungen → Regeln.',
+  'output.thresholdChange': '+{added} / −{dropped} Funde',
   'output.empty': 'Hier erscheint die geschwärzte Fassung.',
   'output.redacting': 'Wird geschwärzt …',
   'output.findingsOne': '1 Fund',

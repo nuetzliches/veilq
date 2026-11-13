@@ -158,6 +158,9 @@ pub struct Detector {
     #[cfg(feature = "ner")]
     ner: Option<std::sync::Arc<crate::ner::Ner>>,
     policy: Policy,
+    /// One threshold for this run, in place of the policy's default and
+    /// every type's own (ADR-0046).
+    min_confidence: Option<f32>,
 }
 
 impl Detector {
@@ -211,6 +214,7 @@ impl Detector {
             #[cfg(feature = "ner")]
             ner: None,
             policy: policy.clone(),
+            min_confidence: None,
         })
     }
 
@@ -446,12 +450,60 @@ impl Detector {
         }
     }
 
+    /// The confidence a finding of `entity` needs: the run's threshold when
+    /// one is set, else the policy's.
     pub fn threshold(&self, entity: &EntityType) -> f32 {
+        self.min_confidence
+            .unwrap_or_else(|| self.policy_threshold(entity))
+    }
+
+    /// The policy's threshold for `entity`: its own, else the default.
+    pub fn policy_threshold(&self, entity: &EntityType) -> f32 {
         self.policy
             .entities
             .get(entity)
             .and_then(|r| r.min_confidence)
             .unwrap_or(self.policy.defaults.min_confidence)
+    }
+
+    /// Holds every type to `min_confidence` for this run, in place of the
+    /// policy's thresholds (`None`: the policy's). The caller checks the
+    /// range ([`crate::engine::MAX_RUN_CONFIDENCE`]).
+    pub fn set_min_confidence(&mut self, min_confidence: Option<f32>) {
+        self.min_confidence = min_confidence;
+    }
+
+    /// Where the run's threshold lets through what the policy would have
+    /// found, one sentence each (ADR-0046): the default, then each type
+    /// whose own threshold is lower than the run's and not the default.
+    pub fn raised_thresholds(&self) -> Vec<String> {
+        let Some(run) = self.min_confidence else {
+            return Vec::new();
+        };
+        let run = round(run);
+        let default = round(self.policy.defaults.min_confidence);
+        let mut out = Vec::new();
+        if run > default {
+            out.push(format!(
+                "threshold raised from {} to {} for this run",
+                percent(default),
+                percent(run)
+            ));
+        }
+        for (entity, rule) in &self.policy.entities {
+            if let Some(own) = rule.min_confidence.map(round)
+                && own < run
+                && own != default
+            {
+                out.push(format!(
+                    "threshold for {} raised from {} to {} for this run",
+                    entity.as_str(),
+                    percent(own),
+                    percent(run)
+                ));
+            }
+        }
+        out
     }
 
     fn allowed(&self, value: &str) -> bool {
@@ -814,6 +866,16 @@ fn deny_rule(d: &Deny) -> Result<Option<Rule>, String> {
 /// Confidences in thousandths: `1.0 - 0.3` is `0.7`, not `0.69999998`.
 fn round(x: f32) -> f32 {
     (x * 1000.0).round() / 1000.0
+}
+
+/// A confidence as a percentage, as a person reads it: `70 %`, `72.5 %`.
+fn percent(x: f32) -> String {
+    let p = (x * 1000.0).round() / 10.0;
+    if p.fract() == 0.0 {
+        format!("{p:.0} %")
+    } else {
+        format!("{p:.1} %")
+    }
 }
 
 /// Whether one of `c.words` is in the last `c.window` characters before the

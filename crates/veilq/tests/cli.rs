@@ -126,6 +126,48 @@ fn no_mapping_without_recipients_and_no_output_either() {
 }
 
 #[test]
+fn a_raised_threshold_for_one_run_asks_for_a_review_and_one_out_of_range_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = dir.path();
+    std::fs::write(d.join("veilq.toml"), "version = 1\n").unwrap();
+    std::fs::write(d.join("in.txt"), "Tel. 0421 5550173\n").unwrap();
+    let out = veilq(d)
+        .args(["scan", "in.txt", "--json", "--min-confidence", "0.9"])
+        .output()
+        .unwrap();
+    assert_ne!(
+        out.status.code(),
+        Some(2),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["review_required"], true);
+    assert!(
+        report["review_reasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r == "threshold raised from 70 % to 90 % for this run"),
+        "{report}"
+    );
+    let out = veilq(d)
+        .args([
+            "redact",
+            "in.txt",
+            "-o",
+            "out.txt",
+            "--min-confidence",
+            "0.96",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("0.95"));
+    assert!(!d.join("out.txt").exists());
+}
+
+#[test]
 fn the_mcp_server_answers_over_stdio() {
     let dir = tempfile::tempdir().unwrap();
     let d = dir.path();

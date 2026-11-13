@@ -85,3 +85,4 @@ keep it to about a page.
 | [0043](0043-a-given-name-alone-after-a-cue-is-a-name.md) | A given name alone after a cue is a name | Accepted |
 | [0044](0044-a-deny-list-names-the-people-a-text-can-name.md) | A deny list names the people a text can name | Accepted |
 | [0045](0045-text-read-badly-is-reviewed-filled-or-stops-the-run.md) | Text read badly is reviewed, filled or stops the run | Accepted |
+| [0046](0046-one-threshold-for-one-run-from-a-slider-or-a-flag.md) | One threshold for one run, from a slider or a flag | Accepted |

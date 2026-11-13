@@ -6,6 +6,7 @@ import {
   type Models,
   type Picture,
   type Redaction,
+  type RedactOptions,
   type SetupStatus,
   type Source,
   type UpdateCheck,
@@ -51,10 +52,16 @@ export function httpApi(token: string): Api {
     info: () => call<Info>('/info'),
     files: (dir) => call<Listing>(`/files?dir=${encodeURIComponent(dir)}`),
     picture: (path) => call<Picture>(`/picture?path=${encodeURIComponent(path)}`),
-    redact: (source: Source, action?: string, unverified?: boolean, explain?: boolean) =>
+    redact: (source: Source, options: RedactOptions = {}) =>
       call<Redaction>('/redact', {
         method: 'POST',
-        body: JSON.stringify({ source, action, unverified: unverified || undefined, explain: explain || undefined }),
+        body: JSON.stringify({
+          source,
+          action: options.action,
+          unverified: options.unverified || undefined,
+          explain: options.explain || undefined,
+          min_confidence: options.minConfidence,
+        }),
       }),
     setup: () => call<SetupStatus>('/setup'),
     install: (request) => call<SetupStatus>('/setup', { method: 'POST', body: JSON.stringify(request) }),
