@@ -50,10 +50,16 @@ pub fn write(
 }
 
 fn text(out: &mut dyn Write, reading: &Reading) -> std::io::Result<()> {
+    // A check's reading (a verify round, a picture read again) says so.
+    let label = if reading.verify {
+        "read again:"
+    } else {
+        "read:"
+    };
     let mut lines = reading.text.lines();
-    writeln!(out, "read: {}", lines.next().unwrap_or(""))?;
+    writeln!(out, "{label} {}", lines.next().unwrap_or(""))?;
     for line in lines {
-        writeln!(out, "      {line}")?;
+        writeln!(out, "{:width$} {line}", "", width = label.len())?;
     }
     if !reading.context.is_empty() {
         writeln!(out, "  context: {}", reading.context.replace('\n', " | "))?;

@@ -516,14 +516,22 @@ fn candidates(
     lines: &[Line],
     w: u32,
     h: u32,
+    again: bool,
 ) -> Result<Vec<(crate::detect::Candidate, Vec<Rect>)>, Error> {
+    let read = |text: &str, context: &str| {
+        if again {
+            engine.ocr_findings_again(text, context)
+        } else {
+            engine.ocr_findings(text, context)
+        }
+    };
     let p = page(lines);
     let mut out = Vec::new();
     // The names the page holds: a line read alone does not know them, and
     // `Brandts Kapuze` there is cut to `Brandts` by them.
     let mut names: Vec<String> = Vec::new();
     for text in std::iter::once(p.text.clone()).chain(unmarked(&p.text)) {
-        for c in engine.ocr_findings(&text, "")? {
+        for c in read(&text, "")? {
             if c.entity.as_str() == "PERSON" {
                 names.extend(crate::detect::name_words(&text[c.start..c.end]).map(str::to_owned));
             }
@@ -539,7 +547,7 @@ fn candidates(
         };
         let context = neighbours(lines, &heads, i);
         for text in std::iter::once(line.text.clone()).chain(unmarked(&line.text)) {
-            for mut c in engine.ocr_findings(&text, &context)? {
+            for mut c in read(&text, &context)? {
                 if c.entity.as_str() == "PERSON" {
                     let span = &text[c.start..c.end];
                     let own: Vec<&str> = crate::detect::name_words(span).collect();
@@ -584,7 +592,7 @@ fn settle(
         }) {
             return Ok(None);
         }
-        let candidates = candidates(engine, &lines, w, h)?;
+        let candidates = candidates(engine, &lines, w, h, round > 1)?;
         let mut new: Vec<Rect> = Vec::new();
         for (c, rects) in candidates {
             // Found twice (page and line), or inside a box already filled.
@@ -1154,7 +1162,7 @@ mod tests {
         let engine = Engine::new(&crate::Policy::default(), None, b"test", None).unwrap();
         let found = |text: &str| {
             let lines = [line(text, 0, 0)];
-            candidates(&engine, &lines, 2000, 100)
+            candidates(&engine, &lines, 2000, 100, false)
                 .unwrap()
                 .into_iter()
                 .map(|(c, _)| {
@@ -1228,7 +1236,7 @@ mod tests {
                 40,
             ),
         ];
-        let found: Vec<Rect> = candidates(&engine, &lines, 2000, 100)
+        let found: Vec<Rect> = candidates(&engine, &lines, 2000, 100, false)
             .unwrap()
             .into_iter()
             .filter(|(c, _)| c.entity.as_str() == "PERSON")
