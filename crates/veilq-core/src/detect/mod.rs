@@ -242,11 +242,24 @@ impl Detector {
                 if m.is_empty() {
                     continue;
                 }
+                // A rule at 0 finds with its context only: below the
+                // threshold, a match would still claim its span. It reads
+                // the context's last line, a column's name: a picture's
+                // line puts the head of its table's column there, after
+                // the lines beside it (`visual::neighbours`).
+                let (context, before) = if rule.confidence <= 0.0 {
+                    (context.rsplit('\n').next().unwrap_or(""), "")
+                } else {
+                    (context, &text[..m.start()])
+                };
                 let mut confidence = rule.confidence;
                 if let Some(c) = &rule.context
-                    && has_context(c, context, &text[..m.start()])
+                    && has_context(c, context, before)
                 {
                     confidence += c.boost;
+                }
+                if confidence <= 0.0 {
+                    continue;
                 }
                 if let Some(v) = &rule.validate
                     && !validate::check(v, m.as_str())
@@ -325,9 +338,21 @@ impl Detector {
                 .then(b.confidence.total_cmp(&a.confidence))
                 .then(a.start.cmp(&b.start))
         });
+        // A candidate below its threshold claims its span from other types
+        // (an IBAN with a wrong checksum keeps a phone number out of its
+        // digits), not from a finding of its own type: `Herr Jonas Brandt`
+        // as a field is below it, `Jonas Brandt` after `Herr` is not.
+        let meets = |c: &Candidate| c.confidence >= round(self.threshold(&c.entity));
         let mut chosen: Vec<Candidate> = Vec::new();
         for c in kept {
-            if chosen.iter().all(|k| c.end <= k.start || c.start >= k.end) {
+            let overlaps = |k: &Candidate| c.start < k.end && k.start < c.end;
+            let yields = |k: &Candidate| k.entity == c.entity && !meets(k) && meets(&c);
+            if chosen.iter().all(|k| !overlaps(k) || yields(k)) {
+                let (gone, stay): (Vec<_>, Vec<_>) = chosen.into_iter().partition(|k| overlaps(k));
+                chosen = stay;
+                for k in gone {
+                    out.push(self.decision(k, Verdict::Overlap, false));
+                }
                 chosen.push(c);
             } else {
                 out.push(self.decision(c, Verdict::Overlap, false));
@@ -505,6 +530,25 @@ pub(crate) const NOT_NAMES: &[&str] = &[
     "mandantin",
     "patient",
     "patientin",
+    // The heads of a list's name columns: a head is no name in its own
+    // column.
+    "name",
+    "vorname",
+    "nachname",
+    "familienname",
+    "gegner",
+    "gegnerin",
+    "schuldner",
+    "schuldnerin",
+    "gläubigerin",
+    "kläger",
+    "klägerin",
+    "beklagte",
+    "beklagter",
+    "beteiligte",
+    "beteiligter",
+    "inhaber",
+    "inhaberin",
     "the",
     "mr",
     "mrs",
@@ -1083,5 +1127,105 @@ values = ["Mira Albers"]
         assert_eq!(head("Brandts"), None);
         assert_eq!(head("Vogts Kapuze"), None);
         assert_eq!(head("Brandts  4,6"), None);
+    }
+
+    #[test]
+    fn a_name_below_its_threshold_does_not_hide_one_above() {
+        // `name-field` takes the whole value at 0.35; the salutation's name
+        // inside it is a finding.
+        assert!(
+            found("Herr Jonas Brandt", "PERSON", "Jonas Brandt"),
+            "{:?}",
+            findings("Herr Jonas Brandt", "")
+        );
+        // Another type still claims its span: a phone number in an IBAN
+        // with a wrong checksum stays part of it.
+        let text = "DE89 3704 0044 0532 0130 01";
+        assert!(
+            findings(text, "").iter().all(|(e, _)| e != "PHONE_NUMBER"),
+            "{:?}",
+            findings(text, "")
+        );
+    }
+
+    #[test]
+    fn a_column_of_a_list_names_a_person_or_a_street() {
+        let has = |text: &str, column: &str, entity: &str| {
+            findings(text, column)
+                .iter()
+                .any(|(e, v)| e == entity && v == text)
+        };
+        // One word under a column that names a person.
+        for column in ["Gegner", "Nachname", "Schuldnerin", "Prozessgegner", "Name"] {
+            assert!(has("Brauner", column, "PERSON"), "{column}");
+        }
+        // Elsewhere one word is no name, and no candidate either.
+        for column in ["", "Status", "Firmenname", "Ort"] {
+            assert!(findings("Brauner", column).is_empty(), "{column}");
+        }
+        // A column's head is no name in its own column.
+        assert!(findings("Gegner", "Mandant").is_empty());
+
+        // A whole value under a column that names a street, cut or not.
+        for text in [
+            "Eichbreite",
+            "Hachenburg ...",
+            "Am Güterba …",
+            "Lindenweg 12",
+        ] {
+            assert!(has(text, "Straße", "ADDRESS"), "{text}");
+        }
+        assert!(findings("Eichbreite", "Ort").is_empty());
+        assert!(findings("Eichbreite", "E-Mail").is_empty());
+    }
+
+    #[test]
+    fn an_address_in_the_cells_of_a_row_is_one() {
+        // A picture's row joins its cells with two spaces.
+        for (text, value) in [
+            (
+                "Kerstin Volkmann  Brauner  Eichbreite  96  31785  Hameln",
+                "Eichbreite  96  31785  Hameln",
+            ),
+            (
+                "Wessel  Hachenburg   ...  5  65936  Frankfurt",
+                "Hachenburg   ...  5  65936  Frankfurt",
+            ),
+            (
+                "FE warten  Siedlungsstr  ( ..  3  73312  Geislingen",
+                "Siedlungsstr  ( ..  3  73312  Geislingen",
+            ),
+            (
+                "Ole Hansen  Trebuser Str.  3d  15517  Fürstenwal ..",
+                "Trebuser Str.  3d  15517  Fürstenwal ..",
+            ),
+            (
+                "Pia Sommer  Im Grün  5  77855  Achern",
+                "Im Grün  5  77855  Achern",
+            ),
+        ] {
+            assert!(
+                found(text, "ADDRESS", value),
+                "{text}: {:?}",
+                findings(text, "")
+            );
+        }
+        // The street word as a word of its own, without a comma.
+        for (text, value) in [
+            (
+                "Wir wohnen Trebuser Str. 3d 15517 Fürstenwalde.",
+                "Trebuser Str. 3d 15517 Fürstenwalde",
+            ),
+            (
+                "Berliner Straße 12 10115 Berlin",
+                "Berliner Straße 12 10115 Berlin",
+            ),
+        ] {
+            assert!(
+                found(text, "ADDRESS", value),
+                "{text}: {:?}",
+                findings(text, "")
+            );
+        }
     }
 }

@@ -179,10 +179,41 @@ fn below(above: &Line, l: &Line) -> bool {
     // OCR's boxes of lines set closely overlap by a few pixels.
     let close = b.y + h / 4 >= a.bottom() && b.y <= a.bottom() + h / 2;
     let size = 3 * a.h.max(b.h) <= 4 * h;
-    let aligned = a.x.abs_diff(b.x) <= h
+    close && size && aligned(a, b)
+}
+
+/// Whether two boxes stand in one column: aligned on the left, the middle
+/// or the right, within a line's height.
+fn aligned(a: &Rect, b: &Rect) -> bool {
+    let h = a.h.min(b.h);
+    a.x.abs_diff(b.x) <= h
         || (a.x + a.right()).abs_diff(b.x + b.right()) <= 2 * h
-        || a.right().abs_diff(b.right()) <= h;
-    close && size && aligned
+        || a.right().abs_diff(b.right()) <= h
+}
+
+/// The lines in the column of `lines[i]`: above it (`up`) or below, each
+/// overlapping it and aligned with it.
+fn column(lines: &[Line], i: usize, up: bool) -> impl Iterator<Item = usize> + '_ {
+    let l = &lines[i].rect;
+    lines.iter().enumerate().filter_map(move |(j, o)| {
+        let o = &o.rect;
+        let side = if up {
+            o.bottom() <= l.y + 2
+        } else {
+            o.y + 2 >= l.bottom()
+        };
+        (j != i && side && o.x < l.right() && l.x < o.right() && aligned(l, o)).then_some(j)
+    })
+}
+
+/// Per line, whether it heads a column: nothing above it in its column,
+/// something below.
+fn heads(lines: &[Line]) -> Vec<bool> {
+    (0..lines.len())
+        .map(|i| {
+            column(lines, i, true).next().is_none() && column(lines, i, false).next().is_some()
+        })
+        .collect()
 }
 
 /// The cells of `stacks`: a stack cut where the lines beside it show the
@@ -234,16 +265,34 @@ fn overlap_y(a: &Rect, b: &Rect) -> f32 {
     bottom.saturating_sub(top) as f32 / a.h.min(b.h).max(1) as f32
 }
 
+/// Whether `lines[i]` is in a table's row of heads: on top of its column,
+/// in a row of three or more lines that head a column. Not `heads[i]`: the
+/// head of an empty column has nothing below it. A form's label and value
+/// head two columns only.
+fn in_head_row(lines: &[Line], heads: &[bool], i: usize) -> bool {
+    column(lines, i, true).next().is_none()
+        && (0..lines.len())
+            .filter(|&j| heads[j] && overlap_y(&lines[j].rect, &lines[i].rect) >= 0.4)
+            .count()
+            >= 3
+}
+
 /// What stands next to a line: the nearest line on its left in the same
-/// row, and the nearest line above it that overlaps it horizontally. A form
-/// puts the label there (`Geburtsdatum  14.03.1987`); in a two-column
-/// layout the rows of the page do not always pair them.
-fn neighbours(lines: &[Line], i: usize) -> String {
+/// row and the nearest line above it that overlaps it horizontally; after
+/// them, on a line of its own, the head of its table's column. A form puts
+/// the label there (`Geburtsdatum  14.03.1987`); in a two-column layout the
+/// rows of the page do not always pair them. A table puts it on top of the
+/// column (`Gegner` above a row of surnames), and the line above is the row
+/// before; a rule at 0 reads the head only (`detect::Detector::candidates`).
+/// A table's head has no label: its left neighbour is another head.
+fn neighbours(lines: &[Line], heads: &[bool], i: usize) -> String {
     let l = &lines[i].rect;
+    let is_head = in_head_row(lines, heads, i);
     let left = lines
         .iter()
         .enumerate()
         .filter(|(j, o)| *j != i && o.rect.right() <= l.x + 2 && overlap_y(&o.rect, l) >= 0.4)
+        .filter(|_| !is_head)
         .min_by_key(|(_, o)| l.x.saturating_sub(o.rect.right()));
     let above = lines
         .iter()
@@ -252,12 +301,22 @@ fn neighbours(lines: &[Line], i: usize) -> String {
             *j != i && o.rect.bottom() <= l.y + 2 && o.rect.x < l.right() && l.x < o.rect.right()
         })
         .min_by_key(|(_, o)| l.y.saturating_sub(o.rect.bottom()));
-    [above, left]
+    let head = column(lines, i, true)
+        .min_by_key(|&j| lines[j].rect.y)
+        .filter(|&j| in_head_row(lines, heads, j))
+        .map_or("", |j| lines[j].text.as_str());
+    let near = [above, left]
         .into_iter()
         .flatten()
         .map(|(_, o)| o.text.as_str())
         .collect::<Vec<_>>()
-        .join(" ")
+        .join(" ");
+    // The head's line stays when it is empty: the last line is the head.
+    if near.is_empty() && head.is_empty() {
+        String::new()
+    } else {
+        format!("{near}\n{head}")
+    }
 }
 
 /// The boxes of the characters in `start..end`, one per line, padded.
@@ -466,12 +525,13 @@ fn candidates(
             out.push((c, rects));
         }
     }
+    let heads = heads(lines);
     for (i, line) in lines.iter().enumerate() {
         let one = Page {
             text: line.text.clone(),
             chars: line.chars.clone(),
         };
-        let context = neighbours(lines, i);
+        let context = neighbours(lines, &heads, i);
         for text in std::iter::once(line.text.clone()).chain(unmarked(&line.text)) {
             for mut c in engine.ocr_findings(&text, &context)? {
                 if c.entity.as_str() == "PERSON" {
@@ -968,6 +1028,76 @@ mod tests {
         // Lines further apart than half a line stay rows of their own.
         let lines = [line("Mira Albers", 0, 0), line("Lindenweg 12", 0, 40)];
         assert_eq!(page(&lines).text, "Mira Albers\nLindenweg 12");
+    }
+
+    #[test]
+    fn a_cell_of_a_table_reads_the_head_of_its_column() {
+        // A list as OCR reads it: a row of heads, then rows whose surname
+        // and street stand in cells of their own; one row has no surname.
+        let mut lines = vec![
+            line("Mandant", 0, 0),
+            line("Gegner", 200, 0),
+            line("Status", 340, 0),
+            line("Straße", 560, 0),
+            line("PLZ", 700, 0),
+        ];
+        for (k, (name, gegner, street, plz)) in [
+            ("Kerstin Volkmann", "Brauner", "Eichbreite", "31785"),
+            ("Jana Pohl", "", "Am Güterba ...", "56564"),
+            ("Arne Kowalski", "Dietz", "Hachenburg ...", "65936"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let y = 30 * (k as u32 + 1);
+            lines.extend([line(name, 0, y), line(street, 560, y), line(plz, 700, y)]);
+            if !gegner.is_empty() {
+                lines.push(line(gegner, 200, y));
+            }
+        }
+        let at = |text: &str| lines.iter().rposition(|l| l.text == text).unwrap();
+        let heads = heads(&lines);
+        // The head comes last, on a line of its own: the row before is
+        // above it.
+        assert!(neighbours(&lines, &heads, at("Dietz")).ends_with("\nGegner"));
+        // A head's left neighbour in the row of heads is no label.
+        assert!(!neighbours(&lines, &heads, at("Status")).contains("Gegner"));
+
+        let engine = Engine::new(&crate::Policy::default(), None, b"test", None).unwrap();
+        let found = |text: &str| {
+            let i = at(text);
+            engine
+                .ocr_findings(text, &neighbours(&lines, &heads, i))
+                .unwrap()
+                .into_iter()
+                .map(|c| c.entity.as_str().to_owned())
+                .collect::<Vec<_>>()
+        };
+        for text in ["Brauner", "Dietz"] {
+            assert_eq!(found(text), ["PERSON"], "{text}");
+        }
+        for text in ["Eichbreite", "Am Güterba ...", "Hachenburg ..."] {
+            assert_eq!(found(text), ["ADDRESS"], "{text}");
+        }
+        for text in ["Gegner", "Status", "Straße", "31785"] {
+            assert!(found(text).is_empty(), "{text}: {:?}", found(text));
+        }
+
+        // A form's labels stand in a column too, but head no table: the
+        // label above is no column's name.
+        let lines = [
+            line("Antrag auf Erstattung", 0, 0),
+            line("Anschrift", 0, 40),
+            line("Goethestraße 86, 10115 Berlin", 200, 40),
+            line("Telefon", 0, 70),
+            line("030 5550123", 200, 70),
+        ];
+        let heads = super::heads(&lines);
+        let context = neighbours(&lines, &heads, 3);
+        assert!(
+            engine.ocr_findings("Telefon", &context).unwrap().is_empty(),
+            "{context:?}"
+        );
     }
 
     #[test]

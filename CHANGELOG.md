@@ -13,6 +13,16 @@ Notable changes per release. The format follows
   cells beside it, and a word of a company name there (`KMS Bad` /
   `Kissinger` / `Servicegesellschaft`) was taken for a surname and filled
   black on its own.
+- A list's columns name what their cells hold (ADR-0042). A surname alone
+  under a column such as `Nachname` or `Gegner`, and a street under
+  `Straße`, also cut short (`Hachenburg …`), are found, in CSV, XLSX, JSON
+  and in pictures, where a cell now reads the head of its table's column.
+  A picture's row with street, number, postcode and town in cells of their
+  own is an address, and so is a street whose street word stands alone
+  (`Trebuser Str. 3d 15517 Fürstenwalde`). Before, all of these stayed.
+- A name inside a value that a weaker rule took whole (`Herr Jonas
+  Brandt` as a field) is found again: a candidate below its threshold no
+  longer hides a finding of its own type (ADR-0042).
 
 ## [0.2.0] - 2026-11-12
 

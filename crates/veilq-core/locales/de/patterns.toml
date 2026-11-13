@@ -20,11 +20,12 @@ entity = "PERSON"
 regex = '(?m)(?:Grüße|Grüßen|Gruß|Grüsse|Grüssen|Gruss)[,!.]?[ \t]*\r?\n(?:[ \t]*\r?\n)?[ \t]*(?P<pii>\p{Lu}\p{Ll}+(?:[- ]\p{Lu}\p{Ll}+){1,2})[ \t]*\r?$'
 confidence = 0.8
 
-# Street, number, postcode and place: `Lindenweg 12, 28195 Bremen`.
+# Street, number, postcode and place: `Lindenweg 12, 28195 Bremen`. The
+# street word may be a word of its own: `Trebuser Str. 3d 15517 Fürstenwalde`.
 [[patterns]]
 name = "address"
 entity = "ADDRESS"
-regex = '\b\p{Lu}[\p{L}.\-]*?(?:straße|strasse|str\.|weg|gasse|platz|allee|ring|damm|ufer|steig|pfad|chaussee|markt|graben|wall|hof|berg|feld|garten)\s+\d{1,4}\s?[a-zA-Z]?(?:\s?-\s?\d{1,4})?(?:,\s*|[ \t]*\r?\n[ \t]*|\s+)\d{5}\s+\p{Lu}[\p{L}\-]+(?:\s+(?:an der|am|im|in der)\s+\p{Lu}\p{L}+)?(?: \p{Lu}[\p{L}\-]+){0,2}'
+regex = '\b\p{Lu}[\p{L}.\-]*?(?:straße|strasse|str\.|weg|gasse|platz|allee|ring|damm|ufer|steig|pfad|chaussee|markt|graben|wall|hof|berg|feld|garten| (?:Straße|Strasse|Str\.|Weg|Gasse|Platz|Allee|Ring|Damm|Ufer|Chaussee|Markt|Graben|Wall))\s+\d{1,4}\s?[a-zA-Z]?(?:\s?-\s?\d{1,4})?(?:,\s*|[ \t]*\r?\n[ \t]*|\s+)\d{5}\s+\p{Lu}[\p{L}\-]+(?:\s+(?:an der|am|im|in der)\s+\p{Lu}\p{L}+)?(?: \p{Lu}[\p{L}\-]+){0,2}'
 confidence = 0.9
 
 # A street without a street word (`Alte Mühle 3`, `Am Markt 4`), known by
@@ -41,9 +42,32 @@ confidence = 0.85
 [[patterns]]
 name = "street"
 entity = "ADDRESS"
-regex = '\b\p{Lu}[\p{L}\-]*?(?:straße|strasse|str\.|weg|gasse|platz|allee|ring|damm|ufer|steig|pfad|chaussee)\s+\d{1,4}\s?[a-zA-Z]?\b'
+regex = '\b\p{Lu}[\p{L}\-]*?(?:straße|strasse|str\.|weg|gasse|platz|allee|ring|damm|ufer|steig|pfad|chaussee| (?:Straße|Strasse|Str\.|Weg|Gasse|Platz|Allee|Ring|Damm|Ufer|Chaussee))\s+\d{1,4}\s?[a-zA-Z]?\b'
 confidence = 0.5
 context = { words = ["anschrift", "adresse", "wohnhaft", "wohnt", "straße", "strasse", "lieferadresse", "address", "street"], boost = 0.35, window = 32 }
+
+# A table's row: street, number, postcode and town in cells of their own,
+# as a picture's row joins them (two spaces). A screen cuts a long cell
+# (`Hachenburg …`, `Fürstenwal ..`), and OCR may read the dots as a cell of
+# their own (`Siedlungsstr  ( ..`): the number, the postcode and the town
+# after it say what the first cell is.
+[[patterns]]
+name = "address-columns"
+entity = "ADDRESS"
+regex = '\b\p{Lu}[\p{L}.\-]*(?: [\p{L}.\-]+){0,3}(?: {1,3}\(? ?(?:\.{2,3}|…)\.?)? {2,}\d{1,4} ?[a-zA-Z]? {2,}\d{5} {2,}\p{Lu}[\p{L}\-]+(?: \p{Lu}[\p{L}\-]+){0,2}(?: ?(?:\.{2,3}|…)\.?)?'
+confidence = 0.85
+
+# A whole value under a column that names a street (`Straße`, `Anschrift`):
+# a table keeps the number, the postcode and the town in columns of their
+# own, and the street cell may be cut (`Hachenburg …`). Without such a
+# column it is no candidate (confidence 0): a value of any shape would
+# claim its span.
+[[patterns]]
+name = "street-field"
+entity = "ADDRESS"
+regex = '^\p{Lu}[\p{L}.\-]*(?: [\p{L}.\-]+){0,3}(?: \d{1,4} ?[a-zA-Z]?)?(?: ?\(? ?(?:\.{2,3}|…)\.?)?$'
+confidence = 0.0
+context = { words = ["straße", "strasse", "str.", "street", "anschrift", "adresse", "address"], boost = 0.85, window = 32 }
 
 # National numbers: 0 and an area code. Not after a digit and `-` or `/`,
 # so that `2026-0421-5550` (an invoice number) stays. At least three digits
