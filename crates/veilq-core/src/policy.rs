@@ -51,6 +51,11 @@ pub struct Policy {
     pub patterns: Vec<PatternRule>,
     #[serde(default)]
     pub allow: Allow,
+    /// Values that are always personal data (ADR-0044): a list of the people
+    /// a text can name, inline or from files. A value here is found even
+    /// where `allow` names it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deny: Vec<Deny>,
     #[serde(default)]
     pub detectors: Detectors,
     /// Required when any action is `pseudonymize`.
@@ -268,6 +273,51 @@ pub struct Allow {
     pub patterns: Vec<String>,
 }
 
+/// Known values of one type (ADR-0044), each found as a whole word,
+/// whatever its case, with the genitive `s`, `'s` and `’s`, by the detector
+/// `policy:deny` at confidence 1.0.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Deny {
+    /// The type the values are found as; `PERSON` by default.
+    #[serde(default = "default_deny_entity")]
+    pub entity: EntityType,
+    #[serde(default)]
+    pub values: Vec<String>,
+    /// Plain text files, relative to the policy file that names them: UTF-8,
+    /// one value per line; blank lines and lines starting with `#` are
+    /// skipped. A file that cannot be read is an error.
+    #[serde(default)]
+    pub files: Vec<String>,
+    /// A value of several words also finds each word of three letters or
+    /// more alone (`Ayşe Yılmaz`: `Ayşe`, `Yılmaz`), except role words.
+    #[serde(default = "default_true")]
+    pub parts: bool,
+    /// The values of `files`, read when the policy was loaded from its file
+    /// ([`Policy::read_deny_files`]); `None` until then.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub read: Option<Vec<String>>,
+}
+
+fn default_deny_entity() -> EntityType {
+    EntityType::new("PERSON").expect("a valid type")
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Deny {
+    /// Every value: inline, then from the files.
+    pub fn all_values(&self) -> impl Iterator<Item = &str> {
+        self.values
+            .iter()
+            .chain(self.read.iter().flatten())
+            .map(String::as_str)
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Detectors {
@@ -303,6 +353,7 @@ impl Default for Policy {
             entities: BTreeMap::new(),
             patterns: Vec::new(),
             allow: Allow::default(),
+            deny: Vec::new(),
             detectors: Detectors::default(),
             pseudonymize: None,
             mapping: None,
@@ -369,10 +420,39 @@ impl Policy {
             path: path.to_path_buf(),
             source,
         })?;
-        Self::parse(&text).map_err(|message| Error::Policy {
+        let mut policy = Self::parse(&text).map_err(|message| Error::Policy {
             path: path.to_path_buf(),
             message,
-        })
+        })?;
+        policy
+            .read_deny_files(path.parent().unwrap_or(Path::new(".")))
+            .map_err(|message| Error::Policy {
+                path: path.to_path_buf(),
+                message,
+            })?;
+        Ok(policy)
+    }
+
+    /// Reads the files of `deny`, relative to `base` (the directory of the
+    /// policy file). A file that cannot be read is an error: a list that
+    /// silently stays empty finds nothing (fail closed).
+    pub fn read_deny_files(&mut self, base: &Path) -> Result<(), String> {
+        for d in &mut self.deny {
+            let mut values = Vec::new();
+            for f in &d.files {
+                let path = base.join(f);
+                let text = std::fs::read_to_string(&path)
+                    .map_err(|e| format!("deny file `{}`: {e}", path.display()))?;
+                values.extend(
+                    text.lines()
+                        .map(str::trim)
+                        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                        .map(str::to_owned),
+                );
+            }
+            d.read = Some(values);
+        }
+        Ok(())
     }
 
     /// The policy as a `veilq.toml` would hold it.
@@ -432,6 +512,14 @@ impl Policy {
         }
         for r in &self.allow.patterns {
             regex::Regex::new(r).map_err(|e| format!("allow pattern `{r}`: {e}"))?;
+        }
+        for (i, d) in self.deny.iter().enumerate() {
+            if d.values.is_empty() && d.files.is_empty() {
+                return Err(format!(
+                    "`deny` table {} has neither `values` nor `files`",
+                    i + 1
+                ));
+            }
         }
         for d in &self.detectors.require {
             if !DETECTORS.contains(&d.as_str()) {
@@ -708,5 +796,36 @@ values = ["Muster GmbH"]
             Policy::discover_in(Some(&repo.path().join("missing.toml")), &sub, None),
             Err(Error::PolicyNotFound(_))
         ));
+    }
+
+    #[test]
+    fn deny_files_are_read_relative_to_their_policy() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("lists")).unwrap();
+        std::fs::write(
+            dir.path().join("lists/names.txt"),
+            "# members\nAyşe Yılmaz\n\n  Mehmet  \n",
+        )
+        .unwrap();
+        let path = dir.path().join(FILE_NAME);
+        std::fs::write(
+            &path,
+            "version = 1\n[[deny]]\nvalues = [\"Lena\"]\nfiles = [\"lists/names.txt\"]\n",
+        )
+        .unwrap();
+        let policy = Policy::load(&path).unwrap();
+        let values: Vec<&str> = policy.deny[0].all_values().collect();
+        assert_eq!(values, ["Lena", "Ayşe Yılmaz", "Mehmet"]);
+        // Written back, the file names its lists, not their values.
+        let toml = policy.to_toml().unwrap();
+        assert!(
+            toml.contains("lists/names.txt") && !toml.contains("Mehmet"),
+            "{toml}"
+        );
+
+        // A list that cannot be read fails the policy.
+        std::fs::remove_file(dir.path().join("lists/names.txt")).unwrap();
+        let err = Policy::load(&path).unwrap_err().to_string();
+        assert!(err.contains("names.txt"), "{err}");
     }
 }

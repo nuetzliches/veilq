@@ -112,6 +112,38 @@
       },
       "type": "object"
     },
+    "Deny": {
+      "additionalProperties": false,
+      "description": "Known values of one type (ADR-0044), each found as a whole word,\nwhatever its case, with the genitive `s`, `'s` and `’s`, by the detector\n`policy:deny` at confidence 1.0.",
+      "properties": {
+        "entity": {
+          "$ref": "#/$defs/EntityType",
+          "default": "PERSON",
+          "description": "The type the values are found as; `PERSON` by default."
+        },
+        "files": {
+          "default": [],
+          "description": "Plain text files, relative to the policy file that names them: UTF-8,\none value per line; blank lines and lines starting with `#` are\nskipped. A file that cannot be read is an error.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "parts": {
+          "default": true,
+          "description": "A value of several words also finds each word of three letters or\nmore alone (`Ayşe Yılmaz`: `Ayşe`, `Yılmaz`), except role words.",
+          "type": "boolean"
+        },
+        "values": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "Detectors": {
       "additionalProperties": false,
       "properties": {
@@ -307,6 +339,13 @@
         "action": "mask",
         "min_confidence": 0.699999988079071
       }
+    },
+    "deny": {
+      "description": "Values that are always personal data (ADR-0044): a list of the people\na text can name, inline or from files. A value here is found even\nwhere `allow` names it.",
+      "items": {
+        "$ref": "#/$defs/Deny"
+      },
+      "type": "array"
     },
     "detectors": {
       "$ref": "#/$defs/Detectors",

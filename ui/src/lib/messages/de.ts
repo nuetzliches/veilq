@@ -282,6 +282,8 @@ export const de: Record<MessageKey, string> = {
   'rules.allowTitle': 'Nie personenbezogen',
   'rules.allowValues': 'Genaue Werte, einer je Zeile (der Name Ihrer Kanzlei, ein Gericht)',
   'rules.allowPatterns': 'Muster, auf die ein ganzer Fund passt, eines je Zeile',
+  'rules.denySummary':
+    'Sperrliste in der Policy-Datei: {values} Werte und {files} Dateien, immer personenbezogen, auch wenn sie oben stehen',
   'rules.perType': 'Je Art',
   'rules.type': 'Art',
   'rules.asAbove': 'wie oben',

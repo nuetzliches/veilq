@@ -13,7 +13,7 @@ use regex::Regex;
 use serde::Deserialize;
 
 use crate::finding::EntityType;
-use crate::policy::{Context, PatternRule, Policy};
+use crate::policy::{Context, Deny, PatternRule, Policy};
 use crate::{Error, pseudonym};
 
 /// The locales a policy can name.
@@ -188,6 +188,9 @@ impl Detector {
             let detector = format!("policy:{}", rule.name);
             rules.push(Rule::compile(rule, detector).map_err(invalid)?);
         }
+        for d in &policy.deny {
+            rules.extend(deny_rule(d).map_err(invalid)?);
+        }
         let allow = Allow {
             values: policy
                 .allow
@@ -326,7 +329,7 @@ impl Detector {
         let mut kept = Vec::new();
         for c in self.candidates(text, context, source)? {
             let value = &text[c.start..c.end];
-            let dropped = if c.entity.as_str() != "PERSON" {
+            let dropped = if c.entity.as_str() != "PERSON" || c.detector == DENY {
                 None
             } else if only_role_words(value) {
                 Some(Verdict::RoleWords)
@@ -352,11 +355,17 @@ impl Detector {
         // (an IBAN with a wrong checksum keeps a phone number out of its
         // digits), not from a finding of its own type: `Herr Jonas Brandt`
         // as a field is below it, `Jonas Brandt` after `Herr` is not.
+        // A deny list's value (ADR-0044) takes its span from any candidate
+        // below its threshold and from one the allow lists name.
         let meets = |c: &Candidate| c.confidence >= round(self.threshold(&c.entity));
         let mut chosen: Vec<Candidate> = Vec::new();
         for c in kept {
             let overlaps = |k: &Candidate| c.start < k.end && k.start < c.end;
-            let yields = |k: &Candidate| k.entity == c.entity && !meets(k) && meets(&c);
+            let denied = c.detector == DENY;
+            let yields = |k: &Candidate| {
+                (!meets(k) && meets(&c) && (k.entity == c.entity || denied))
+                    || (denied && self.allowed(&text[k.start..k.end]))
+            };
             if chosen.iter().all(|k| !overlaps(k) || yields(k)) {
                 let (gone, stay): (Vec<_>, Vec<_>) = chosen.into_iter().partition(|k| overlaps(k));
                 chosen = stay;
@@ -374,7 +383,7 @@ impl Detector {
             let raised = c.confidence > before;
             let verdict = if c.confidence < round(self.threshold(&c.entity)) {
                 Verdict::BelowThreshold
-            } else if self.allowed(&text[c.start..c.end]) {
+            } else if c.detector != DENY && self.allowed(&text[c.start..c.end]) {
                 Verdict::Allowed
             } else {
                 Verdict::Kept
@@ -730,6 +739,76 @@ pub(crate) fn only_role_words(span: &str) -> bool {
         .filter(|w| w.chars().count() >= 2)
         .peekable();
     words.peek().is_some() && words.all(|w| NOT_NAMES.contains(&w.to_lowercase().as_str()))
+}
+
+/// The detector of the deny lists (ADR-0044).
+pub(crate) const DENY: &str = "policy:deny";
+
+/// The rule that finds a deny list's values: each as a whole word, whatever
+/// its case (Turkish `İ`, `I`, `ı` and `i` as one letter), in NFC and in
+/// NFD, with the genitive `s`, `'s` or `’s`; with `parts`, each word of
+/// three letters or more alone that is no role word. `None` for a list
+/// without values.
+fn deny_rule(d: &Deny) -> Result<Option<Rule>, String> {
+    use unicode_normalization::UnicodeNormalization;
+    if d.read.is_none() && !d.files.is_empty() {
+        return Err(
+            "the files of a `deny` table were not read: the policy was not loaded from its file"
+                .into(),
+        );
+    }
+    let mut forms: Vec<String> = Vec::new();
+    for v in d.all_values().map(str::trim).filter(|v| !v.is_empty()) {
+        let v: String = v.nfc().collect();
+        let words: Vec<&str> = v.split_whitespace().collect();
+        if d.parts && words.len() > 1 {
+            forms.extend(
+                words
+                    .iter()
+                    .filter(|w| w.chars().count() >= 3 && !only_role_words(w))
+                    .map(|w| (*w).to_owned()),
+            );
+        }
+        forms.push(words.join(" "));
+    }
+    if forms.is_empty() {
+        return Ok(None);
+    }
+    let nfd: Vec<String> = forms.iter().map(|f| f.nfd().collect()).collect();
+    forms.extend(nfd);
+    // The longest first: an alternation takes the first that matches.
+    forms.sort_by(|a, b| b.chars().count().cmp(&a.chars().count()).then(a.cmp(b)));
+    forms.dedup();
+    let alternatives: Vec<String> = forms
+        .iter()
+        .map(|f| {
+            f.chars()
+                .map(|c| match c {
+                    'i' | 'I' | 'ı' | 'İ' => "[iIıİ]".to_owned(),
+                    ' ' => r"\s+".to_owned(),
+                    c => regex::escape(&c.to_string()),
+                })
+                .collect::<String>()
+        })
+        .collect();
+    let regex = format!(
+        r"(?i)\b(?P<pii>(?:{})(?:s|'s|’s)?)\b",
+        alternatives.join("|")
+    );
+    let regex = regex::RegexBuilder::new(&regex)
+        .size_limit(64 << 20)
+        .build()
+        .map_err(|e| format!("deny list: {e}"))?;
+    let group = regex.capture_names().position(|n| n == Some("pii"));
+    Ok(Some(Rule {
+        detector: DENY.to_owned(),
+        entity: d.entity.clone(),
+        regex,
+        confidence: 1.0,
+        context: None,
+        validate: None,
+        group,
+    }))
 }
 
 /// Confidences in thousandths: `1.0 - 0.3` is `0.7`, not `0.69999998`.
@@ -1315,5 +1394,77 @@ kurz zur Info",
                 .collect();
             assert!(names.is_empty(), "{text}: {names:?}");
         }
+    }
+
+    #[test]
+    fn a_deny_list_finds_its_values_in_every_form() {
+        let policy = Policy::parse(
+            r#"
+version = 1
+[allow]
+values = ["Mehmet"]
+[[deny]]
+values = ["Ayşe Yılmaz", "Mehmet", "Işık Demir", "Al Bo", "Frau Lena"]
+[[deny]]
+entity = "MEMBER_NUMBER"
+values = ["M-4711"]
+parts = false
+"#,
+        )
+        .unwrap();
+        let d = Detector::new(&policy).unwrap();
+        let found = |text: &str| -> Vec<(String, String, String)> {
+            d.findings(text, "", Source::Text)
+                .unwrap()
+                .into_iter()
+                .map(|c| {
+                    (
+                        c.entity.as_str().to_owned(),
+                        text[c.start..c.end].to_owned(),
+                        c.detector,
+                    )
+                })
+                .collect()
+        };
+        let has = |text: &str, entity: &str, value: &str| {
+            found(text)
+                .iter()
+                .any(|(e, v, det)| e == entity && v == value && det == DENY)
+        };
+        for (text, value) in [
+            // The genitive, any case, the allow list naming it.
+            ("Mehmets Auto steht vor der Tür", "Mehmets"),
+            ("MEHMET'S car", "MEHMET'S"),
+            ("Mehmet’s Rad", "Mehmet’s"),
+            ("mehmet hat angerufen", "mehmet"),
+            // The whole value, and its parts alone.
+            ("Termin mit Ayşe Yılmaz", "Ayşe Yılmaz"),
+            ("ayşe kommt später", "ayşe"),
+            ("Herr Yilmaz", "Yilmaz"),
+            // Turkish `İ`, `I`, `ı` and `i` as one letter.
+            ("IŞIK DEMİR schreibt", "IŞIK DEMİR"),
+            ("işik demir", "işik demir"),
+            // Decomposed (NFD).
+            ("Ays\u{0327}e wartet", "Ays\u{0327}e"),
+        ] {
+            assert!(has(text, "PERSON", value), "{text}: {:?}", found(text));
+        }
+        assert!(has("Mitglied M-4711 zahlt", "MEMBER_NUMBER", "M-4711"));
+        // Not inside a word; no part under three letters or a role word.
+        for text in ["Mehmetoglu", "Al und Bo", "Frau Albers", "M-47110"] {
+            assert!(
+                found(text).iter().all(|(_, _, det)| det != DENY),
+                "{text}: {:?}",
+                found(text)
+            );
+        }
+    }
+
+    #[test]
+    fn a_deny_list_whose_files_were_not_read_is_an_error() {
+        let policy = Policy::parse("version = 1\n[[deny]]\nfiles = [\"names.txt\"]\n").unwrap();
+        let err = Detector::new(&policy).err().unwrap().to_string();
+        assert!(err.contains("not read"), "{err}");
+        assert!(Policy::parse("version = 1\n[[deny]]\nentity = \"PERSON\"\n").is_err());
     }
 }

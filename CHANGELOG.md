@@ -8,6 +8,12 @@ Notable changes per release. The format follows
 
 ### Added
 
+- Deny lists (ADR-0044, #49): `[[deny]]` in the policy names values that
+  are always personal data, inline or in plain text files beside the policy
+  (one per line). Each is found as a whole word, in any case, with Turkish
+  `İ`/`ı` folded and the genitive (`Mehmets`, `Mehmet's`), and each part of a
+  full name alone; at confidence 1.0, even where `allow` names it. A file
+  veilq cannot read is an error. The UI shows a list by its size only.
 - Purposes (ADR-0040, #67): what veilq is used for, as packs built into
   veilq. A policy names them (`purposes = ["legal", "development"]`), a run
   takes `--purpose`; `general` always applies and is today's behaviour.

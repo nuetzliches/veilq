@@ -162,7 +162,14 @@ pub struct Tried {
 /// the patterns alone (no models: quick, and the same for every sample).
 fn try_policy(request: &PolicyTry) -> Result<(Policy, Tried), String> {
     let toml = request.policy.to_toml()?;
-    let policy = Policy::parse(&toml)?;
+    let mut policy = Policy::parse(&toml)?;
+    // Deny files are relative to the user's policy file (ADR-0044).
+    if let Some(dir) = policy::user_file()
+        .as_deref()
+        .and_then(std::path::Path::parent)
+    {
+        policy.read_deny_files(dir)?;
+    }
     let (output, findings) = match &request.sample {
         Some(sample) => {
             let engine = Engine::new(&policy, None, b"sample", Some(Action::Mask))

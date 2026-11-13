@@ -74,6 +74,8 @@ export interface Policy {
   entities: Record<string, { action?: string; min_confidence?: number }>;
   patterns: PolicyPattern[];
   allow: { values: string[]; patterns: string[] };
+  /** Known values that are always personal data (ADR-0044); kept as they are, shown by their size only. */
+  deny?: { entity?: string; values?: string[]; files?: string[]; parts?: boolean }[];
   [other: string]: unknown;
 }
 
