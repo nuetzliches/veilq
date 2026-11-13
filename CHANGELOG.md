@@ -19,6 +19,14 @@ Notable changes per release. The format follows
   report as before, `box` fills the line black as `UNREAD_TEXT`, `error`
   stops the run. The purpose `legal` sets `box`; a policy's own value comes
   first.
+- One threshold for one run (ADR-0046, #56): a slider in the UI's output
+  sets how sure veilq must be to replace something, in place of the
+  policy's thresholds, from 0 to 95 %; while it is dragged it shows what
+  would change (`+3 / −1 findings`), on release the run is redone. `scan`
+  and `redact` take the same as `--min-confidence`, `/api/redact` as
+  `min_confidence`. A threshold above the policy's makes the report ask
+  for a review (`threshold raised from 70 % to 85 % for this run`). It
+  saves nothing; a lasting threshold goes through Settings → Rules.
 - Purposes (ADR-0040, #67): what veilq is used for, as packs built into
   veilq. A policy names them (`purposes = ["legal", "development"]`), a run
   takes `--purpose`; `general` always applies and is today's behaviour.

@@ -130,8 +130,9 @@ pub struct Report {
     pub version: u32,
     pub findings: Vec<Finding>,
     /// True when the run had a known gap: a detector the policy names was
-    /// off, or a format was handled with a loss (a PDF's text layer). A
-    /// person should look at the output.
+    /// off, a format was handled with a loss (a PDF's text layer), or the
+    /// run raised a threshold above the policy's (ADR-0046). A person
+    /// should look at the output.
     pub review_required: bool,
     /// Why `review_required` is set, one sentence each.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

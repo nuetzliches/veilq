@@ -215,7 +215,7 @@
       "type": "array"
     },
     "review_required": {
-      "description": "True when the run had a known gap: a detector the policy names was\noff, or a format was handled with a loss (a PDF's text layer). A\nperson should look at the output.",
+      "description": "True when the run had a known gap: a detector the policy names was\noff, a format was handled with a loss (a PDF's text layer), or the\nrun raised a threshold above the policy's (ADR-0046). A person\nshould look at the output.",
       "type": "boolean"
     },
     "version": {

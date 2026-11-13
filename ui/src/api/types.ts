@@ -28,6 +28,10 @@ export interface Info {
   default_action: string;
   /** What a run can choose instead of the policy's actions. */
   actions: string[];
+  /** The policy's default threshold, where the output's slider starts (ADR-0046). */
+  min_confidence: number;
+  /** The highest threshold a run may set. */
+  max_min_confidence: number;
   max_input: number;
   /** Started by a double click: the page says it is open, and can quit veilq. */
   desktop?: boolean;
@@ -258,18 +262,31 @@ export interface Picture {
   page_count?: number;
 }
 
+/** How one run differs from the policy. */
+export interface RedactOptions {
+  /** Overrides the policy's actions for this run. */
+  action?: string;
+  /**
+   * A picture whose verify rounds do not settle (409) is written anyway,
+   * with the last round's findings filled, for a review.
+   */
+  unverified?: boolean;
+  /** Also return what veilq read and why it decided (ADR-0034). */
+  explain?: boolean;
+  /**
+   * One threshold for this run in place of the policy's (ADR-0046), from 0
+   * to `Info.max_min_confidence`; above the policy's, the report asks for a review.
+   */
+  minConfidence?: number;
+}
+
 export interface Api {
   readonly mock: boolean;
   info(): Promise<Info>;
   files(dir: string): Promise<Listing>;
   /** An image under the root as it is, shown while it is redacted. */
   picture(path: string): Promise<Picture>;
-  /** `action`: overrides the policy's actions for this run. */
-  /**
-   * `unverified`: a picture whose verify rounds do not settle (409) is
-   * written anyway, with the last round's findings filled, for a review.
-   */
-  redact(source: Source, action?: string, unverified?: boolean, explain?: boolean): Promise<Redaction>;
+  redact(source: Source, options?: RedactOptions): Promise<Redaction>;
   setup(): Promise<SetupStatus>;
   install(request: SetupRequest): Promise<SetupStatus>;
   /** Removes setup's work; veilq ends, and its folder goes after it. */

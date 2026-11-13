@@ -212,6 +212,12 @@ struct InputArgs {
     /// than one.
     #[arg(long = "purpose", value_parser = clap::builder::PossibleValuesParser::new(veilq_core::purpose::PURPOSES))]
     purposes: Vec<String>,
+    /// One confidence threshold for this run, from 0 to 0.95, in place of
+    /// the policy's default and every type's own (ADR-0046): lower finds
+    /// more, higher less. Above a threshold of the policy, the report asks
+    /// for a review and says by how much. Saves nothing.
+    #[arg(long, value_name = "0..0.95")]
+    min_confidence: Option<f32>,
 }
 
 impl InputArgs {
@@ -693,7 +699,7 @@ fn scan(
 ) -> anyhow::Result<Outcome> {
     let policy = input.policy()?;
     let explanation = veilq_core::Explain::new();
-    let mut engine = engine(&policy, None)?;
+    let mut engine = engine(&policy, None)?.with_min_confidence(input.min_confidence)?;
     if explain {
         engine = engine.with_explain(explanation.clone());
     }
@@ -856,7 +862,9 @@ fn redact(
         ),
         None => None,
     };
-    let engine = engine(&policy, action)?.with_unverified(unverified);
+    let engine = engine(&policy, action)?
+        .with_min_confidence(input.min_confidence)?
+        .with_unverified(unverified);
     let format = format_of(path, input.format.as_deref())?;
     let reader = open(path)?;
     let run = if is_stdin(output) {

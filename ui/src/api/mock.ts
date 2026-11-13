@@ -10,6 +10,7 @@ import {
   type PurposeInfo,
   type Reading,
   type Redaction,
+  type RedactOptions,
   type Source,
 } from './types';
 
@@ -169,7 +170,16 @@ export function mockApi(): Api {
   return {
     mock: true,
     async info() {
-      return { version: 'mock', root: '/mock', policy: 'built-in defaults', default_action: 'mask', actions: ['mask'], max_input: 32 << 20 };
+      return {
+        version: 'mock',
+        root: '/mock',
+        policy: 'built-in defaults',
+        default_action: 'mask',
+        actions: ['mask'],
+        min_confidence: 0.7,
+        max_min_confidence: 0.95,
+        max_input: 32 << 20,
+      };
     },
     async files(dir) {
       const prefix = dir ? `${dir}/` : '';
@@ -280,9 +290,17 @@ export function mockApi(): Api {
     },
     async quit() {},
     async ping() {},
-    async redact(source: Source, _action?: string, _unverified?: boolean, explain?: boolean) {
+    async redact(source: Source, options: RedactOptions = {}) {
       const result = mockSource(source);
-      if (explain) result.explain = mockExplain(result);
+      if (options.explain) result.explain = mockExplain(result);
+      // The toy detector keeps its findings; a raised threshold still asks for a review, as veilq's does.
+      const t = options.minConfidence;
+      if (t !== undefined && t > 0.7) {
+        result.report.review_reasons = [
+          ...(result.report.review_reasons ?? []),
+          `threshold raised from 70 % to ${Math.round(t * 100)} % for this run`,
+        ];
+      }
       return result;
     },
   };

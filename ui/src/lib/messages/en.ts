@@ -36,6 +36,10 @@ export const en = {
   'output.title': 'Redacted',
   'output.replaceWith': 'Replace with',
   'output.asRules': 'as in the rules ({action})',
+  'output.threshold': 'Threshold',
+  'output.thresholdTitle':
+    'How sure veilq must be to replace something, for this run only: lower replaces more, higher less. It saves nothing; a lasting threshold is set in Settings → Rules.',
+  'output.thresholdChange': '+{added} / −{dropped} findings',
   'output.empty': 'The redacted version appears here.',
   'output.redacting': 'Redacting …',
   'output.findingsOne': '1 finding',

@@ -541,6 +541,10 @@ struct Info {
     /// The actions a request can choose instead of the policy's;
     /// `pseudonymize` only with a key.
     actions: Vec<&'static str>,
+    /// The policy's default threshold, where the output's slider starts
+    /// (ADR-0046), and the highest a run may set.
+    min_confidence: f32,
+    max_min_confidence: f32,
     max_input: usize,
     /// Started by a double click: the UI says it is open, offers to quit,
     /// and opens setup on the first start.
@@ -576,6 +580,8 @@ async fn info(State(state): State<Arc<AppState>>) -> axum::Json<Info> {
         .filter(|a| *a != Action::Pseudonymize || state.engine().has_key())
         .map(Action::name)
         .collect(),
+        min_confidence: state.policy().0.defaults.min_confidence,
+        max_min_confidence: veilq_core::engine::MAX_RUN_CONFIDENCE,
         max_input: MAX_INPUT,
         desktop: state.desktop,
         window: state.focus.is_some(),
@@ -748,6 +754,10 @@ struct RedactRequest {
     /// Overrides the policy's actions for this request, as `--action` does.
     #[serde(default)]
     action: Option<Action>,
+    /// One threshold for this request in place of the policy's, as
+    /// `--min-confidence` does (ADR-0046): the output's slider.
+    #[serde(default)]
+    min_confidence: Option<f32>,
     /// A picture whose verify rounds do not settle is written anyway, for a
     /// review, as `--unverified` does (ADR-0026).
     #[serde(default)]
@@ -818,6 +828,8 @@ async fn redact(
                 .with_action(Some(a))
                 .map_err(Failure::from)?,
         }
+        .with_min_confidence(request.min_confidence)
+        .map_err(Failure::from)?
         .with_unverified(request.unverified);
         if !request.explain {
             return redact_source(&state, &engine, request.source);
@@ -1318,6 +1330,65 @@ mod tests {
             info["actions"],
             serde_json::json!(["mask", "fake", "remove"])
         );
+    }
+
+    #[tokio::test]
+    async fn a_run_can_set_its_threshold_and_a_raised_one_asks_for_a_review() {
+        let dir = tempfile::tempdir().unwrap();
+        let post = |body: serde_json::Value| {
+            authed("POST", "/api/redact")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap()
+        };
+        let source = serde_json::json!({ "kind": "text", "text": "Tel. 0421 5550173" });
+        let (status, body) = send(
+            app(dir.path()),
+            post(serde_json::json!({ "source": source, "min_confidence": 0.85 })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["report"]["review_required"], true);
+        assert!(
+            body["report"]["review_reasons"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r == "threshold raised from 70 % to 85 % for this run"),
+            "{body}"
+        );
+        // Lower: no reason about the threshold.
+        let (status, body) = send(
+            app(dir.path()),
+            post(serde_json::json!({ "source": source, "min_confidence": 0.5 })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let reasons = body["report"]["review_reasons"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            reasons
+                .iter()
+                .all(|r| !r.as_str().unwrap().contains("raised")),
+            "{body}"
+        );
+        // Above the range: refused, no output.
+        let (status, body) = send(
+            app(dir.path()),
+            post(serde_json::json!({ "source": source, "min_confidence": 1.0 })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert!(body.get("output").is_none());
+        let (_, info) = send(
+            app(dir.path()),
+            authed("GET", "/api/info").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(info["min_confidence"], 0.7);
+        assert_eq!(info["max_min_confidence"], 0.95);
     }
 
     #[test]

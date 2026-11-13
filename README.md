@@ -164,7 +164,9 @@ such a line black instead (as `UNREAD_TEXT`; the purpose `legal` does so),
 - **Policy:** `veilq.toml` in the current directory or the repository root
   sets locales, actions per type, thresholds, allow lists and own patterns
   ([`schema/policy.schema.json`](schema/policy.schema.json));
-  `veilq policy check` validates it.
+  `veilq policy check` validates it. `--min-confidence 0.85` (and the
+  slider in the UI's output) sets one threshold for a run without editing
+  it; above the policy's, the report asks for a review (ADR-0046).
 - **Purposes** (ADR-0040): what veilq is used for, as built-in packs a
   policy names (`purposes = ["legal"]`) or a run takes (`--purpose
   development`). `general` always applies; `legal` lowers the thresholds
