@@ -339,7 +339,9 @@ impl Detector {
                 Some(Verdict::RoleWords)
             } else if ACCOUNTS.contains(&value.to_lowercase().as_str()) {
                 Some(Verdict::Account)
-            } else if c.detector == "ner" && brand_word(value) {
+            } else if c.detector == "ner"
+                && (brand_word(value) || PRODUCTS.contains(&value.to_lowercase().as_str()))
+            {
                 Some(Verdict::BrandWord)
             } else {
                 None
@@ -542,6 +544,19 @@ pub(crate) fn brand_word(span: &str) -> bool {
         && (4..chars.len()).any(|i| chars[i].is_uppercase() && chars[i - 1].is_lowercase())
 }
 
+/// Products a screenshot's window shows (`Copilot fragen`) that NER takes
+/// for a person and [`brand_word`] does not know: one word, no capital
+/// inside. None of them is a given name; `Alexa` or `Claude` would be.
+const PRODUCTS: &[&str] = &[
+    "copilot",
+    "outlook",
+    "excel",
+    "firefox",
+    "chrome",
+    "safari",
+    "thunderbird",
+];
+
 /// The accounts a system makes, whose home directory names no person.
 const ACCOUNTS: &[&str] = &[
     "public",
@@ -727,6 +742,15 @@ const PERSON_NOUNS: &[&str] = &[
     "verfasser",
     "verwalter",
     "ersteller",
+    // Offices and professions, under a letter's signature.
+    "führer",
+    "berater",
+    "anwalt",
+    "anwält",
+    "prokurist",
+    "vorstand",
+    "direktor",
+    "sekretär",
     // Adjectives used as nouns.
     "betroffen",
     "beteiligt",
@@ -1038,6 +1062,57 @@ mod tests {
             "Lindenweg 12, 28195 Bremen\nTelefon folgt",
             "ADDRESS",
             "Lindenweg 12, 28195 Bremen"
+        ));
+        // The small words of a street's name belong to it.
+        assert!(found(
+            "Anschrift: Auf der Höhe 9, 15938 Lindau",
+            "ADDRESS",
+            "Auf der Höhe 9, 15938 Lindau"
+        ));
+    }
+
+    #[test]
+    fn a_letters_address_block_is_an_address() {
+        let letter =
+            "Herrn\nJonas Brandt\nAuf der Höhe 9\n15938 Lindau\n\nSehr geehrter Herr Brandt,";
+        assert!(
+            found(letter, "ADDRESS", "Auf der Höhe 9\n15938 Lindau"),
+            "{:?}",
+            findings(letter, "")
+        );
+        assert!(found(
+            "Frau\nMira Albers\nAm Anger 7a\n28195 Bremen",
+            "ADDRESS",
+            "Am Anger 7a\n28195 Bremen"
+        ));
+        // A line with more than the street, or a number without a town, is
+        // not a block.
+        for text in [
+            "Wir liefern am Montag 3\n15938 Lindau",
+            "Seite 2\n15938",
+            "Seite 3 von 4\n15938 Lindau",
+        ] {
+            assert!(
+                !findings(text, "").iter().any(|f| f.0 == "ADDRESS"),
+                "{text}: {:?}",
+                findings(text, "")
+            );
+        }
+    }
+
+    #[test]
+    fn an_invoice_number_with_leading_zeros_is_no_phone_number() {
+        let text = "Rechnungskorrektur Nr. 000496/2026";
+        assert!(
+            !findings(text, "").iter().any(|f| f.0 == "PHONE_NUMBER"),
+            "{:?}",
+            findings(text, "")
+        );
+        assert!(found("Tel. 030 1234567", "PHONE_NUMBER", "030 1234567"));
+        assert!(found(
+            "Tel. 0049 30 1234567",
+            "PHONE_NUMBER",
+            "0049 30 1234567"
         ));
     }
 
