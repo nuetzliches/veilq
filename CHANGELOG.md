@@ -6,6 +6,14 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A table cell in a picture whose text wraps over several lines is read as
+  one text (ADR-0041). Before, its middle line was read in the row of the
+  cells beside it, and a word of a company name there (`KMS Bad` /
+  `Kissinger` / `Servicegesellschaft`) was taken for a surname and filled
+  black on its own.
+
 ## [0.2.0] - 2026-11-12
 
 **Before you update:** veilq now fills faces in pictures black, and a

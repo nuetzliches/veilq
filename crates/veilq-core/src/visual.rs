@@ -3,7 +3,10 @@
 //!
 //! The lines of an image are read in rows, top to bottom, left to right, as
 //! one text (two spaces between lines of a row, a line break between rows),
-//! so that a label (`Geburtsdatum`) is context for the value beside it. A
+//! so that a label (`Geburtsdatum`) is context for the value beside it.
+//! Lines stacked closely in one cell of a table or one paragraph are read
+//! first as one line of that text, joined with a space: a row would cut a
+//! cell's text into the rows beside it. A
 //! finding becomes the boxes of its characters, per line, two pixels wider.
 //! Every action is a black box: a pseudonym or a stand-in cannot be written
 //! into pixels faithfully. **verify** reads the filled image again; what it
@@ -112,37 +115,116 @@ struct Page {
 }
 
 fn page(lines: &[Line]) -> Page {
-    // Rows: lines whose vertical middles fall into each other's height.
-    let mut rows: Vec<Vec<&Line>> = Vec::new();
-    for l in lines {
+    // Cells first: a table cell wraps its text into lines stacked closely,
+    // and a row of the page would cut it (`BHS Bad` / `Homburger` /
+    // `Servicegesellschaft` beside one-line cells): the middle line, read
+    // between the cells beside it, looks like a surname.
+    let mut sorted: Vec<&Line> = lines.iter().collect();
+    sorted.sort_by_key(|l| (l.rect.y, l.rect.x));
+    let mut stacks: Vec<Vec<&Line>> = Vec::new();
+    for l in sorted {
+        match stacks.iter_mut().find(|s| below(s[s.len() - 1], l)) {
+            Some(s) => s.push(l),
+            None => stacks.push(vec![l]),
+        }
+    }
+    let cells: Vec<(Rect, Vec<&Line>)> = cut(&stacks)
+        .into_iter()
+        .map(|c| (c.iter().skip(1).fold(c[0].rect, |r, l| r.union(&l.rect)), c))
+        .collect();
+    // Rows: cells whose vertical middles fall into each other's height.
+    let mut rows: Vec<Vec<(Rect, Vec<&Line>)>> = Vec::new();
+    for cell in cells {
         let best = rows
             .iter()
             .enumerate()
-            .map(|(i, r)| (i, overlap_y(&r[0].rect, &l.rect)))
+            .map(|(i, r)| (i, overlap_y(&r[0].0, &cell.0)))
             .filter(|(_, o)| *o >= 0.5)
             .max_by(|a, b| a.1.total_cmp(&b.1));
         match best {
-            Some((i, _)) => rows[i].push(l),
-            None => rows.push(vec![l]),
+            Some((i, _)) => rows[i].push(cell),
+            None => rows.push(vec![cell]),
         }
     }
     let mut text = String::new();
     let mut chars = Vec::new();
     for (i, row) in rows.iter_mut().enumerate() {
-        row.sort_by_key(|l| l.rect.x);
+        row.sort_by_key(|(r, _)| r.x);
         if i > 0 {
             text.push('\n');
         }
-        for (j, l) in row.iter().enumerate() {
+        for (j, (_, cell)) in row.iter().enumerate() {
             if j > 0 {
                 text.push_str("  ");
             }
-            let base = text.len();
-            text.push_str(&l.text);
-            chars.extend(l.chars.iter().map(|(s, e, r)| (base + s, base + e, *r)));
+            for (k, l) in cell.iter().enumerate() {
+                if k > 0 {
+                    text.push(' ');
+                }
+                let base = text.len();
+                text.push_str(&l.text);
+                chars.extend(l.chars.iter().map(|(s, e, r)| (base + s, base + e, *r)));
+            }
         }
     }
     Page { text, chars }
+}
+
+/// Whether `l` continues `above` in the same cell or paragraph: right below
+/// it (a gap of at most half a line), in the same type size, and aligned
+/// with it on the left, the middle or the right.
+fn below(above: &Line, l: &Line) -> bool {
+    let (a, b) = (&above.rect, &l.rect);
+    let h = a.h.min(b.h);
+    // OCR's boxes of lines set closely overlap by a few pixels.
+    let close = b.y + h / 4 >= a.bottom() && b.y <= a.bottom() + h / 2;
+    let size = 3 * a.h.max(b.h) <= 4 * h;
+    let aligned = a.x.abs_diff(b.x) <= h
+        || (a.x + a.right()).abs_diff(b.x + b.right()) <= 2 * h
+        || a.right().abs_diff(b.right()) <= h;
+    close && size && aligned
+}
+
+/// The cells of `stacks`: a stack cut where the lines beside it show the
+/// rows of a table. A table's rule is not read, and the lines of a full
+/// cell sit as close to the next row's as to each other; the one-line
+/// cells beside (an amount, a date) stand in the middle of their rows, and
+/// a stack beside two of them is cut halfway between.
+fn cut<'a>(stacks: &[Vec<&'a Line>]) -> Vec<Vec<&'a Line>> {
+    let middle = |r: &Rect| r.y + r.h / 2;
+    let mut out = Vec::new();
+    for s in stacks {
+        if s.len() == 1 {
+            out.push(s.clone());
+            continue;
+        }
+        let r = s.iter().skip(1).fold(s[0].rect, |r, l| r.union(&l.rect));
+        let mut beside: Vec<(u32, u32)> = stacks
+            .iter()
+            .filter(|o| o.len() == 1)
+            .map(|o| &o[0].rect)
+            .filter(|o| {
+                (o.right() <= r.x || o.x >= r.right()) && (r.y..r.bottom()).contains(&middle(o))
+            })
+            .map(|o| (middle(o), o.h))
+            .collect();
+        beside.sort_unstable();
+        // The middles of the rows beside, one per row.
+        let mut rows: Vec<u32> = Vec::new();
+        for (m, h) in beside {
+            if rows.last().is_none_or(|last| m > last + h / 2) {
+                rows.push(m);
+            }
+        }
+        let cuts: Vec<u32> = rows.windows(2).map(|w| (w[0] + w[1]) / 2).collect();
+        let mut cells: Vec<Vec<&Line>> = vec![Vec::new(); cuts.len() + 1];
+        for l in s {
+            let m = middle(&l.rect);
+            cells[cuts.iter().filter(|c| **c <= m).count()].push(*l);
+        }
+        out.extend(cells.into_iter().filter(|c| !c.is_empty()));
+    }
+    out
 }
 
 /// How much two boxes overlap vertically, as a share of the lower one.
@@ -852,6 +934,40 @@ mod tests {
                 h: 24
             }]
         );
+    }
+
+    #[test]
+    fn a_cell_of_a_table_is_read_whole() {
+        // Two rows of a table, as OCR reads them: the holder's cell is full,
+        // its lines sit as close to the next row's as to each other, and the
+        // boxes overlap by a few pixels. The amounts beside mark the rows.
+        let row = |y: u32, amount: &str| {
+            [
+                line("Nordwerk", 0, y + 8),
+                line("Inkasso GmbH", 0, y + 24),
+                line("KMS Bad", 400, y),
+                line("Kissinger", 390, y + 17),
+                line("Servicegesellschaft", 340, y + 34),
+                line(amount, 800, y + 18),
+            ]
+        };
+        let mut lines = row(100, "2.247,43").to_vec();
+        lines.extend(row(152, "1.661,55"));
+        let p = page(&lines);
+        let row = "Nordwerk Inkasso GmbH  KMS Bad Kissinger Servicegesellschaft";
+        assert_eq!(
+            p.text,
+            format!("{row}  2.247,43\n{row}  1.661,55"),
+            "{}",
+            p.text
+        );
+        // A finding keeps its boxes, one per line.
+        let start = p.text.find("Kissinger").unwrap();
+        assert_eq!(boxes(&p, start, start + 9, 2000, 2000)[0].y, 115);
+
+        // Lines further apart than half a line stay rows of their own.
+        let lines = [line("Mira Albers", 0, 0), line("Lindenweg 12", 0, 40)];
+        assert_eq!(page(&lines).text, "Mira Albers\nLindenweg 12");
     }
 
     #[test]

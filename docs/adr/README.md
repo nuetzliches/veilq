@@ -79,3 +79,4 @@ keep it to about a page.
 | [0037](0037-a-misread-checksum-and-a-compound-label-still-redact.md) | A misread checksum and a compound label still redact | Accepted |
 | [0038](0038-faces-in-pictures-are-found-and-filled-black.md) | Faces in pictures are found and filled black | Accepted |
 | [0039](0039-veilq-is-offered-in-the-microsoft-store-as-msix.md) | veilq is offered in the Microsoft Store as MSIX | Accepted |
+| [0041](0041-a-cell-of-a-table-in-a-picture-is-read-whole.md) | A cell of a table in a picture is read whole | Accepted |
