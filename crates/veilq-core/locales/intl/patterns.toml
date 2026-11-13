@@ -48,11 +48,11 @@ confidence = 0.6
 validate = "ipv4"
 context = { words = ["ip", "ip-adresse", "addr", "address", "client", "remote", "host", "src", "from", "von"], boost = 0.35, window = 24 }
 
-# International numbers: `+` and a country code.
+# International numbers: `+` or `00` and a country code.
 [[patterns]]
 name = "phone-international"
 entity = "PHONE_NUMBER"
-regex = '(?:^|[^\w+\-/.])(?P<pii>\+[1-9]\d{0,2}[ \t/-]?(?:\(0\)[ \t]?)?\d{1,5}(?:[ \t/-]?\d{2,9}){1,4})(?:$|[^\w\-/.]|\.(?:\D|$))'
+regex = '(?:^|[^\w+\-/.])(?P<pii>(?:\+|00)[1-9]\d{0,2}[ \t/-]?(?:\(0\)[ \t]?)?\d{1,5}(?:[ \t/-]?\d{2,9}){1,4})(?:$|[^\w\-/.]|\.(?:\D|$))'
 confidence = 0.8
 context = { words = ["tel", "telefon", "phone", "mobil", "mobile", "handy", "fax", "rückruf", "call"], boost = 0.15 }
 

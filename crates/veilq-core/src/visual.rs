@@ -564,6 +564,31 @@ fn candidates(
             }
         }
     }
+    // A line and the one right below it that starts with a number, read as
+    // two lines: a letter's address block (`Am Anger 7` / `15938 Lindau`),
+    // which a row of the page cuts where a window beside it holds lines of
+    // its own, and a line read alone does not hold whole.
+    for (i, line) in lines.iter().enumerate() {
+        let next = lines
+            .iter()
+            .filter(|l| l.text.starts_with(|c: char| c.is_ascii_digit()) && below(line, l));
+        for l in next {
+            let base = line.text.len() + 1;
+            let two = Page {
+                text: format!("{}\n{}", line.text, l.text),
+                chars: line
+                    .chars
+                    .iter()
+                    .copied()
+                    .chain(l.chars.iter().map(|(s, e, r)| (base + s, base + e, *r)))
+                    .collect(),
+            };
+            for c in read(&two.text, &neighbours(lines, &heads, i))? {
+                let rects = boxes(&two, c.start, c.end, w, h);
+                out.push((c, rects));
+            }
+        }
+    }
     Ok(out)
 }
 
@@ -1200,6 +1225,30 @@ mod tests {
             unmarked("Kanzlei Muster · Lindenweg 12 · 28195 Bremen"),
             None
         );
+    }
+
+    #[test]
+    fn a_letters_address_block_beside_a_window_is_an_address() {
+        // A letter's preview beside an application's window: the window's
+        // lines stand in the rows of the letter's, and the page's rows cut
+        // the address block into two cells.
+        let engine = Engine::new(&crate::Policy::default(), None, b"test", None).unwrap();
+        let lines = [
+            line("Elemente", 0, 100),
+            line("Auf der Höhe 9", 600, 100),
+            line("Name  Rechnungsnummer", 0, 122),
+            line("15938 Lindau", 600, 122),
+        ];
+        let found: Vec<Rect> = candidates(&engine, &lines, 2000, 300, false)
+            .unwrap()
+            .into_iter()
+            .filter(|(c, _)| c.entity.as_str() == "ADDRESS")
+            .flat_map(|(_, rects)| rects)
+            .collect();
+        // Both lines of the block, nothing of the window.
+        assert!(found.iter().any(|r| r.y < 110 && r.x >= 590), "{found:?}");
+        assert!(found.iter().any(|r| r.y >= 110 && r.x >= 590), "{found:?}");
+        assert!(found.iter().all(|r| r.x >= 590), "{found:?}");
     }
 
     /// With the real NER model (VEILQ_NER_DIR, VEILQ_ORT_DYLIB): a line

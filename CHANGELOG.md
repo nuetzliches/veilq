@@ -6,6 +6,20 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A letter's address block is found: the street on a line of its own and
+  the postcode and town on the next (`Am Anger 7` / `15938 Lindau`), in text
+  and in a picture, also where a window beside the letter breaks the
+  picture's rows.
+- A street's small words belong to it: `Auf der Höhe 9, 15938 Lindau` is
+  found whole, not from `Höhe` on.
+- An international number written with `00` (`0049 30 1234567`) is a phone
+  number; one with three leading zeros (`000496/2026`, an invoice's) is not.
+- Fewer false names in screenshots: an office under a signature
+  (`Geschäftsführer`, `Rechtsanwältin`, `Steuerberater`) and a product in a
+  window's bar (`Copilot`) are no person.
+
 ## [0.3.0] - 2026-11-13
 
 **Before you update:** a policy that names the purpose `legal` now fills a

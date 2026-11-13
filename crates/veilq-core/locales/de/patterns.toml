@@ -73,14 +73,25 @@ entity = "ADDRESS"
 regex = '\b\p{Lu}[\p{L}.\-]*?(?:straße|strasse|str\.|weg|gasse|platz|allee|ring|damm|ufer|steig|pfad|chaussee|markt|graben|wall|hof|berg|feld|garten| (?:Straße|Strasse|Str\.|Weg|Gasse|Platz|Allee|Ring|Damm|Ufer|Chaussee|Markt|Graben|Wall))\s+\d{1,4}\s?[a-zA-Z]?(?:\s?-\s?\d{1,4})?(?:,\s*|[ \t]*\r?\n[ \t]*|\s+)\d{5}\s+\p{Lu}[\p{L}\-]+(?:\s+(?:an der|am|im|in der)\s+\p{Lu}\p{L}+)?(?: \p{Lu}[\p{L}\-]+){0,2}'
 confidence = 0.9
 
-# A street without a street word (`Alte Mühle 3`, `Am Markt 4`), known by
-# its number, a comma and a postcode: `Am Anger 7, 15938 Lindau
-# Ost-Heide`. Up to three words each side, single spaces only: a
-# picture's row joins its lines with two, and the next line is not the town.
+# A street without a street word (`Alte Mühle 3`, `Am Markt 4`, `Auf der
+# Höhe 9`), known by its number, a comma and a postcode: `Am Anger 7, 15938
+# Lindau Ost-Heide`. Up to four words before the number, the small ones of a
+# street's name among them, and three after; single spaces only: a picture's
+# row joins its lines with two, and the next line is not the town.
 [[patterns]]
 name = "address-postcode"
 entity = "ADDRESS"
-regex = '\b\p{Lu}[\p{L}.\-]*(?: \p{Lu}[\p{L}.\-]*){0,2} \d{1,4} ?[a-zA-Z]?, ?\d{5} \p{Lu}[\p{L}\-]+(?: \p{Lu}[\p{L}\-]+){0,2}'
+regex = '\b\p{Lu}[\p{L}.\-]*(?: (?:\p{Lu}[\p{L}.\-]*|an|am|auf|aus|bei|beim|der|die|das|den|dem|des|im|in|hinter|über|unter|vor|vom|von|zu|zum|zur)){0,3} \d{1,4} ?[a-zA-Z]?, ?\d{5} \p{Lu}[\p{L}\-]+(?: \p{Lu}[\p{L}\-]+){0,2}'
+confidence = 0.85
+
+# A letter's address block: the street and number on a line of their own,
+# the postcode and the town on the next (`Auf der Höhe 9` / `15938
+# Lindau`). Two lines that hold nothing else say what they are without a
+# street word.
+[[patterns]]
+name = "address-lines"
+entity = "ADDRESS"
+regex = '(?m)^[ \t]*(?P<pii>\p{Lu}[\p{L}.\-]*(?: (?:\p{Lu}[\p{L}.\-]*|an|am|auf|aus|bei|beim|der|die|das|den|dem|des|im|in|hinter|über|unter|vor|vom|von|zu|zum|zur)){0,3} \d{1,4} ?[a-zA-Z]?(?: ?- ?\d{1,4})?[ \t]*\r?\n[ \t]*\d{5} \p{Lu}[\p{L}\-]+(?: (?:an der|am|im|in der) \p{Lu}\p{L}+)?(?: \p{Lu}[\p{L}\-]+){0,2})[ \t]*\r?$'
 confidence = 0.85
 
 # A street and number alone, when the text says it is an address.
@@ -117,11 +128,12 @@ context = { words = ["straße", "strasse", "str.", "street", "anschrift", "adres
 
 # National numbers: 0 and an area code. Not after a digit and `-` or `/`,
 # so that `2026-0421-5550` (an invoice number) stays. At least three digits
-# after the area code: a postcode (`01067`) is not a number.
+# after the area code: a postcode (`01067`) is not a number. No area code
+# starts with 0 and no country code either: `000496/2026` is an invoice's.
 [[patterns]]
 name = "phone"
 entity = "PHONE_NUMBER"
-regex = '(?:^|[^\w\-/.+])(?P<pii>0\d{2,5}[ \t/-]?\d{3,9}(?:[ \t/-]?\d{1,9}){0,2})(?:$|[^\w\-/.]|\.(?:\D|$))'
+regex = '(?:^|[^\w\-/.+])(?P<pii>0(?:0[1-9]|[1-9]\d)\d{0,3}[ \t/-]?\d{3,9}(?:[ \t/-]?\d{1,9}){0,2})(?:$|[^\w\-/.]|\.(?:\D|$))'
 confidence = 0.75
 context = { words = ["tel", "telefon", "phone", "mobil", "handy", "fax", "rückruf", "erreichbar", "anruf"], boost = 0.2 }
 
