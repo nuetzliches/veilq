@@ -169,6 +169,19 @@ says `review_required` and where.
   for names, addresses and court file numbers, `development` adds secrets
   (access keys, tokens, private keys, JWTs). A purpose only tightens; the
   policy's own settings come first.
+- **Deny lists** (ADR-0044): when the people a text can name are known (a
+  member list), `[[deny]]` in the policy finds them always: whole words,
+  any case, with the genitive, each part of a full name alone too. The
+  values stand inline or in plain text files beside the policy, one per
+  line:
+
+  ```toml
+  [[deny]]
+  files = ["names.txt"]
+  ```
+
+  A list of names is personal data itself: keep its files out of the
+  repository (`.gitignore`), and a file veilq cannot read stops the run.
 - **`veilq mark <body>`** decides on a ticket's description for a gateway
   between a tracker and an agent: a body whose first line is a matching
   `veilq: cleaned|pass <hash>` (or an exempt prefix from the policy's

@@ -24,6 +24,14 @@ const busy = ref(false);
 
 const entityRows = computed(() => view.value?.entities ?? []);
 
+/** The deny lists (ADR-0044) by their size only: the names they hold are not shown. */
+const denySummary = computed(() => {
+  const deny = policy.value?.deny ?? [];
+  const values = deny.reduce((n, d) => n + (d.values?.length ?? 0), 0);
+  const files = deny.reduce((n, d) => n + (d.files?.length ?? 0), 0);
+  return deny.length ? t('rules.denySummary', { values, files }) : null;
+});
+
 /** A plain copy: the policy is JSON, and a reactive proxy cannot be `structuredClone`d. */
 function clone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;
@@ -149,6 +157,7 @@ onMounted(async () => {
             <textarea v-model="allowPatterns" class="mono" rows="4" spellcheck="false" />
           </label>
         </div>
+        <p v-if="denySummary" class="hint">{{ denySummary }}</p>
       </details>
 
       <details>

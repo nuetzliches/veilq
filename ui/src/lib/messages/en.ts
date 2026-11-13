@@ -278,6 +278,7 @@ export const en = {
   'rules.allowTitle': 'Never personal data',
   'rules.allowValues': 'Exact values, one per line (your firm\'s name, a court)',
   'rules.allowPatterns': 'Patterns a whole finding matches, one per line',
+  'rules.denySummary': 'Deny list in the policy file: {values} values and {files} files, always personal data, even when listed above',
   'rules.perType': 'Per type',
   'rules.type': 'Type',
   'rules.asAbove': 'as above',
