@@ -87,7 +87,7 @@ onBeforeUnmount(() => clearInterval(poll));
       <div class="row">
         <span class="label">{{ t('folder.from') }}</span>
         <span class="mono path">{{ source || t('folder.none') }}</span>
-        <button class="small" @click="picking = 'source'">{{ t('common.choose') }}</button>
+        <button class="small" :class="{ primary: !source }" @click="picking = 'source'">{{ t('common.choose') }}</button>
       </div>
       <div class="row">
         <span class="label">{{ t('folder.to') }}</span>
@@ -103,7 +103,9 @@ onBeforeUnmount(() => clearInterval(poll));
           {{ t('folder.start') }}
         </button>
         <button v-if="batch?.running" @click="api.cancelBatch()">{{ t('folder.stop') }}</button>
-        <span class="hint">{{ t('output.replaceWith') }} {{ actionLabel(action || info.default_action) }}</span>
+        <span v-if="!source" class="hint">{{ t('folder.needSource') }}</span>
+        <span v-else-if="!target" class="hint">{{ t('folder.needTarget') }}</span>
+        <span v-else class="hint">{{ t('output.replaceWith') }} {{ actionLabel(action || info.default_action) }}</span>
       </div>
       <p v-if="error" class="failure">{{ error }}</p>
     </section>

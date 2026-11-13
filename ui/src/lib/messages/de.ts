@@ -219,6 +219,8 @@ export const de: Record<MessageKey, string> = {
   'folder.more': 'Weitere Optionen',
   'folder.unverified': 'Bilder, die nicht zur Ruhe kommen, trotzdem schreiben, zur Prüfung markiert',
   'folder.start': 'Ordner schwärzen',
+  'folder.needSource': 'Zuerst bei „Von“ wählen, welcher Ordner geschwärzt wird.',
+  'folder.needTarget': 'Bei „Nach“ angeben, wohin die geschwärzten Dateien kommen.',
   'folder.stop': 'Anhalten',
   'folder.running': 'Wird geschwärzt …',
   'folder.stopped': 'Angehalten',
