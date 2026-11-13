@@ -1,0 +1,10 @@
+Liebe <PERSON>,
+
+ich heisse <PERSON> und schreibe wegen dem Termin.
+Mein Bruder <PERSON> kommt auch mit.
+Ich bin <PERSON> und erreichbar unter <PHONE_NUMBER>.
+Liebe Kollegen,
+bitte kurz bestätigen.
+
+Liebe Grüße
+<PERSON>

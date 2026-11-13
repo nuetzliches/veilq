@@ -560,6 +560,44 @@ fn letter_de(r: &mut Rng) -> (String, Vec<Truth>) {
     t.finish()
 }
 
+/// Messages as people write them: first person, informal, a given name on
+/// its own after a greeting, a kinship word or a self-introduction, and
+/// spelling mistakes (#50). Greetings without a name stay as look-alikes.
+fn chat_de(r: &mut Rng) -> (String, Vec<Truth>) {
+    let (p, q, s) = (Person::de(r), Person::de(r), Person::de(r));
+    let mut t = Text::default();
+    t.lit(r.pick(&["Hallo ", "Hi ", "Liebe ", "Hey "]))
+        .pii("PERSON", &p.first)
+        .lit(r.pick(&[",\n", "!\n", ",\n\n"]));
+    match r.below(3) {
+        0 => t.lit("ich heiße ").pii("PERSON", &q.first),
+        1 => t.lit("ich heisse ").pii("PERSON", &q.first.to_lowercase()),
+        _ => t.lit("Mein Name ist ").pii("PERSON", &q.first),
+    };
+    t.lit(" und schreibe wegen dem Termin.\n");
+    t.lit(r.pick(&[
+        "Mein Bruder ",
+        "Meine Schwester ",
+        "mein Sohn ",
+        "meine Tochter ",
+    ]))
+    .pii("PERSON", &s.first)
+    .lit(" kommt auch mit.\n");
+    if r.chance(50) {
+        t.lit("Ich bin ")
+            .pii("PERSON", &q.first)
+            .lit(" und erreichbar unter ")
+            .pii("PHONE_NUMBER", &q.phone)
+            .lit(".\n");
+    }
+    t.lit(r.pick(&["Hallo zusammen,\n", "Liebe Kollegen,\n", "Hallo Team!\n"]))
+        .lit("bitte kurz bestätigen.\n");
+    t.lit(r.pick(&["\nLiebe Grüße\n", "\nViele Grüße\n"]))
+        .pii("PERSON", &q.name())
+        .lit("\n");
+    t.finish()
+}
+
 fn log_de(r: &mut Rng) -> (String, Vec<Truth>) {
     let x = Lookalikes::new(r);
     let mut t = Text::default();
@@ -900,6 +938,25 @@ pub fn corpus(seed: u64) -> Vec<Doc> {
             truth,
         });
     }
+    // Reported cases (#39), each from a stream of its own, so that the
+    // documents above stay the same: messages written informally, and a
+    // case list whose columns hold surnames and addresses.
+    let mut r = Rng::new(seed ^ 0x0C4A_7000_0000_0000);
+    for i in 1..=2 {
+        let (content, truth) = chat_de(&mut r);
+        docs.push(Doc {
+            path: format!("de/text/chat-{i}.txt"),
+            content: content.into_bytes(),
+            truth,
+        });
+    }
+    let mut r = Rng::new(seed ^ 0x0115_7000_0000_0000);
+    let (content, truth) = visual::list_png(&mut r);
+    docs.push(Doc {
+        path: "de/png/list-1.png".to_owned(),
+        content,
+        truth,
+    });
     docs
 }
 

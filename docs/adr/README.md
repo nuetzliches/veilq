@@ -82,3 +82,4 @@ keep it to about a page.
 | [0040](0040-purposes-are-built-in-policy-packs.md) | Purposes are built-in policy packs | Accepted |
 | [0041](0041-a-cell-of-a-table-in-a-picture-is-read-whole.md) | A cell of a table in a picture is read whole | Accepted |
 | [0042](0042-a-column-of-a-list-names-what-its-cells-hold.md) | A column of a list names what its cells hold | Accepted |
+| [0043](0043-a-given-name-alone-after-a-cue-is-a-name.md) | A given name alone after a cue is a name | Accepted |

@@ -567,6 +567,22 @@ pub(crate) const NOT_NAMES: &[&str] = &[
     "colleague",
     "manager",
     "agent",
+    // What follows a greeting without being a name (`Liebe Grüße`, `Hallo
+    // zusammen`, `Liebe Kollegen`).
+    "grüße",
+    "grüsse",
+    "gruß",
+    "gruss",
+    "kollegen",
+    "kolleginnen",
+    "leute",
+    "welt",
+    "zusammen",
+    "alle",
+    "freunde",
+    "freundinnen",
+    "damen",
+    "herren",
     // Greetings and contact labels: what is left when `remove` took the
     // name and number after them.
     "hallo",
@@ -1213,6 +1229,16 @@ values = ["Mira Albers"]
                 "Pia Sommer  Im Grün  5  77855  Achern",
                 "Im Grün  5  77855  Achern",
             ),
+            // OCR reads a number's letter as another sign, and a cut
+            // town's dots as one.
+            (
+                "Kühn  Rosenhöhe  50€  50667  Köln",
+                "Rosenhöhe  50€  50667  Köln",
+            ),
+            (
+                "Albers  Wiesengrund  9  60311  Frankfurt a .",
+                "Wiesengrund  9  60311  Frankfurt a .",
+            ),
         ] {
             assert!(
                 found(text, "ADDRESS", value),
@@ -1236,6 +1262,58 @@ values = ["Mira Albers"]
                 "{text}: {:?}",
                 findings(text, "")
             );
+        }
+    }
+
+    #[test]
+    fn a_given_name_alone_after_a_cue_is_a_name() {
+        for (text, value) in [
+            (
+                "Hallo Ayşe,
+wie geht es?",
+                "Ayşe",
+            ),
+            ("Liebe Lena!", "Lena"),
+            (
+                "Hi Jonas
+kurz zur Info",
+                "Jonas",
+            ),
+            ("Sehr geehrter Mehmet:", "Mehmet"),
+            ("mein Bruder Ali kommt mit", "Ali"),
+            ("Meine Schwester Lena ist krank", "Lena"),
+            ("ich heiße Mehmet und", "Mehmet"),
+            ("Mein Name ist Ayşe.", "Ayşe"),
+            ("ich heise Mehmet", "Mehmet"),
+            ("ich heisse ayşe", "ayşe"),
+            ("Ich bin Lena und komme morgen", "Lena"),
+            ("Ich bin Lena, die Nachbarin", "Lena"),
+        ] {
+            assert!(
+                found(text, "PERSON", value),
+                "{text}: {:?}",
+                findings(text, "")
+            );
+        }
+        // What follows such a cue without being a name.
+        for text in [
+            "Liebe Grüße
+",
+            "Hallo zusammen,",
+            "Liebe Kollegen,",
+            "Hallo Team!",
+            "Hallo Welt!",
+            "Sehr geehrte Damen und Herren,",
+            "ich heiße nicht so",
+            "Ich bin Montag und Dienstag weg",
+            "Ich bin müde und gehe",
+            "Liebe Lena Albers, danke",
+        ] {
+            let names: Vec<_> = findings(text, "")
+                .into_iter()
+                .filter(|(e, v)| e == "PERSON" && v != "Lena Albers")
+                .collect();
+            assert!(names.is_empty(), "{text}: {names:?}");
         }
     }
 }

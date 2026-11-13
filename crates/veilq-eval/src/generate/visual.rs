@@ -92,6 +92,38 @@ impl Canvas {
         (bounds, caret)
     }
 
+    /// How wide `s` is drawn at `size`.
+    fn width(&self, size: f32, s: &str) -> f32 {
+        let scaled = self.font.as_scaled(PxScale::from(size));
+        let mut prev = None;
+        let mut w = 0.0;
+        for c in s.chars() {
+            let id = self.font.glyph_id(c);
+            if let Some(p) = prev {
+                w += scaled.kern(p, id);
+            }
+            w += scaled.h_advance(id);
+            prev = Some(id);
+        }
+        w
+    }
+
+    /// `s` as a table shows it in a column `w` wide: cut short with ` ...`
+    /// when it does not fit.
+    fn fit(&self, size: f32, s: &str, w: f32) -> String {
+        if self.width(size, s) <= w {
+            return s.to_owned();
+        }
+        let mut chars: Vec<char> = s.chars().collect();
+        loop {
+            chars.pop();
+            let cut: String = chars.iter().collect::<String>().trim_end().to_owned() + " ...";
+            if chars.is_empty() || self.width(size, &cut) <= w {
+                return cut;
+            }
+        }
+    }
+
     /// Text that is no personal data; where it ends.
     fn lit(&mut self, x: f32, y: f32, size: f32, s: &str, color: [u8; 3]) -> f32 {
         self.text(x, y, size, s, color).1
@@ -297,6 +329,87 @@ pub(super) fn transfer_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
     c.pii("PERSON", 200.0, 204.0, 12.0, &p.name(), INK);
     c.lit(200.0, 250.0, 12.0, "Verwendungszweck *", INK);
     c.lit(200.0, 270.0, 12.0, &format!("Rechnung {}", x.invoice), INK);
+    (png(&c.img), c.truth)
+}
+
+/// Streets of a case list, also without a street word.
+const LIST_STREETS: &[&str] = &[
+    "Eschenbreite",
+    "Im Kleefeld",
+    "Am Mühlenbach",
+    "Hohenauer Straße",
+    "Birkenhainer Str.",
+    "Wiesengrund",
+    "Kastanienallee",
+    "Rosenhöhe",
+];
+
+/// What a case list's status column says.
+const LIST_STATUS: &[&str] = &[
+    "",
+    "",
+    "Unterlagen angefordert",
+    "Klärung nach Gespräch",
+    "Antwort ausstehend",
+];
+
+/// A case list in a browser (ADR-0041, ADR-0042): the client, a surname
+/// alone in the column of opposing parties, a status, and street, number,
+/// postcode and town in columns of their own, cells cut short where a
+/// value is too long for its column.
+pub(super) fn list_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
+    const ROW: f32 = 30.0;
+    // Title, x, width.
+    let cols: [(&str, f32, f32); 10] = [
+        ("Kürzel", 10.0, 50.0),
+        ("SB", 70.0, 40.0),
+        ("Akte", 120.0, 80.0),
+        ("Mandant", 210.0, 140.0),
+        ("Gegner", 360.0, 110.0),
+        ("Status", 480.0, 200.0),
+        ("Straße", 690.0, 84.0),
+        ("Nr.", 780.0, 40.0),
+        ("PLZ", 830.0, 60.0),
+        ("Ort", 900.0, 70.0),
+    ];
+    let rows = 6;
+    let mut c = Canvas::new(1020, 50 + rows * ROW as u32, [255, 255, 255]);
+    for (title, x, _) in cols {
+        c.lit(x, 12.0, 12.0, title, INK);
+    }
+    c.rect(0, 34, 1020, 1, [210, 213, 220]);
+    for i in 0..rows {
+        let y = 44.0 + i as f32 * ROW;
+        let (p, other) = (Person::de(r), Person::de(r));
+        let (plz, town) = p.city.split_once(' ').expect("a postcode and a town");
+        let street = r.pick(LIST_STREETS);
+        let number = format!(
+            "{}{}",
+            1 + r.below(120),
+            if r.chance(15) { "c" } else { "" }
+        );
+        c.lit(cols[0].1, y, 12.0, r.pick(&["MTH", "CLI", "LKA"]), INK);
+        c.lit(cols[1].1, y, 12.0, "sab", INK);
+        c.lit(cols[2].1, y, 12.0, &format!("B0{}", r.digits(4)), INK);
+        if r.chance(25) {
+            c.lit(cols[3].1, y, 12.0, "Nordwerk GmbH", INK);
+        } else {
+            c.pii("PERSON", cols[3].1, y, 12.0, &p.name(), INK);
+        }
+        if r.chance(60) {
+            c.pii("PERSON", cols[4].1, y, 12.0, &other.last, INK);
+        }
+        let status = r.pick(LIST_STATUS);
+        if !status.is_empty() {
+            c.lit(cols[5].1, y, 12.0, status, INK);
+        }
+        for (k, value) in [(6, street), (7, number.as_str()), (8, plz), (9, town)] {
+            let (_, x, w) = cols[k];
+            let shown = c.fit(12.0, value, w - 8.0);
+            c.pii("ADDRESS", x, y, 12.0, &shown, INK);
+        }
+        c.rect(0, (y + 22.0) as u32, 1020, 1, [232, 234, 238]);
+    }
     (png(&c.img), c.truth)
 }
 

@@ -21,6 +21,12 @@ Notable changes per release. The format follows
 
 ### Fixed
 
+- A given name alone after a cue is found without NER (ADR-0043, #50):
+  after a greeting when a comma, `!` or the line end follows (`Hallo Ayşe,`),
+  after a kinship word (`mein Bruder Ali`) and in a self-introduction
+  (`ich heiße Mehmet`, `ich heisse ayşe`, `Ich bin Lena und …`). The corpus
+  gains informal messages and a case list picture with surnames alone and
+  cut cells (#39).
 - A table cell in a picture whose text wraps over several lines is read as
   one text (ADR-0041). Before, its middle line was read in the row of the
   cells beside it, and a word of a company name there (`KMS Bad` /
