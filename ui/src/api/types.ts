@@ -104,6 +104,8 @@ export interface PurposeInfo {
   /** How many values and patterns it takes for no personal data. */
   allow: number;
   costs: Record<string, { miss: number; false_positive: number }>;
+  /** What it does with text OCR reads badly (ADR-0045), where it sets it. */
+  low_confidence?: 'review' | 'box' | 'error';
 }
 
 export interface PolicyTried {

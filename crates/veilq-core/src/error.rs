@@ -47,6 +47,13 @@ pub enum Error {
         rounds: usize,
     },
 
+    /// OCR read text badly where nothing was filled, and the policy says
+    /// `[picture] low_confidence = "error"` (ADR-0045).
+    #[error(
+        "OCR read text with low confidence at {at} (handwriting, small or blurred text), and the policy stops there (`[picture] low_confidence = \"error\"`); nothing was written"
+    )]
+    Unread { at: String },
+
     /// Writing or reading a mapping file (ADR-0018).
     #[error("mapping: {0}")]
     Mapping(String),
