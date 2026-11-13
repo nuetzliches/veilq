@@ -1,0 +1,9 @@
+Liebe <PERSON>,
+Mein Name ist <PERSON> und schreibe wegen dem Termin.
+meine Tochter <PERSON> kommt auch mit.
+Ich bin <PERSON> und erreichbar unter <PHONE_NUMBER>.
+Hallo Team!
+bitte kurz bestätigen.
+
+Liebe Grüße
+<PERSON>

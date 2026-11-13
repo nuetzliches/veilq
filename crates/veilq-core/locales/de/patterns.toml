@@ -14,6 +14,51 @@ entity = "PERSON"
 regex = '\b(?:Hallo|Liebe[rs]?|Sehr geehrte[rs]?|Kontoinhaber(?:in)?|Ansprechpartner(?:in)?|Mandant(?:in)?|Bruder|Schwester|Ehemann|Ehefrau|Sohn|Tochter|Vater|Mutter|Sachbearbeiter(?:in)?|Sachbearbeitung|Bearbeiter(?:in)?|Kläger(?:in)?|Beklagte[rn]?|Zeugin|Zeuge|Patient(?:in)?|Mieter(?:in)?|Vermieter(?:in)?|Schuldner(?:in)?|Gläubiger(?:in)?|Kunde|Kundin|zu Händen|z\. ?Hd\.?)[:,]?\s+(?:von\s+|vom\s+)?(?P<pii>\p{Lu}\p{Ll}+(?:[- ]\p{Lu}\p{Ll}+){1,2})'
 confidence = 0.8
 
+# One given name after a greeting, when a comma, `!`, `:` or the line end
+# follows: `Hallo Ayşe,`, `Liebe Lena!`. What follows a greeting without
+# being a name (`Liebe Grüße`, `Hallo Team!`, `Liebe Kollegen,`) is a role
+# word (`detect::NOT_NAMES`) and dropped.
+[[patterns]]
+name = "name-greeting"
+entity = "PERSON"
+regex = '(?m)\b(?:Hallo|Hi|Hey|Moin|Servus|Liebe[rs]?|Sehr geehrte[rs]?|Guten Tag)[ \t]+(?P<pii>\p{Lu}\p{Ll}+)[ \t]*(?:[,!:]|\r?$)'
+confidence = 0.8
+
+# One given name after a kinship word with a possessive: `mein Bruder Ali`,
+# `meine Schwester Lena`.
+[[patterns]]
+name = "name-kin"
+entity = "PERSON"
+regex = '\b(?:[Mm]ein|[Dd]ein|[Ss]ein|[Uu]nser|[Ee]uer|[Ii]hr)e?[mnrs]?\s+(?:Bruder|Schwester|Sohn|Tochter|Vater|Mutter|Mann|Frau|Ehemann|Ehefrau|Onkel|Tante|Cousin|Cousine|Neffe|Nichte|Oma|Opa|Enkel|Enkelin|Freund|Freundin|Partner|Partnerin)\s+(?P<pii>\p{Lu}\p{Ll}+)'
+confidence = 0.8
+
+# A self-introduction: `ich heiße Mehmet`, `Mein Name ist Ayşe`, also
+# misspelt (`ich heise`, `ich heisse`).
+[[patterns]]
+name = "name-self"
+entity = "PERSON"
+regex = '(?i:\bich\s+hei(?:ß|ss|s)e|\bmein\s+name\s+ist)\s+(?P<pii>\p{Lu}\p{Ll}+)'
+confidence = 0.85
+validate = "given_name_de"
+
+# The same in a message written in lower case: `ich heisse ayşe`.
+[[patterns]]
+name = "name-self-lower"
+entity = "PERSON"
+regex = '(?i:\bich\s+hei(?:ß|ss|s)e|\bmein\s+name\s+ist)\s+(?P<pii>\p{Ll}+)'
+confidence = 0.75
+validate = "given_name_de"
+
+# `Ich bin Lena und …`: only before `und`, a comma or the line end, as
+# `ich bin` is followed by much else (`Ich bin Lehrer und …` is a false
+# positive fail closed takes).
+[[patterns]]
+name = "name-self-bin"
+entity = "PERSON"
+regex = '(?m)\b[Ii]ch\s+bin\s+(?P<pii>\p{Lu}\p{Ll}+)(?:[ \t]*,|[ \t]+und\b|[ \t]*\r?$)'
+confidence = 0.75
+validate = "given_name_de"
+
 [[patterns]]
 name = "name-signature"
 entity = "PERSON"
@@ -49,12 +94,13 @@ context = { words = ["anschrift", "adresse", "wohnhaft", "wohnt", "straße", "st
 # A table's row: street, number, postcode and town in cells of their own,
 # as a picture's row joins them (two spaces). A screen cuts a long cell
 # (`Hachenburg …`, `Fürstenwal ..`), and OCR may read the dots as a cell of
-# their own (`Siedlungsstr  ( ..`): the number, the postcode and the town
-# after it say what the first cell is.
+# their own (`Siedlungsstr  ( ..`), a letter after the number as another
+# sign (`50€` for `50c`) and a cut town's dots as one (`Frankfurt a .`):
+# the number, the postcode and the town after it say what the first cell is.
 [[patterns]]
 name = "address-columns"
 entity = "ADDRESS"
-regex = '\b\p{Lu}[\p{L}.\-]*(?: [\p{L}.\-]+){0,3}(?: {1,3}\(? ?(?:\.{2,3}|…)\.?)? {2,}\d{1,4} ?[a-zA-Z]? {2,}\d{5} {2,}\p{Lu}[\p{L}\-]+(?: \p{Lu}[\p{L}\-]+){0,2}(?: ?(?:\.{2,3}|…)\.?)?'
+regex = '\b\p{Lu}[\p{L}.\-]*(?: [\p{L}.\-]+){0,3}(?: {1,3}\(? ?(?:\.{2,3}|…)\.?)? {2,}\d{1,4} ?[^\s\d]? {2,}\d{5} {2,}\p{Lu}[\p{L}\-]+(?: [\p{L}\-]+){0,2}(?: {0,3}(?:\.{1,3}|…)\.?)?'
 confidence = 0.85
 
 # A whole value under a column that names a street (`Straße`, `Anschrift`):

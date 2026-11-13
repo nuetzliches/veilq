@@ -15,6 +15,7 @@ pub const VALIDATORS: &[&str] = &[
     "kfz_de",
     "ssn_us",
     "email_host",
+    "given_name_de",
 ];
 
 /// The checks that are checksums: one misread character fails them. The
@@ -41,6 +42,7 @@ pub fn check(name: &str, value: &str) -> bool {
         "kfz_de" => kfz_de(value),
         "ssn_us" => ssn_us(value),
         "email_host" => email_host(value),
+        "given_name_de" => given_name_de(value),
         _ => false,
     }
 }
@@ -328,6 +330,65 @@ pub fn email_host(value: &str) -> bool {
         && host.chars().all(|c| c.is_ascii_hexdigit())
         && host.chars().any(|c| c.is_ascii_digit());
     !digest && !version && !commit && !TAGS.contains(&host.as_str())
+}
+
+/// A word after `ich heiße` or `ich bin` can be a given name: not a word
+/// that follows such a cue in a sentence (`ich heiße nicht`, `Ich bin
+/// Montag und Dienstag weg`).
+pub fn given_name_de(value: &str) -> bool {
+    const WORDS: &[&str] = &[
+        "nicht",
+        "auch",
+        "so",
+        "ja",
+        "nein",
+        "aber",
+        "und",
+        "oder",
+        "wie",
+        "was",
+        "hier",
+        "da",
+        "jetzt",
+        "mal",
+        "eigentlich",
+        "eben",
+        "wohl",
+        "doch",
+        "noch",
+        "schon",
+        "gerade",
+        "der",
+        "die",
+        "das",
+        "ein",
+        "eine",
+        "einer",
+        "montag",
+        "dienstag",
+        "mittwoch",
+        "donnerstag",
+        "freitag",
+        "samstag",
+        "sonntag",
+        "heute",
+        "morgen",
+        "gestern",
+        "januar",
+        "februar",
+        "märz",
+        "september",
+        "oktober",
+        "november",
+        "dezember",
+        "urlaub",
+        "krank",
+        "zuhause",
+        "unterwegs",
+    ];
+    // Months that are given names as well (`April`, `Juni`, `August`) stay
+    // names.
+    !WORDS.contains(&value.to_lowercase().as_str())
 }
 
 #[cfg(test)]
