@@ -18,6 +18,7 @@ pub mod mail;
 pub mod mapping;
 pub mod marker;
 pub mod models;
+pub(crate) mod names;
 #[cfg(feature = "ner")]
 pub mod ner;
 #[cfg(feature = "ocr")]

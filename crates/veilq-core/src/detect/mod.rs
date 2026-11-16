@@ -329,9 +329,16 @@ impl Detector {
         context: &str,
         source: Source,
     ) -> Result<Vec<Decision>, Error> {
+        Ok(self.resolve(text, self.candidates(text, context, source)?))
+    }
+
+    /// What [`decide`](Self::decide) makes of `candidates` in `text`: the
+    /// candidates of the detectors, and those of a file's names (ADR-0047)
+    /// beside them.
+    pub(crate) fn resolve(&self, text: &str, candidates: Vec<Candidate>) -> Vec<Decision> {
         let mut out = Vec::new();
         let mut kept = Vec::new();
-        for c in self.candidates(text, context, source)? {
+        for c in candidates {
             let value = &text[c.start..c.end];
             let dropped = if c.entity.as_str() != "PERSON" || c.detector == DENY {
                 None
@@ -397,7 +404,7 @@ impl Detector {
             out.push(self.decision(c, verdict, raised));
         }
         out.sort_by_key(|d| (d.candidate.start, d.candidate.end));
-        Ok(out)
+        out
     }
 
     fn decision(&self, candidate: Candidate, verdict: Verdict, raised: bool) -> Decision {
@@ -558,7 +565,7 @@ const PRODUCTS: &[&str] = &[
 ];
 
 /// The accounts a system makes, whose home directory names no person.
-const ACCOUNTS: &[&str] = &[
+pub(crate) const ACCOUNTS: &[&str] = &[
     "public",
     "default",
     "defaultuser0",
@@ -850,27 +857,7 @@ fn deny_rule(d: &Deny) -> Result<Option<Rule>, String> {
     if forms.is_empty() {
         return Ok(None);
     }
-    let nfd: Vec<String> = forms.iter().map(|f| f.nfd().collect()).collect();
-    forms.extend(nfd);
-    // The longest first: an alternation takes the first that matches.
-    forms.sort_by(|a, b| b.chars().count().cmp(&a.chars().count()).then(a.cmp(b)));
-    forms.dedup();
-    let alternatives: Vec<String> = forms
-        .iter()
-        .map(|f| {
-            f.chars()
-                .map(|c| match c {
-                    'i' | 'I' | 'ı' | 'İ' => "[iIıİ]".to_owned(),
-                    ' ' => r"\s+".to_owned(),
-                    c => regex::escape(&c.to_string()),
-                })
-                .collect::<String>()
-        })
-        .collect();
-    let regex = format!(
-        r"(?i)\b(?P<pii>(?:{})(?:s|'s|’s)?)\b",
-        alternatives.join("|")
-    );
+    let regex = format!(r"(?i)\b(?P<pii>(?:{})(?:s|'s|’s)?)\b", alternation(forms));
     let regex = regex::RegexBuilder::new(&regex)
         .size_limit(64 << 20)
         .build()
@@ -887,8 +874,32 @@ fn deny_rule(d: &Deny) -> Result<Option<Rule>, String> {
     }))
 }
 
+/// `forms` as one alternation of a regex, each in NFC and NFD, the longest
+/// first (an alternation takes the first that matches), with Turkish `İ`,
+/// `I`, `ı` and `i` as one letter and a space as any white space.
+pub(crate) fn alternation(mut forms: Vec<String>) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    let nfd: Vec<String> = forms.iter().map(|f| f.nfd().collect()).collect();
+    forms.extend(nfd);
+    forms.sort_by(|a, b| b.chars().count().cmp(&a.chars().count()).then(a.cmp(b)));
+    forms.dedup();
+    forms
+        .iter()
+        .map(|f| {
+            f.chars()
+                .map(|c| match c {
+                    'i' | 'I' | 'ı' | 'İ' => "[iIıİ]".to_owned(),
+                    ' ' => r"\s+".to_owned(),
+                    c => regex::escape(&c.to_string()),
+                })
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
 /// Confidences in thousandths: `1.0 - 0.3` is `0.7`, not `0.69999998`.
-fn round(x: f32) -> f32 {
+pub(crate) fn round(x: f32) -> f32 {
     (x * 1000.0).round() / 1000.0
 }
 

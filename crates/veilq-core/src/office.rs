@@ -894,12 +894,23 @@ impl Workbook {
             contexts.push(String::new());
             contexts.sort();
             contexts.dedup();
-            let mut all: Vec<Candidate> = Vec::new();
+            // Of overlapping findings of the readings the longest, then the
+            // most confident: a full name under its column, not the words a
+            // file's names (ADR-0047) find in it without one.
+            let mut every: Vec<Candidate> = Vec::new();
             for ctx in &contexts {
-                for c in engine.findings(&text, ctx)? {
-                    if all.iter().all(|a| c.end <= a.start || c.start >= a.end) {
-                        all.push(c);
-                    }
+                every.extend(engine.findings(&text, ctx)?);
+            }
+            every.sort_by(|a, b| {
+                (b.end - b.start)
+                    .cmp(&(a.end - a.start))
+                    .then(b.confidence.total_cmp(&a.confidence))
+                    .then(a.start.cmp(&b.start))
+            });
+            let mut all: Vec<Candidate> = Vec::new();
+            for c in every {
+                if all.iter().all(|a| c.end <= a.start || c.start >= a.end) {
+                    all.push(c);
                 }
             }
             if all.is_empty() {

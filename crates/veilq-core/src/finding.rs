@@ -116,7 +116,8 @@ pub struct Finding {
     /// From 0 to 1.
     pub confidence: f32,
     /// The detector that found it: `pattern:<locale>.<rule>` for a built-in
-    /// pattern, `policy:<name>` for one of the policy, later `ner`, `ocr`.
+    /// pattern, `policy:<name>` for one of the policy, later `ner`, `ocr`;
+    /// `names:file` for a name found elsewhere in the same file (ADR-0047).
     pub detector: String,
     /// The keyed pseudonym (ADR-0001), only when the action is `pseudonymize`.
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -1305,6 +1305,40 @@ mod tests {
     }
 
     #[test]
+    fn a_name_in_a_tab_and_a_cut_sidebar_is_the_name_of_the_record() {
+        // An application's record: the name in its header with a cue, the
+        // same name in a tab cut short and in a sidebar the window cuts on
+        // the left (ADR-0047).
+        let engine = Engine::new(&crate::Policy::default(), None, b"test", None)
+            .unwrap()
+            .with_names();
+        let lines = [
+            line("Brandtmeier, Jon..", 600, 0),
+            line("Herr Jonas Brandtmeier", 200, 60),
+            line("andtmeier, Jonas", 0, 200),
+        ];
+        let found: Vec<Rect> = candidates(&engine, &lines, 2000, 300, false)
+            .unwrap()
+            .into_iter()
+            .filter(|(c, _)| c.entity.as_str() == "PERSON")
+            .flat_map(|(_, rects)| rects)
+            .collect();
+        for (y, x) in [(0, 600), (200, 0)] {
+            assert!(
+                found
+                    .iter()
+                    .any(|r| r.y + PAD >= y && r.y <= y && r.x <= x + PAD),
+                "line at {y}: {found:?}"
+            );
+        }
+        // The tab's cut given name too: `Jon` starts at x 730.
+        assert!(
+            found.iter().any(|r| r.y <= PAD && r.right() >= 750),
+            "{found:?}"
+        );
+    }
+
+    #[test]
     fn a_box_that_touches_a_value_does_not_cover_it() {
         let r = |x, y, w, h| Rect { x, y, w, h };
         // A name's padded box above, reaching 5 pixels into the address.

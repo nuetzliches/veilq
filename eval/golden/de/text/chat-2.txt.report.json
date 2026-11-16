@@ -46,8 +46,8 @@
         "line": 4,
         "column": 9
       },
-      "confidence": 0.75,
-      "detector": "pattern:de.name-self-bin"
+      "confidence": 0.85,
+      "detector": "names:file"
     },
     {
       "entity": "PHONE_NUMBER",

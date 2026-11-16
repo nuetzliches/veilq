@@ -22,8 +22,8 @@
         "line": 3,
         "column": 12
       },
-      "confidence": 0.75,
-      "detector": "pattern:de.name-self-lower"
+      "confidence": 0.8,
+      "detector": "names:file"
     },
     {
       "entity": "PERSON",
@@ -46,8 +46,8 @@
         "line": 5,
         "column": 9
       },
-      "confidence": 0.75,
-      "detector": "pattern:de.name-self-bin"
+      "confidence": 0.8,
+      "detector": "names:file"
     },
     {
       "entity": "PHONE_NUMBER",
