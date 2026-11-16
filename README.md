@@ -8,9 +8,9 @@ recordings: on your machine, in CI and as an MCP tool for any agent.
 > PDF are scanned and redacted with German and English patterns, from the
 > CLI, a local web UI and an MCP server; pseudonyms can be put back with an
 > encrypted mapping. Names that no word marks are found by an optional NER
-> model, pictures are read by an optional OCR model, and faces in them
-> are filled black by an optional face detector. Handwriting (M5) and
-> audio (M6) follow, each with a transcript reviewed before the redaction; see
+> model, pictures are read by an optional OCR model, and faces and
+> handwritten signatures in them are filled black by optional detectors.
+> Handwriting (M5) and audio (M6) follow, each with a transcript reviewed before the redaction; see
 > [docs/plan.md](docs/plan.md).
 
 ## Without a command line
@@ -123,9 +123,10 @@ keeps them in the model directory (`veilq models list` shows where;
 | `ner` | names that no word marks (`Beim Termin war auch Lena Vogt`) | GLiNER `urchade/gliner_multi_pii-v1` in ONNX (onnx-community), Apache-2.0 | 570 MB |
 | `ocr` | images, GIF, PDF pages | PaddleOCR PP-OCRv3 detector and PP-OCRv5 Latin recogniser in ONNX (`monkt/paddleocr-onnx`), Apache-2.0 | 10 MB |
 | `face` | faces in images, GIF, PDF pages, filled black (found, never recognised) | YuNet 2023mar (OpenCV Zoo, `opencv/face_detection_yunet`), MIT | 0.2 MB |
+| `signature` | handwritten signatures in images, GIF, PDF pages, filled black (found, never compared) | YOLOS-tiny (`mdefrance/yolos-tiny-signature-detection`), converted to ONNX by nuetzliches (`nuetzliches/yolos-tiny-signature-detection-onnx`), Apache-2.0 | 26 MB |
 | `pdf` | PDF (with `ocr`) | PDFium (`bblanchon/pdfium-binaries`), BSD-3-Clause | 7 MB |
 
-`ner`, `ocr` and `face` share ONNX Runtime (Microsoft, MIT, 33 MB), fetched with
+`ner`, `ocr`, `face` and `signature` share ONNX Runtime (Microsoft, MIT, 33 MB), fetched with
 the first of them. ONNX Runtime and PDFium are pinned for Windows x86_64,
 Linux x86_64 and arm64, and macOS on Apple Silicon.
 
@@ -133,13 +134,15 @@ Linux x86_64 and arm64, and macOS on Apple Silicon.
 veilq models fetch ner
 veilq models fetch ocr
 veilq models fetch face
+veilq models fetch signature
 veilq models fetch pdf
 ```
 
 Without a network: `veilq models install <component> --from <dir>` takes
 the same files from a directory. A run never downloads anything. Without
-OCR an image is an error, and so it is without `face` unless the policy
-keeps faces (`[picture] faces = "keep"`); without NER the report says
+OCR an image is an error, and so it is without `face` or `signature` unless
+the policy keeps faces or signatures (`[picture] faces = "keep"`,
+`signatures = "keep"`); without NER the report says
 `review_required`.
 
 The OCR reads printed text. Handwriting, very small or blurred text is read

@@ -116,6 +116,7 @@ export const en = {
   'entity.COURT_FILE_NUMBER': 'Court file number',
   'entity.SECRET': 'Secret',
   'entity.FACE': 'Face',
+  'entity.SIGNATURE': 'Signature',
   'entity.UNREAD_TEXT': 'Unreadable text',
   'entity.METADATA': 'Document properties',
   'entity.IMAGE': 'Embedded picture',

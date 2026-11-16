@@ -6,12 +6,21 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
-**Before you update:** a name found once is now found wherever the same
-file names it again, and a streamed run may ask for a review it did not ask
-for before. Set `[names] everywhere = false` to keep the old behaviour.
+**Before you update:** pictures need one more component, the signature
+detector (`veilq models fetch signature`, 26 MB); until it is installed an
+image, a GIF or a PDF is refused, unless the policy keeps signatures
+(`[picture] signatures = "keep"`). A name found once is now found wherever
+the same file names it again, and a streamed run may ask for a review it did
+not ask for before; `[names] everywhere = false` keeps the old behaviour.
 
 ### Added
 
+- Handwritten signatures in pictures (ADR-0048): found by a signature
+  detector (YOLOS-tiny, Apache-2.0, converted to ONNX by nuetzliches) and
+  filled black as `SIGNATURE` before OCR reads the picture, in images, GIF
+  frames, PDF pages and pictures inside Office files and mails. Found, never
+  compared. A picture with a signature is `review_required`: large diagonal
+  watermark text can be taken for one (#80).
 - A file's names (ADR-0047): a person found once in a file (with its pages,
   parts and attachments) is found wherever the file names it again, each
   word of the name alone, in any case and with the genitive, at the

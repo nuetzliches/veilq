@@ -557,6 +557,15 @@ fn engine(policy: &Policy, action: Option<Action>) -> anyhow::Result<Engine> {
         })?;
         engine = engine.with_faces(std::sync::Arc::new(faces));
     }
+    #[cfg(feature = "ocr")]
+    if let Some((model, runtime)) = models::signature_files(&dir) {
+        let signatures =
+            veilq_core::signature::Signatures::load(&veilq_core::signature::ModelFiles {
+                model: &model,
+                runtime: &runtime,
+            })?;
+        engine = engine.with_signatures(std::sync::Arc::new(signatures));
+    }
     #[cfg(feature = "pdf")]
     if let Some(library) = models::pdf_library(&dir) {
         engine = engine.with_pdfium(veilq_core::pdf::pdfium(&library)?);

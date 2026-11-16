@@ -49,6 +49,9 @@ const PAD: u32 = 2;
 pub const BOXES_ONLY: &str = "in a picture every action is a black box: a pseudonym or a stand-in cannot be written into pixels faithfully";
 /// Said when faces were filled: what the detector missed stays.
 pub const FACES_FOUND: &str = "faces were found and filled black; the face detector can miss a face (in profile, small, covered, drawn): check the picture";
+/// Said when signatures were filled: what the detector missed stays, and
+/// what it took for one (a watermark, a stamp) is filled too.
+pub const SIGNATURES_FOUND: &str = "signatures were found and filled black; the signature detector can miss one (small, faint, crossing text) and take a watermark or a stamp for one: check the picture";
 /// Verify rounds at most: reading a filled picture again moves rows and
 /// labels, so a round can find what the one before did not (ADR-0026).
 const ROUNDS: usize = 6;
@@ -372,6 +375,7 @@ pub fn redact_picture(
     out: &mut Outcome,
 ) -> Result<Vec<Rect>, Error> {
     let mut boxes = faces(engine, img, frame, apply, out, &[])?;
+    boxes.extend(signatures(engine, img, frame, apply, out, &[])?);
     boxes.extend(read_whole(engine, ocr, img, frame, apply, out)?);
     Ok(boxes)
 }
@@ -404,13 +408,80 @@ fn faces(
     let Some(detector) = engine.faces() else {
         return Ok(Vec::new());
     };
-    let entity = EntityType::new("FACE").expect("a valid type");
-    let threshold = engine.threshold(&entity);
     let rgb = DynamicImage::ImageRgba8(img.clone()).to_rgb8();
+    let found = detector
+        .find(&rgb)?
+        .into_iter()
+        .map(|f| (f.rect, crate::face::confidence(f.score)))
+        .collect();
+    let region = Region {
+        entity: "FACE",
+        detector: "face",
+        reason: FACES_FOUND,
+    };
+    Ok(regions(
+        engine, &region, found, img, frame, apply, out, kept,
+    ))
+}
+
+/// The handwritten signatures in `img` (ADR-0048), as [`faces`] does with
+/// faces: reported as `SIGNATURE` and filled; nothing when the policy keeps
+/// signatures.
+fn signatures(
+    engine: &Engine,
+    img: &mut RgbaImage,
+    frame: Option<u64>,
+    apply: bool,
+    out: &mut Outcome,
+    kept: &[Rect],
+) -> Result<Vec<Rect>, Error> {
+    let Some(detector) = engine.signatures() else {
+        return Ok(Vec::new());
+    };
+    let rgb = DynamicImage::ImageRgba8(img.clone()).to_rgb8();
+    let found = detector
+        .find(&rgb)?
+        .into_iter()
+        .map(|s| (s.rect, crate::signature::confidence(s.score)))
+        .collect();
+    let region = Region {
+        entity: "SIGNATURE",
+        detector: "signature",
+        reason: SIGNATURES_FOUND,
+    };
+    Ok(regions(
+        engine, &region, found, img, frame, apply, out, kept,
+    ))
+}
+
+/// What a detector of regions (faces, signatures) reports.
+struct Region {
+    entity: &'static str,
+    detector: &'static str,
+    /// The review reason of a picture in which one was found.
+    reason: &'static str,
+}
+
+/// `found` (boxes and confidences) reported as findings of `region` and
+/// filled (with `apply`), at `frame`. One below its threshold, or inside a
+/// box of `kept` (a box of the frame before, whose pixels stood still), is
+/// left out. The boxes filled are returned.
+#[allow(clippy::too_many_arguments)]
+fn regions(
+    engine: &Engine,
+    region: &Region,
+    found: Vec<(Rect, f32)>,
+    img: &mut RgbaImage,
+    frame: Option<u64>,
+    apply: bool,
+    out: &mut Outcome,
+    kept: &[Rect],
+) -> Vec<Rect> {
+    let entity = EntityType::new(region.entity).expect("a valid type");
+    let threshold = engine.threshold(&entity);
     let mut filled = Vec::new();
-    for face in detector.find(&rgb)? {
-        let confidence = crate::face::confidence(face.score);
-        if confidence < threshold || covered(&face.rect, kept.iter()) {
+    for (rect, confidence) in found {
+        if confidence < threshold || covered(&rect, kept.iter()) {
             continue;
         }
         out.findings.push(Finding {
@@ -418,23 +489,23 @@ fn faces(
             location: Location::Region {
                 part: None,
                 frame,
-                x: face.rect.x,
-                y: face.rect.y,
-                width: face.rect.w,
-                height: face.rect.h,
+                x: rect.x,
+                y: rect.y,
+                width: rect.w,
+                height: rect.h,
             },
             confidence,
-            detector: "face".into(),
+            detector: region.detector.into(),
             pseudonym: None,
         });
         if apply {
-            fill(img, &face.rect);
+            fill(img, &rect);
         }
-        filled.push(face.rect);
+        filled.push(rect);
     }
     if !filled.is_empty() {
-        if !out.review_reasons.iter().any(|r| r == FACES_FOUND) {
-            out.review_reasons.push(FACES_FOUND.into());
+        if !out.review_reasons.iter().any(|r| r == region.reason) {
+            out.review_reasons.push(region.reason.into());
         }
         if matches!(
             engine.action_for_entity(&entity),
@@ -444,7 +515,7 @@ fn faces(
             out.review_reasons.push(BOXES_ONLY.into());
         }
     }
-    Ok(filled)
+    filled
 }
 
 /// Where a picture being read is a band of a larger one: its top row there,
@@ -814,6 +885,7 @@ fn redact_changed(
 ) -> Result<Vec<Rect>, Error> {
     let (w, h) = img.dimensions();
     let mut boxes = faces(engine, img, frame, apply, out, kept)?;
+    boxes.extend(signatures(engine, img, frame, apply, out, kept)?);
     let margin = MARGIN.max(h / 20);
     let mut bands = changed_bands(before, after, margin);
     // Read each band on a copy; a band cut short starts the reading over, so

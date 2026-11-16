@@ -116,6 +116,7 @@ export const de: Record<MessageKey, string> = {
   'entity.COURT_FILE_NUMBER': 'Gerichtsaktenzeichen',
   'entity.SECRET': 'Geheimnis',
   'entity.FACE': 'Gesicht',
+  'entity.SIGNATURE': 'Unterschrift',
   'entity.UNREAD_TEXT': 'Unleserlicher Text',
   'entity.METADATA': 'Dokumenteigenschaften',
   'entity.IMAGE': 'Eingebettetes Bild',

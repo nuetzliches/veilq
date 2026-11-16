@@ -121,6 +121,13 @@ pub struct Picture {
     /// or whose people may be seen.
     #[serde(default)]
     pub faces: FacePolicy,
+    /// Handwritten signatures (ADR-0048): `redact` (the default) fills
+    /// every signature the signature detector finds black, as `SIGNATURE`
+    /// findings; a picture is then an error while the detector is not
+    /// installed (`veilq models fetch signature`). `keep` leaves them, for
+    /// pictures whose signatures may be seen.
+    #[serde(default)]
+    pub signatures: SignaturePolicy,
     /// Text OCR reads badly (a letter or digit below 0.7, ADR-0045) where
     /// nothing was filled: `review` (the default) says so in the report,
     /// `box` fills the line black as `UNREAD_TEXT`, `error` stops the run.
@@ -164,6 +171,14 @@ pub enum LowConfidence {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FacePolicy {
+    #[default]
+    Redact,
+    Keep,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SignaturePolicy {
     #[default]
     Redact,
     Keep,

@@ -209,7 +209,7 @@ export function mockApi(): Api {
     async models() {
       return {
         dir: '/mock/models',
-        components: ['ner', 'ocr', 'face', 'pdf'].map((name) => ({
+        components: ['ner', 'ocr', 'face', 'signature', 'pdf'].map((name) => ({
           name,
           about: `Mock: ${name}`,
           installed: false,
