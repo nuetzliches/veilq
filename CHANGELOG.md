@@ -6,6 +6,15 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Small text in pictures (ADR-0049): a picture below 1600 pixels is read
+  at up to twice its size, so a scaled-down screenshot's lines are found
+  whole. An address whose street OCR read in lower case, an IBAN glued to
+  its label (`IBANDE89…`) and a town followed by dots read from `a. M.` are
+  found; an IBAN read short is filled as long as it would be, and text
+  right of it may be filled with it.
+
 ## [0.4.0] - 2026-11-16
 
 **Before you update:** pictures need one more component, the signature

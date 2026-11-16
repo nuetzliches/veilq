@@ -20,10 +20,13 @@ regex = '\b[\p{L}\d._%+-]+@\p{L}[\p{L}\d-]+(?:\.[\p{L}\d-]+)*\b'
 confidence = 0.9
 validate = "email_host"
 
+# OCR of small text loses the space after the label and glues it to the
+# code (`IBANDE89…`, `ANDE89…` with `IB` lost); the label is left out of the
+# finding. No country code is `AN`.
 [[patterns]]
 name = "iban"
 entity = "IBAN_CODE"
-regex = '\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,3})?\b'
+regex = '\b(?:I?B?AN)?(?P<pii>[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,3})?)\b'
 confidence = 0.95
 validate = "iban"
 context = { words = ["iban", "konto", "bankverbindung", "account", "kontonummer"], boost = 0.05 }
