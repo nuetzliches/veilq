@@ -70,8 +70,7 @@ const FACE: &str = "https://huggingface.co/opencv/face_detection_yunet/resolve/3
 /// (`mdefrance/yolos-tiny-signature-detection`, Apache-2.0), converted to
 /// ONNX with its weights unchanged (`scripts/export-signature-model.py`) and
 /// published by nuetzliches on Hugging Face, at a fixed revision (ADR-0048).
-const SIGNATURE: &str =
-    "https://huggingface.co/nuetzliches/yolos-tiny-signature-detection-onnx/resolve/REVISION";
+const SIGNATURE: &str = "https://huggingface.co/nuetzliches/yolos-tiny-signature-detection-onnx/resolve/253098aa7c80961872cf88c31cd42aa2d576000d";
 
 /// PDFium (BSD-3-Clause, with the licences of its parts in the archive), as
 /// `bblanchon/pdfium-binaries` (MIT) builds it, at the version whose API
