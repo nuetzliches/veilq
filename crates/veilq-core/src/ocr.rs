@@ -2,7 +2,8 @@
 //! ONNX find the lines of text in an image and every character's place.
 //!
 //! **Detection** (DB): the image, scaled so that its longer side is at most
-//! [`MAX_SIDE`] and both sides are multiples of 32, normalised with the
+//! [`MAX_SIDE`] (a small one enlarged up to [`MAX_UPSCALE`] times) and both
+//! sides are multiples of 32, normalised with the
 //! ImageNet mean and deviation, gives a map of text probability; regions above
 //! [`PIXEL`] that score at least [`BOX`] become boxes, widened as DB widens
 //! them (`unclip`). **Recognition** (CTC): each box, scaled to a height of 48,
@@ -23,6 +24,11 @@ use crate::Error;
 
 /// The longer side of the image the detector reads.
 pub const MAX_SIDE: u32 = 1600;
+/// How far the detector enlarges a small image towards [`MAX_SIDE`]. A
+/// screenshot passed on scaled down has lines eight pixels high: read at that
+/// size, DB split a line of an address and lost most of the IBAN below it;
+/// twice as large, it found both whole.
+const MAX_UPSCALE: f32 = 2.0;
 /// Text probability a pixel needs.
 const PIXEL: f32 = 0.3;
 /// Mean probability a box needs.
@@ -166,9 +172,7 @@ impl Ocr {
 
     fn detect(&self, img: &RgbImage) -> Result<Vec<Rect>, Error> {
         let (w, h) = img.dimensions();
-        let scale = (MAX_SIDE as f32 / w.max(h) as f32).min(1.0);
-        let round32 = |v: f32| ((v / 32.0).round() as u32).max(1) * 32;
-        let (sw, sh) = (round32(w as f32 * scale), round32(h as f32 * scale));
+        let (sw, sh) = detect_size(w, h);
         let small = imageops::resize(img, sw, sh, imageops::FilterType::Triangle);
         const MEAN: [f32; 3] = [0.485, 0.456, 0.406];
         const STD: [f32; 3] = [0.229, 0.224, 0.225];
@@ -291,6 +295,15 @@ impl Ocr {
     }
 }
 
+/// The size the detector reads an image of `w` x `h` at: its longer side
+/// towards [`MAX_SIDE`], enlarged at most [`MAX_UPSCALE`] times, both sides
+/// multiples of 32.
+fn detect_size(w: u32, h: u32) -> (u32, u32) {
+    let scale = (MAX_SIDE as f32 / w.max(h) as f32).min(MAX_UPSCALE);
+    let round32 = |v: f32| ((v / 32.0).round() as u32).max(1) * 32;
+    (round32(w as f32 * scale), round32(h as f32 * scale))
+}
+
 /// A connected region of the probability map above [`PIXEL`].
 #[derive(Debug, PartialEq)]
 struct Component {
@@ -371,6 +384,18 @@ mod tests {
         assert_eq!((c[0].x, c[0].y, c[0].w, c[0].h), (0, 0, 2, 2));
         assert_eq!((c[1].x, c[1].y, c[1].w, c[1].h), (4, 1, 2, 2));
         assert!((c[1].score - 0.8).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_small_image_is_read_larger_a_large_one_smaller() {
+        // A screenshot passed on at 800 pixels: twice its size.
+        assert_eq!(detect_size(800, 545), (1600, 1088));
+        // Not more than twice, however small.
+        assert_eq!(detect_size(400, 200), (800, 416));
+        // Between: up to the longer side the detector reads.
+        assert_eq!(detect_size(1200, 600), (1600, 800));
+        // Larger: down to it, as before.
+        assert_eq!(detect_size(3200, 1600), (1600, 800));
     }
 
     #[test]

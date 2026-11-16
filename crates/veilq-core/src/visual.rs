@@ -577,6 +577,46 @@ fn unmarked(text: &str) -> Option<String> {
     changed.then_some(out)
 }
 
+/// The length of an IBAN of the countries veilq's users bank in most; any
+/// other, and a country code read wrong, as Germany's.
+fn iban_length(country: &str) -> usize {
+    match country {
+        "AT" | "LU" => 20,
+        "BE" => 16,
+        "CH" | "LI" => 21,
+        "DK" | "NL" => 18,
+        "ES" => 24,
+        "FR" | "IT" | "MC" => 27,
+        "PL" => 28,
+        _ => 22,
+    }
+}
+
+/// `rects` of a candidate; for an IBAN read short (its checksum fails: OCR
+/// lost characters), the last one widened to the right by what the lost
+/// characters take, at the width a read one has, a space per four, and one
+/// more. Small text runs digits together: the recogniser reads two as one,
+/// and the detector ends the line where the gap before the rest looked
+/// wide, so the rest of the IBAN stood beside the box unfilled.
+fn with_rest(c: &crate::detect::Candidate, value: &str, mut rects: Vec<Rect>, w: u32) -> Vec<Rect> {
+    if c.entity.as_str() != "IBAN_CODE" || crate::detect::validate::iban(value) {
+        return rects;
+    }
+    let read: Vec<char> = value.chars().filter(|c| !c.is_whitespace()).collect();
+    let country: String = read.iter().take(2).collect();
+    let lost = iban_length(&country).saturating_sub(read.len());
+    let (Some(first), Some(last)) = (
+        rects.iter().map(|r| r.x).min(),
+        rects.iter_mut().max_by_key(|r| r.right()),
+    ) else {
+        return rects;
+    };
+    let per_char = (last.right() - first) as f32 / value.chars().count().max(1) as f32;
+    let more = ((lost + lost / 4 + 1) as f32 * per_char).ceil() as u32;
+    last.w = (last.right() + more).min(w) - last.x;
+    rects
+}
+
 /// What the detectors find in the lines OCR read: the page as one text,
 /// and each line with its neighbours as context; each with its boxes. A
 /// text that may hold a word processor's formatting marks (`Sven·Heid`,
@@ -607,6 +647,7 @@ fn candidates(
                 names.extend(crate::detect::name_words(&text[c.start..c.end]).map(str::to_owned));
             }
             let rects = boxes(&p, c.start, c.end, w, h);
+            let rects = with_rest(&c, &text[c.start..c.end], rects, w);
             out.push((c, rects));
         }
     }
@@ -631,6 +672,7 @@ fn candidates(
                     }
                 }
                 let rects = boxes(&one, c.start, c.end, w, h);
+                let rects = with_rest(&c, &text[c.start..c.end], rects, w);
                 out.push((c, rects));
             }
         }
@@ -1321,6 +1363,37 @@ mod tests {
         assert!(found.iter().any(|r| r.y < 110 && r.x >= 590), "{found:?}");
         assert!(found.iter().any(|r| r.y >= 110 && r.x >= 590), "{found:?}");
         assert!(found.iter().all(|r| r.x >= 590), "{found:?}");
+    }
+
+    #[test]
+    fn an_iban_read_short_is_filled_as_long_as_it_is() {
+        // Small text: OCR glued the label to the IBAN and lost five of its
+        // 22 characters; the box reaches as far as they would.
+        let engine = Engine::new(&crate::Policy::default(), None, b"test", None).unwrap();
+        let iban = |lines: &[Line]| -> Vec<Rect> {
+            candidates(&engine, lines, 2000, 300, false)
+                .unwrap()
+                .into_iter()
+                .filter(|(c, _)| c.entity.as_str() == "IBAN_CODE")
+                .flat_map(|(_, rects)| rects)
+                .collect()
+        };
+        let short = [
+            line("ANDE893704004405320", 100, 100),
+            line("Status", 600, 100),
+        ];
+        let found = iban(&short);
+        // Ten pixels a character: five lost, a space and one more past 290.
+        assert!(found.iter().any(|r| r.right() >= 360), "{found:?}");
+        assert!(found.iter().all(|r| r.right() < 600), "{found:?}");
+        // An IBAN read whole keeps its own boxes.
+        let whole = [
+            line("DE89 3704 0044 0532 0130 00", 100, 100),
+            line("BIC", 380, 100),
+        ];
+        let found = iban(&whole);
+        assert!(!found.is_empty());
+        assert!(found.iter().all(|r| r.right() < 380), "{found:?}");
     }
 
     /// With the real NER model (VEILQ_NER_DIR, VEILQ_ORT_DYLIB): a line

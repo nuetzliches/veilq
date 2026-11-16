@@ -1086,6 +1086,31 @@ mod tests {
             "ADDRESS",
             "Auf der Höhe 9, 15938 Lindau"
         ));
+        // Small text read by OCR: the street's capital or first letters lost.
+        for (text, value) in [
+            (
+                "B  indenstralle 12, 28195 Brem",
+                "indenstralle 12, 28195 Brem",
+            ),
+            (
+                "lindenstraße 12, 28195 Bremen  Status",
+                "lindenstraße 12, 28195 Bremen",
+            ),
+        ] {
+            assert!(
+                found(text, "ADDRESS", value),
+                "{text}: {:?}",
+                findings(text, "")
+            );
+        }
+        // A short word before the number is not a street.
+        for text in ["Seite 3 von 4, 15938 Lindau", "bis 4, 15938 Lindau"] {
+            assert!(
+                !findings(text, "").iter().any(|f| f.0 == "ADDRESS"),
+                "{text}: {:?}",
+                findings(text, "")
+            );
+        }
     }
 
     #[test]
@@ -1350,6 +1375,27 @@ mod tests {
     }
 
     #[test]
+    fn an_iban_glued_to_its_label_is_an_iban() {
+        // OCR of small text drops the space after `IBAN`, and its first
+        // letters with it; the label is not part of the finding.
+        for text in [
+            "IBANDE89 3704 0044 0532 0130 00",
+            "ANDE89 3704 0044 0532 0130 00 - BIC",
+        ] {
+            assert_eq!(
+                read(text, "", Source::Ocr),
+                vec![("IBAN_CODE".into(), "DE89 3704 0044 0532 0130 00".into())],
+                "{text}"
+            );
+        }
+        // Cut short and misread, as from a scaled-down screenshot.
+        assert_eq!(
+            read("ANDE893704004405320", "", Source::Ocr),
+            vec![("IBAN_CODE".into(), "DE893704004405320".into())]
+        );
+    }
+
+    #[test]
     fn the_policy_adds_patterns_and_allows_values() {
         let policy = Policy::parse(
             r#"
@@ -1471,6 +1517,10 @@ values = ["Mira Albers"]
             (
                 "Albers  Wiesengrund  9  60311  Frankfurt a .",
                 "Wiesengrund  9  60311  Frankfurt a .",
+            ),
+            (
+                "Albers  Wiesengrund  9  60311  Frankfurt a. ..",
+                "Wiesengrund  9  60311  Frankfurt a. ..",
             ),
         ] {
             assert!(
