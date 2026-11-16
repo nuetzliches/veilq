@@ -6,6 +6,21 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+**Before you update:** a name found once is now found wherever the same
+file names it again, and a streamed run may ask for a review it did not ask
+for before. Set `[names] everywhere = false` to keep the old behaviour.
+
+### Added
+
+- A file's names (ADR-0047): a person found once in a file (with its pages,
+  parts and attachments) is found wherever the file names it again, each
+  word of the name alone, in any case and with the genitive, at the
+  confidence of the first finding (detector `names:file`). In a picture a
+  word cut short (`Jon..`) or cut by a window's left edge (`andtmeier,`)
+  counts too. An input held whole is read a second time when a name stood
+  before the place it was found; a streamed one asks for a review instead.
+  `[names] everywhere = false` turns it off.
+
 ### Fixed
 
 - A letter's address block is found: the street on a line of its own and

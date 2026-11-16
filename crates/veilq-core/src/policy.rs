@@ -70,6 +70,9 @@ pub struct Policy {
     /// Pictures (ADR-0023, ADR-0038).
     #[serde(default)]
     pub picture: Picture,
+    /// A file's names (ADR-0047).
+    #[serde(default)]
+    pub names: Names,
     /// Bodies that carry their verdict (`veilq mark`, ADR-0024).
     #[serde(default)]
     pub markers: Markers,
@@ -125,6 +128,25 @@ pub struct Picture {
     /// first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub low_confidence: Option<LowConfidence>,
+}
+
+/// What veilq does with the names it finds in a file (ADR-0047).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Names {
+    /// `true` (the default): a person found once is found wherever the file
+    /// names it again, each word of the name alone, at the confidence of the
+    /// first finding (detector `names:file`); in a picture also a word cut
+    /// by a window's edge (`Brand..`). `false` leaves each text to its own
+    /// detectors.
+    #[serde(default = "default_true")]
+    pub everywhere: bool,
+}
+
+impl Default for Names {
+    fn default() -> Self {
+        Self { everywhere: true }
+    }
 }
 
 /// What happens to text OCR reads badly (ADR-0045), from the mildest.
@@ -378,6 +400,7 @@ impl Default for Policy {
             mapping: None,
             office: Office::default(),
             picture: Picture::default(),
+            names: Names::default(),
             markers: Markers::default(),
             purposes: default_purposes(),
             costs: BTreeMap::new(),

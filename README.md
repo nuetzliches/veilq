@@ -186,6 +186,11 @@ such a line black instead (as `UNREAD_TEXT`; the purpose `legal` does so),
 
   A list of names is personal data itself: keep its files out of the
   repository (`.gitignore`), and a file veilq cannot read stops the run.
+- **A file's names** (ADR-0047): a person found once is found wherever the
+  same file names it again (a record's name in a tab, a list, a footer),
+  each word of the name alone; in a picture also a word cut short (`Jon..`)
+  or by a window's edge. `[names] everywhere = false` leaves each text to
+  its own detectors.
 - **`veilq mark <body>`** decides on a ticket's description for a gateway
   between a tracker and an agent: a body whose first line is a matching
   `veilq: cleaned|pass <hash>` (or an exempt prefix from the policy's

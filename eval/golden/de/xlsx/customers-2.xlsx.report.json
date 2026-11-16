@@ -37,7 +37,7 @@
         "start": 0,
         "end": 14
       },
-      "confidence": 0.8,
+      "confidence": 0.95,
       "detector": "pattern:intl.phone-international"
     },
     {
@@ -89,7 +89,7 @@
         "start": 0,
         "end": 12
       },
-      "confidence": 0.75,
+      "confidence": 0.95,
       "detector": "pattern:de.phone"
     },
     {
@@ -141,7 +141,7 @@
         "start": 0,
         "end": 12
       },
-      "confidence": 0.75,
+      "confidence": 0.95,
       "detector": "pattern:de.phone"
     },
     {
@@ -193,7 +193,7 @@
         "start": 0,
         "end": 18
       },
-      "confidence": 0.8,
+      "confidence": 0.95,
       "detector": "pattern:intl.phone-international"
     },
     {

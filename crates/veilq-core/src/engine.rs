@@ -30,6 +30,24 @@ pub const CHUNK: usize = 64 << 10;
 /// Lines a text chunk keeps for the next one.
 const CARRY_LINES: usize = 3;
 
+/// How often an input held whole is read for its names (ADR-0047): once,
+/// and once more when a name was learned after it stood unfound.
+const NAME_PASSES: usize = 2;
+
+/// The review reason when a second reading still learned a name late.
+const NAMES_LATE: &str = "a name found late in the file also stands earlier, where a second reading did not find it either: look for it";
+
+/// The review reason of a streamed run that learned a name late.
+const NAMES_LATE_STREAMED: &str = "a name found further on also stands earlier in the input, which was streamed and not read again: look for it there";
+
+/// Adds `reason` to `report` once and asks for a review.
+fn review(report: &mut Report, reason: &str) {
+    if !report.review_reasons.iter().any(|r| r == reason) {
+        report.review_reasons.push(reason.to_owned());
+    }
+    report.review_required = true;
+}
+
 /// An input format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
@@ -258,6 +276,9 @@ pub struct Engine {
     unverified: bool,
     /// Where each reading and its decisions go, for `scan --explain` (#40).
     explain: Option<Explain>,
+    /// The names of the file being read (ADR-0047), shared by the clones
+    /// that read its parts; `None` outside a run.
+    names: Option<std::sync::Arc<crate::names::Names>>,
     #[cfg(feature = "ocr")]
     ocr: Option<std::sync::Arc<crate::ocr::Ocr>>,
     #[cfg(feature = "ocr")]
@@ -296,6 +317,7 @@ impl Engine {
             markdown: false,
             unverified: false,
             explain: None,
+            names: None,
             #[cfg(feature = "ocr")]
             ocr: None,
             #[cfg(feature = "ocr")]
@@ -321,30 +343,85 @@ impl Engine {
 
     /// `input` redacted as a whole, with the spans a viewer marks.
     pub fn redact_str(&self, input: &str, format: Format) -> Result<Redacted, Error> {
-        let mut out = Vec::new();
-        let run = self.run(input.as_bytes(), Some(&mut out), format)?;
-        Ok(Redacted {
-            text: String::from_utf8(out).expect("the output is built from strings"),
-            report: run.report,
-            input_spans: run.input_spans,
-            output_spans: run.output_spans,
-        })
+        self.whole(
+            |engine| {
+                let mut out = Vec::new();
+                let run = engine.run(input.as_bytes(), Some(&mut out), format)?;
+                Ok(Redacted {
+                    text: String::from_utf8(out).expect("the output is built from strings"),
+                    report: run.report,
+                    input_spans: run.input_spans,
+                    output_spans: run.output_spans,
+                })
+            },
+            |r| &mut r.report,
+        )
     }
 
     /// The findings in `input`, nothing replaced.
     pub fn scan_str(&self, input: &str, format: Format) -> Result<Redacted, Error> {
-        let run = self.run(input.as_bytes(), None, format)?;
-        Ok(Redacted {
-            text: String::new(),
-            report: run.report,
-            input_spans: run.input_spans,
-            output_spans: Vec::new(),
-        })
+        self.whole(
+            |engine| {
+                let run = engine.run(input.as_bytes(), None, format)?;
+                Ok(Redacted {
+                    text: String::new(),
+                    report: run.report,
+                    input_spans: run.input_spans,
+                    output_spans: Vec::new(),
+                })
+            },
+            |r| &mut r.report,
+        )
+    }
+
+    /// A run over an input held whole, with one list of names for the file
+    /// (ADR-0047): when a name was learned after it already stood unfound,
+    /// the input is read once more with the list known from the start. A
+    /// run inside another (a part of a container) shares the outer list.
+    fn whole<T>(
+        &self,
+        once: impl Fn(&Engine) -> Result<T, Error>,
+        report: impl Fn(&mut T) -> &mut Report,
+    ) -> Result<T, Error> {
+        if self.names.is_some() || !self.policy().names.everywhere {
+            return once(self);
+        }
+        let mut names = std::sync::Arc::new(crate::names::Names::default());
+        for pass in 1..=NAME_PASSES {
+            let mut engine = self.clone();
+            engine.names = Some(names.clone());
+            let mut out = once(&engine)?;
+            if !names.late() {
+                return Ok(out);
+            }
+            if pass == NAME_PASSES {
+                review(report(&mut out), NAMES_LATE);
+                return Ok(out);
+            }
+            // The second reading's explanation replaces the first's.
+            if let Some(explain) = &self.explain {
+                explain.take();
+            }
+            names = std::sync::Arc::new(names.seeded());
+        }
+        unreachable!("the last pass returns")
     }
 
     /// A container format, read whole: the output (empty for a scan) and
     /// what the run found. Text formats go through [`Engine::run`].
     pub fn run_bytes(
+        &self,
+        input: &[u8],
+        format: Format,
+        apply: bool,
+    ) -> Result<(Vec<u8>, Run), Error> {
+        self.whole(
+            |engine| engine.run_bytes_once(input, format, apply),
+            |(_, run)| &mut run.report,
+        )
+    }
+
+    fn run_bytes_once(
         &self,
         input: &[u8],
         format: Format,
@@ -393,6 +470,18 @@ impl Engine {
             let mut engine = self.clone();
             engine.markdown = true;
             return engine.run(input, output, format);
+        }
+        // Streamed, the list of names learns forward only (ADR-0047): what
+        // was written is not read again.
+        if self.names.is_none() && self.policy().names.everywhere {
+            let names = std::sync::Arc::new(crate::names::Names::default());
+            let mut engine = self.clone();
+            engine.names = Some(names.clone());
+            let mut run = engine.run(input, output, format)?;
+            if names.late() {
+                review(&mut run.report, NAMES_LATE_STREAMED);
+            }
+            return Ok(run);
         }
         let mut state = State::default();
         let mut pending = String::new();
@@ -582,6 +671,14 @@ impl Engine {
         state.out_offset += out.len();
         state.line += chunk[..upto].bytes().filter(|b| *b == b'\n').count() as u64;
         Ok(())
+    }
+
+    /// This engine with a list of names of its own, as inside a run.
+    #[cfg(test)]
+    pub(crate) fn with_names(&self) -> Self {
+        let mut engine = self.clone();
+        engine.names = Some(std::sync::Arc::new(crate::names::Names::default()));
+        engine
     }
 
     /// Reads images with OCR (ADR-0023).
@@ -847,16 +944,49 @@ impl Engine {
             regex::Regex::new(r"\\?<[A-Z][A-Z0-9_]*\\?>|\[[A-Z][A-Z0-9_]*:[0-9a-f]{8}\]")
                 .expect("a valid regex")
         });
-        let mut decisions = self.detector.decide(text, context, source)?;
-        if placeholders && text.contains(['<', '[']) {
-            let spans: Vec<Range<usize>> = PLACEHOLDER.find_iter(text).map(|m| m.range()).collect();
-            for d in &mut decisions {
-                let c = &d.candidate;
-                if d.verdict == Verdict::Kept
-                    && spans.iter().any(|s| s.start <= c.start && c.end <= s.end)
-                {
-                    d.verdict = Verdict::Placeholder;
+        let found = self.detector.candidates(text, context, source)?;
+        let decide = |names: Option<&crate::names::Names>| {
+            let mut all = found.clone();
+            if let Some(n) = names {
+                all.extend(n.candidates(text, source));
+            }
+            let mut decisions = self.detector.resolve(text, all);
+            if placeholders && text.contains(['<', '[']) {
+                let spans: Vec<Range<usize>> =
+                    PLACEHOLDER.find_iter(text).map(|m| m.range()).collect();
+                for d in &mut decisions {
+                    let c = &d.candidate;
+                    if d.verdict == Verdict::Kept
+                        && spans.iter().any(|s| s.start <= c.start && c.end <= s.end)
+                    {
+                        d.verdict = Verdict::Placeholder;
+                    }
                 }
+            }
+            decisions
+        };
+        let mut decisions = decide(self.names.as_deref());
+        // The file's names (ADR-0047): a person found here goes on the list,
+        // and a name new to it is looked for in this text too.
+        if let Some(names) = &self.names {
+            let kept = |d: &&crate::detect::Decision| d.verdict == Verdict::Kept;
+            let persons: Vec<(usize, usize, f32)> = decisions
+                .iter()
+                .filter(kept)
+                .filter(|d| {
+                    d.candidate.entity.as_str() == "PERSON"
+                        && d.candidate.detector != crate::names::DETECTOR
+                })
+                .map(|d| (d.candidate.start, d.candidate.end, d.candidate.confidence))
+                .collect();
+            let spans = |ds: &[crate::detect::Decision]| -> Vec<(usize, usize)> {
+                ds.iter()
+                    .filter(kept)
+                    .map(|d| (d.candidate.start, d.candidate.end))
+                    .collect()
+            };
+            if names.read(text, &persons, &spans(&decisions)) {
+                decisions = decide(Some(names));
             }
         }
         if let Some(explain) = &self.explain {
@@ -1501,6 +1631,78 @@ mod tests {
 
     fn engine() -> Engine {
         Engine::new(&Policy::default(), None, b"seed", None).unwrap()
+    }
+
+    /// The values of `report`'s findings in `input` (by the input's spans).
+    fn values(input: &str, r: &Redacted) -> Vec<String> {
+        r.input_spans
+            .iter()
+            .map(|s| input[s.clone()].to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn a_name_found_once_is_found_wherever_the_file_names_it() {
+        // The surname stands in a note before the row whose column names
+        // it a person: read whole, the input is read a second time.
+        let csv = "name,notiz\nMira Albers,Albers ruft zurück\nKai Jost,Rückruf an Jonas Brandt\nJonas Brandt,\n";
+        let r = engine()
+            .scan_str(csv, Format::Csv { delimiter: None })
+            .unwrap();
+        let found = values(csv, &r);
+        assert!(found.iter().any(|v| v == "Albers"), "{found:?}");
+        assert!(
+            r.report
+                .findings
+                .iter()
+                .any(|f| f.detector == crate::names::DETECTOR),
+            "{:?}",
+            r.report.findings
+        );
+        assert!(
+            !r.report.review_reasons.iter().any(|r| r == NAMES_LATE),
+            "{:?}",
+            r.report.review_reasons
+        );
+        let redacted = engine()
+            .redact_str(csv, Format::Csv { delimiter: None })
+            .unwrap();
+        assert!(!redacted.text.contains("Albers"), "{}", redacted.text);
+
+        // Within one text, before the finding the name came from.
+        let text = "Brandt ruft an.\nIhr Herr Jonas Brandt\n";
+        let found = values(text, &engine().scan_str(text, Format::Text).unwrap());
+        assert!(found.iter().any(|v| v == "Brandt"), "{found:?}");
+
+        // Off in the policy: each text to its own detectors.
+        let off = Policy::parse("version = 1\n[names]\neverywhere = false\n").unwrap();
+        let e = Engine::new(&off, None, b"seed", None).unwrap();
+        let found = values(text, &e.scan_str(text, Format::Text).unwrap());
+        assert!(!found.iter().any(|v| v == "Brandt"), "{found:?}");
+    }
+
+    #[test]
+    fn a_streamed_run_learns_names_forward_and_asks_for_a_review_behind() {
+        let csv = "name,notiz\nKai Jost,Albers ruft zurück\nMira Albers,\nKai Jost,Albers erneut\n";
+        let run = engine()
+            .run(csv.as_bytes(), None, Format::Csv { delimiter: None })
+            .unwrap();
+        // The later note is found, the earlier one is left and reported.
+        assert_eq!(
+            run.input_spans
+                .iter()
+                .filter(|s| &csv[(*s).clone()] == "Albers")
+                .count(),
+            1,
+            "{:?}",
+            run.report.findings
+        );
+        assert!(
+            run.report
+                .review_reasons
+                .iter()
+                .any(|r| r == NAMES_LATE_STREAMED)
+        );
     }
 
     #[test]

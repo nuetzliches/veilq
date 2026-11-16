@@ -240,6 +240,18 @@
       },
       "type": "object"
     },
+    "Names": {
+      "additionalProperties": false,
+      "description": "What veilq does with the names it finds in a file (ADR-0047).",
+      "properties": {
+        "everywhere": {
+          "default": true,
+          "description": "`true` (the default): a person found once is found wherever the file\nnames it again, each word of the name alone, at the confidence of the\nfirst finding (detector `names:file`); in a picture also a word cut\nby a window's edge (`Brand..`). `false` leaves each text to its own\ndetectors.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "Office": {
       "additionalProperties": false,
       "description": "How Office files are read.",
@@ -412,6 +424,13 @@
         "exempt": []
       },
       "description": "Bodies that carry their verdict (`veilq mark`, ADR-0024)."
+    },
+    "names": {
+      "$ref": "#/$defs/Names",
+      "default": {
+        "everywhere": true
+      },
+      "description": "A file's names (ADR-0047)."
     },
     "office": {
       "$ref": "#/$defs/Office",
