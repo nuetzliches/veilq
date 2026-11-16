@@ -6,6 +6,8 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-16
+
 **Before you update:** pictures need one more component, the signature
 detector (`veilq models fetch signature`, 26 MB); until it is installed an
 image, a GIF or a PDF is refused, unless the policy keeps signatures
