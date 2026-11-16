@@ -321,7 +321,10 @@ fn default_context_window() -> usize {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Allow {
-    /// Exact values, compared after the same normalisation as pseudonyms.
+    /// Exact values, compared after the same normalisation as pseudonyms. A
+    /// value that is an IBAN matches that IBAN however it is grouped or
+    /// cased (`DE89 3704 …`, `DE893704…`): a known public account, such as
+    /// one's own in a letterhead.
     #[serde(default)]
     pub values: Vec<String>,
     /// Rust `regex` patterns a whole finding must match.

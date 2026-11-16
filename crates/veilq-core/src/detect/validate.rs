@@ -47,7 +47,7 @@ pub fn check(name: &str, value: &str) -> bool {
     }
 }
 
-fn compact(value: &str) -> String {
+pub(crate) fn compact(value: &str) -> String {
     value
         .chars()
         .filter(|c| c.is_ascii_alphanumeric())

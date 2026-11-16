@@ -6,6 +6,13 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- An IBAN in `[allow] values` is allowed however it is grouped or cased:
+  `DE89370400440532013000` in the policy now also leaves `DE89 3704 0044
+  0532 0130 00` (as a letterhead or OCR writes it), and the other way round.
+  Every other IBAN is still found.
+
 ## [0.4.1] - 2026-11-16
 
 **Before you update:** the signature detector is a new model; fetch it

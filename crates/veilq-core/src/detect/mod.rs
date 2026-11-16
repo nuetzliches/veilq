@@ -146,6 +146,10 @@ impl Rule {
 struct Allow {
     values: Vec<String>,
     patterns: Vec<Regex>,
+    /// The values that are IBANs, without spaces and in upper case: an IBAN
+    /// is the same however it is grouped (`DE89 3704…`, `DE893704…`), and
+    /// OCR groups a letterhead's as it reads it.
+    ibans: Vec<String>,
 }
 
 /// The rules of one run: the `intl` pack, the policy's locales, the policy's
@@ -207,6 +211,13 @@ impl Detector {
                 .iter()
                 .map(|p| Regex::new(&format!("^(?:{p})$")).map_err(|e| invalid(e.to_string())))
                 .collect::<Result<_, _>>()?,
+            ibans: policy
+                .allow
+                .values
+                .iter()
+                .filter(|v| validate::iban(v))
+                .map(|v| validate::compact(v))
+                .collect(),
         };
         Ok(Self {
             rules,
@@ -517,7 +528,11 @@ impl Detector {
 
     fn allowed(&self, value: &str) -> bool {
         let n = pseudonym::normalise_plain(value);
-        self.allow.values.contains(&n) || self.allow.patterns.iter().any(|p| p.is_match(value))
+        self.allow.values.contains(&n)
+            || self.allow.patterns.iter().any(|p| p.is_match(value))
+            || (!self.allow.ibans.is_empty()
+                && validate::iban(value)
+                && self.allow.ibans.contains(&validate::compact(value)))
     }
 
     pub fn policy(&self) -> &Policy {
@@ -1418,6 +1433,34 @@ values = ["Mira Albers"]
         assert_eq!(f.len(), 1, "{f:?}");
         assert_eq!(f[0].detector, "policy:contract");
         assert_eq!(&text[f[0].start..f[0].end], "2026-0815");
+    }
+
+    #[test]
+    fn an_allowed_iban_is_allowed_however_it_is_grouped() {
+        let policy =
+            Policy::parse("version = 1\n[allow]\nvalues = [\"DE89370400440532013000\"]\n").unwrap();
+        let d = Detector::new(&policy).unwrap();
+        let ibans = |text: &str| -> Vec<String> {
+            d.findings(text, "", Source::Ocr)
+                .unwrap()
+                .into_iter()
+                .filter(|c| c.entity.as_str() == "IBAN_CODE")
+                .map(|c| text[c.start..c.end].to_owned())
+                .collect()
+        };
+        for text in [
+            "IBAN: DE89 3704 0044 0532 0130 00",
+            "IBAN: DE89370400440532013000",
+            "IBAN: de89 3704 0044 0532 0130 00",
+            "IBAN DE89 370 400 440 532 013 000",
+        ] {
+            assert!(ibans(text).is_empty(), "{text}: {:?}", ibans(text));
+        }
+        // Another IBAN in the same text is still found.
+        assert_eq!(
+            ibans("Wir: DE89 3704 0044 0532 0130 00, Kunde: DE02 1203 0000 0000 2020 51"),
+            ["DE02 1203 0000 0000 2020 51"]
+        );
     }
 
     #[test]
