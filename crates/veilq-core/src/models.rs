@@ -17,14 +17,14 @@ use sha2::{Digest, Sha256};
 use crate::Error;
 
 /// The detectors a policy can name.
-pub const DETECTORS: &[&str] = &["pattern", "ner", "ocr", "face", "verifier"];
+pub const DETECTORS: &[&str] = &["pattern", "ner", "ocr", "face", "signature", "verifier"];
 
 /// What `veilq models` fetches: the detectors with a model, and `pdf`
 /// (PDFium, which renders a PDF's pages for OCR; ADR-0023).
-pub const COMPONENTS: &[&str] = &["ner", "ocr", "face", "pdf"];
+pub const COMPONENTS: &[&str] = &["ner", "ocr", "face", "signature", "pdf"];
 
 /// The detectors that run in ONNX Runtime.
-const ON_RUNTIME: &[&str] = &["ner", "ocr", "face"];
+const ON_RUNTIME: &[&str] = &["ner", "ocr", "face", "signature"];
 
 /// A file a detector needs, as compiled into the binary.
 #[derive(Debug)]
@@ -66,6 +66,12 @@ const OCR_LATIN: &str = "https://huggingface.co/monkt/paddleocr-onnx/resolve/7b0
 /// publishes it on Hugging Face, at a fixed revision (ADR-0038).
 const FACE: &str = "https://huggingface.co/opencv/face_detection_yunet/resolve/3cc26e7f1014a5ee5d74a42acee58bafc9d0a310";
 
+/// YOLOS-tiny fine-tuned to find handwritten signatures
+/// (`mdefrance/yolos-tiny-signature-detection`, Apache-2.0), converted to
+/// ONNX with its weights unchanged (`scripts/export-signature-model.py`) and
+/// published by nuetzliches on Hugging Face, at a fixed revision (ADR-0048).
+const SIGNATURE: &str = "https://huggingface.co/nuetzliches/yolos-tiny-signature-detection-onnx/resolve/253098aa7c80961872cf88c31cd42aa2d576000d";
+
 /// PDFium (BSD-3-Clause, with the licences of its parts in the archive), as
 /// `bblanchon/pdfium-binaries` (MIT) builds it, at the version whose API
 /// pdfium-render binds (ADR-0023).
@@ -106,6 +112,15 @@ pub const PINNED: &[PinnedFile] = &[
         base: FACE,
         name: "face_detection_yunet_2023mar.onnx",
         sha256: "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+        member: None,
+        target: None,
+    },
+    PinnedFile {
+        detector: "signature",
+        file: "signature/yolos-tiny-signature/model.onnx",
+        base: SIGNATURE,
+        name: "model.onnx",
+        sha256: "d6d5bf2b9ddba9888e77846507a3da90bfd11b113a9556deaebaf132a42a5f7c",
         member: None,
         target: None,
     },
@@ -281,6 +296,17 @@ pub fn face_files(model_dir: &Path) -> Option<(PathBuf, PathBuf)> {
     }
     let files = pinned_for("face");
     let model = files.iter().find(|f| f.detector == "face")?;
+    let runtime = files.iter().find(|f| f.detector == "runtime")?;
+    Some((model_dir.join(model.file), model_dir.join(runtime.file)))
+}
+
+/// The installed files of the signature detector: model, runtime.
+pub fn signature_files(model_dir: &Path) -> Option<(PathBuf, PathBuf)> {
+    if !installed("signature", model_dir) {
+        return None;
+    }
+    let files = pinned_for("signature");
+    let model = files.iter().find(|f| f.detector == "signature")?;
     let runtime = files.iter().find(|f| f.detector == "runtime")?;
     Some((model_dir.join(model.file), model_dir.join(runtime.file)))
 }

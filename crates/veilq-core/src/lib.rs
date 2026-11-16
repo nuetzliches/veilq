@@ -34,6 +34,8 @@ pub mod root;
 #[cfg(feature = "models")]
 pub mod runtime;
 #[cfg(feature = "ocr")]
+pub mod signature;
+#[cfg(feature = "ocr")]
 pub mod visual;
 pub mod xml;
 

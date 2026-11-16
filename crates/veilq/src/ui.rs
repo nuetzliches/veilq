@@ -1434,7 +1434,7 @@ mod tests {
             .iter()
             .map(|c| c["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names, ["ner", "ocr", "face", "pdf"]);
+        assert_eq!(names, ["ner", "ocr", "face", "signature", "pdf"]);
         let (status, _) = send(
             app(dir.path()),
             authed("POST", "/api/models/nonsense/fetch")

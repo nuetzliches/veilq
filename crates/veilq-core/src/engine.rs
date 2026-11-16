@@ -283,6 +283,8 @@ pub struct Engine {
     ocr: Option<std::sync::Arc<crate::ocr::Ocr>>,
     #[cfg(feature = "ocr")]
     faces: Option<std::sync::Arc<crate::face::Faces>>,
+    #[cfg(feature = "ocr")]
+    signatures: Option<std::sync::Arc<crate::signature::Signatures>>,
     #[cfg(feature = "pdf")]
     pdfium: Option<&'static pdfium_render::prelude::Pdfium>,
 }
@@ -322,6 +324,8 @@ impl Engine {
             ocr: None,
             #[cfg(feature = "ocr")]
             faces: None,
+            #[cfg(feature = "ocr")]
+            signatures: None,
             #[cfg(feature = "pdf")]
             pdfium: None,
         })
@@ -695,9 +699,19 @@ impl Engine {
         self
     }
 
+    /// Finds handwritten signatures in pictures (ADR-0048).
+    #[cfg(feature = "ocr")]
+    pub fn with_signatures(
+        mut self,
+        signatures: std::sync::Arc<crate::signature::Signatures>,
+    ) -> Self {
+        self.signatures = Some(signatures);
+        self
+    }
+
     /// Whether this engine reads `format`: a picture needs OCR and, unless
-    /// the policy keeps faces, the face detector; a PDF also PDFium;
-    /// everything else is always read.
+    /// the policy keeps them, the face and the signature detector; a PDF
+    /// also PDFium; everything else is always read.
     pub fn reads(&self, format: Format) -> bool {
         match format {
             Format::Pdf => {
@@ -711,10 +725,13 @@ impl Engine {
         }
     }
 
-    /// Whether pictures can be read as the policy asks: OCR, and the face
-    /// detector unless faces are kept.
+    /// Whether pictures can be read as the policy asks: OCR, the face
+    /// detector unless faces are kept, the signature detector unless
+    /// signatures are kept.
     fn reads_pictures(&self) -> bool {
-        self.has_ocr() && (!self.redacts_faces() || self.has_faces())
+        self.has_ocr()
+            && (!self.redacts_faces() || self.has_faces())
+            && (!self.redacts_signatures() || self.has_signatures())
     }
 
     /// Whether the policy has faces in pictures filled (ADR-0038).
@@ -736,6 +753,27 @@ impl Engine {
         self.faces.as_deref().filter(|_| self.redacts_faces())
     }
 
+    /// Whether the policy has signatures in pictures filled (ADR-0048).
+    pub fn redacts_signatures(&self) -> bool {
+        self.detector.policy().picture.signatures == crate::policy::SignaturePolicy::Redact
+    }
+
+    /// Whether signatures can be found.
+    pub fn has_signatures(&self) -> bool {
+        #[cfg(feature = "ocr")]
+        return self.signatures.is_some();
+        #[cfg(not(feature = "ocr"))]
+        false
+    }
+
+    /// The signature detector, when the policy has signatures filled.
+    #[cfg(feature = "ocr")]
+    pub(crate) fn signatures(&self) -> Option<&crate::signature::Signatures> {
+        self.signatures
+            .as_deref()
+            .filter(|_| self.redacts_signatures())
+    }
+
     /// Why pictures cannot be read, with what to install; `None` when
     /// they can.
     fn pictures_missing(&self) -> Option<String> {
@@ -745,6 +783,9 @@ impl Engine {
         }
         if self.redacts_faces() && !self.has_faces() {
             missing.push("the face detector (`veilq models fetch face`, or `[picture] faces = \"keep\"` in the policy)");
+        }
+        if self.redacts_signatures() && !self.has_signatures() {
+            missing.push("the signature detector (`veilq models fetch signature`, or `[picture] signatures = \"keep\"` in the policy)");
         }
         (!missing.is_empty()).then(|| {
             format!(
