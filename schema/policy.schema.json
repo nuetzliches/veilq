@@ -38,7 +38,7 @@
         },
         "values": {
           "default": [],
-          "description": "Exact values, compared after the same normalisation as pseudonyms.",
+          "description": "Exact values, compared after the same normalisation as pseudonyms. A\nvalue that is an IBAN matches that IBAN however it is grouped or\ncased (`DE89 3704 …`, `DE893704…`): a known public account, such as\none's own in a letterhead.",
           "items": {
             "type": "string"
           },
