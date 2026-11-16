@@ -34,10 +34,9 @@ pub const MIN_SCORE: f32 = 0.5;
 /// anyone could read: the model's few small boxes lay on empty space or a
 /// mouse pointer in a screen recording.
 const MIN_WIDTH: f32 = 40.0;
-/// Two boxes of one signature, from the whole and a square: they overlap by
-/// this much (of their union), or the smaller lies this much inside.
-const SAME_IOU: f32 = 0.3;
-const SAME_INSIDE: f32 = 0.7;
+/// A box with this share of its area inside another is that one's: the same
+/// signature, read from the whole picture and from a square.
+const INSIDE: f32 = 0.7;
 /// A box is grown by this share of its size on every side: a stroke's tail
 /// may end outside it.
 const MARGIN: f32 = 0.05;
@@ -101,9 +100,11 @@ impl Signatures {
                 });
             }
         }
+        // Narrow boxes go first: kept, one could take the place of the box
+        // of the whole signature and then be dropped itself.
+        found.retain(|f| f.w >= MIN_WIDTH);
         Ok(distinct(found)
             .into_iter()
-            .filter(|f| f.w >= MIN_WIDTH)
             .filter_map(|f| {
                 place(&f, w, h).map(|rect| Signature {
                     rect,
@@ -202,28 +203,35 @@ fn decode(logits: &[f32], boxes: &[f32], w: f32, h: f32) -> Vec<Found> {
     out
 }
 
-/// One box per signature: the best first, a box that is the same signature
-/// as a better one dropped.
+/// The boxes to fill, the best first. A box that lies (nearly) inside
+/// another is that one's: the outer box stays, with the better score, so a
+/// box of part of the strokes never takes the place of the whole. Boxes
+/// that only overlap both stay: filling both costs nothing, and joining them
+/// would grow a box over what lies between (a watermark beside a signature).
 fn distinct(mut found: Vec<Found>) -> Vec<Found> {
     found.sort_by(|a, b| b.score.total_cmp(&a.score));
     let mut out: Vec<Found> = Vec::new();
     for f in found {
-        if !out.iter().any(|k| same(k, &f)) {
-            out.push(f);
+        if out.iter().any(|k| inside(&f, k)) {
+            continue;
         }
+        let score = out
+            .iter()
+            .filter(|k| inside(k, &f))
+            .map(|k| k.score)
+            .fold(f.score, f32::max);
+        out.retain(|k| !inside(k, &f));
+        out.push(Found { score, ..f });
     }
+    out.sort_by(|a, b| b.score.total_cmp(&a.score));
     out
 }
 
-fn same(a: &Found, b: &Found) -> bool {
+/// Whether `a` lies (nearly) inside `b`.
+fn inside(a: &Found, b: &Found) -> bool {
     let w = (a.x + a.w).min(b.x + b.w) - a.x.max(b.x);
     let h = (a.y + a.h).min(b.y + b.h) - a.y.max(b.y);
-    if w <= 0.0 || h <= 0.0 {
-        return false;
-    }
-    let inter = w * h;
-    let (aa, ab) = (a.w * a.h, b.w * b.h);
-    inter / (aa + ab - inter) >= SAME_IOU || inter / aa.min(ab) >= SAME_INSIDE
+    w > 0.0 && h > 0.0 && w * h >= INSIDE * a.w * a.h
 }
 
 /// `f` grown by [`MARGIN`] and cut to the picture; `None` outside it.
@@ -313,8 +321,31 @@ mod tests {
             f(600.0, 100.0, 200.0, 60.0, 0.7),
         ]);
         assert_eq!(found.len(), 2);
-        assert_eq!(found[0].score, 0.93);
+        assert_eq!((found[0].x, found[0].score), (104.0, 0.93));
         assert_eq!(found[1].x, 600.0);
+        // Boxes that only overlap both stay, neither grown over the other.
+        let found = distinct(vec![
+            f(100.0, 100.0, 200.0, 100.0, 0.9),
+            f(250.0, 150.0, 200.0, 100.0, 0.8),
+        ]);
+        assert_eq!(found.len(), 2);
+        assert_eq!((found[0].w, found[1].w), (200.0, 200.0));
+    }
+
+    #[test]
+    fn a_box_of_part_of_the_strokes_does_not_leave_the_rest() {
+        let f = |x, y, w, h, score| Found { x, y, w, h, score };
+        // A square's box over the left half scores higher than the box of
+        // the whole signature: the whole stays covered.
+        let found = distinct(vec![
+            f(100.0, 100.0, 220.0, 60.0, 0.7),
+            f(100.0, 100.0, 120.0, 60.0, 0.9),
+        ]);
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            (found[0].x, found[0].w, found[0].score),
+            (100.0, 220.0, 0.9)
+        );
     }
 
     #[test]

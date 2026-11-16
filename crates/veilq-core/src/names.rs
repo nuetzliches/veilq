@@ -23,6 +23,7 @@ use std::sync::Mutex;
 use regex::Regex;
 use unicode_normalization::UnicodeNormalization;
 
+use crate::Error;
 use crate::detect::{self, Candidate, Source};
 use crate::finding::EntityType;
 
@@ -52,17 +53,31 @@ struct Inner {
     seen: HashMap<String, usize>,
     /// A word was learned after it stood unfound in an earlier text.
     late: bool,
-    /// The regexes of `order`, built for its length.
-    regex: Option<(usize, Matchers)>,
+    /// The words, whole, built for the length of `order`.
+    whole: Option<(usize, Regex)>,
+    /// In OCR text, built only there: a word's start with dots after it, a
+    /// word's end at the start of a line; `None` inside when there is none.
+    cut: Option<(usize, Option<Regex>)>,
 }
 
-#[derive(Clone)]
-struct Matchers {
-    /// The words, whole.
-    whole: Regex,
-    /// In OCR text: a word's start with dots after it, a word's end at the
-    /// start of a line.
-    cut: Option<Regex>,
+/// The size a matcher of the list may compile to.
+const LIMIT: usize = 64 << 20;
+
+/// A matcher of the list. One too large is an error, not a panic (fail
+/// closed, as a deny list's in `detect::deny_rule`): the run stops.
+fn compile(pattern: &str) -> Result<Regex, Error> {
+    compile_with(pattern, LIMIT)
+}
+
+fn compile_with(pattern: &str, limit: usize) -> Result<Regex, Error> {
+    regex::RegexBuilder::new(pattern)
+        .size_limit(limit)
+        .build()
+        .map_err(|e| {
+            Error::Format(format!(
+                "the names of this file (ADR-0047) make a matcher too large ({e}); set `[names] everywhere = false` to read it without them"
+            ))
+        })
 }
 
 impl Names {
@@ -84,13 +99,19 @@ impl Names {
     }
 
     /// The candidates of the list's words in `text`.
-    pub(crate) fn candidates(&self, text: &str, source: Source) -> Vec<Candidate> {
-        let (matchers, words) = {
+    pub(crate) fn candidates(&self, text: &str, source: Source) -> Result<Vec<Candidate>, Error> {
+        let (whole, cut, words) = {
             let mut inner = self.lock();
             if inner.order.is_empty() {
-                return Vec::new();
+                return Ok(Vec::new());
             }
-            (inner.matchers(), inner.words.clone())
+            let whole = inner.whole()?;
+            let cut = if source == Source::Ocr {
+                inner.cut()?
+            } else {
+                None
+            };
+            (whole, cut, inner.words.clone())
         };
         let person = EntityType::new("PERSON").expect("a valid type");
         let mut out = Vec::new();
@@ -103,15 +124,13 @@ impl Names {
                 detector: DETECTOR.to_owned(),
             });
         };
-        for caps in matchers.whole.captures_iter(text) {
+        for caps in whole.captures_iter(text) {
             let m = caps.name("pii").expect("the group matches");
             if let Some(c) = confidence_of(&words, m.as_str()) {
                 push(m.start(), m.end(), c);
             }
         }
-        if source == Source::Ocr
-            && let Some(cut) = &matchers.cut
-        {
+        if let Some(cut) = &cut {
             for caps in cut.captures_iter(text) {
                 let m = caps
                     .name("head")
@@ -135,7 +154,7 @@ impl Names {
                 }
             }
         }
-        out
+        Ok(out)
     }
 
     /// Learns the words of `found`, the persons kept in `text`, and notes the
@@ -187,20 +206,28 @@ impl Names {
 }
 
 impl Inner {
-    fn matchers(&mut self) -> Matchers {
-        if let Some((n, m)) = &self.regex
+    /// The words, whole, with the genitive.
+    fn whole(&mut self) -> Result<Regex, Error> {
+        if let Some((n, r)) = &self.whole
             && *n == self.order.len()
         {
-            return m.clone();
+            return Ok(r.clone());
         }
-        let whole = format!(
+        let r = compile(&format!(
             r"(?i)\b(?P<pii>(?:{})(?:s|'s|’s)?)\b",
             detect::alternation(self.order.clone())
-        );
-        let whole = regex::RegexBuilder::new(&whole)
-            .size_limit(64 << 20)
-            .build()
-            .expect("escaped words make a valid regex");
+        ))?;
+        self.whole = Some((self.order.len(), r.clone()));
+        Ok(r)
+    }
+
+    /// The words cut by a window's edge, for OCR text.
+    fn cut(&mut self) -> Result<Option<Regex>, Error> {
+        if let Some((n, r)) = &self.cut
+            && *n == self.order.len()
+        {
+            return Ok(r.clone());
+        }
         let heads: Vec<String> = self
             .order
             .iter()
@@ -231,15 +258,13 @@ impl Inner {
                 detect::alternation(tails)
             ));
         }
-        let cut = (!parts.is_empty()).then(|| {
-            regex::RegexBuilder::new(&format!("(?i){}", parts.join("|")))
-                .size_limit(64 << 20)
-                .build()
-                .expect("escaped words make a valid regex")
-        });
-        let m = Matchers { whole, cut };
-        self.regex = Some((self.order.len(), m.clone()));
-        m
+        let r = if parts.is_empty() {
+            None
+        } else {
+            Some(compile(&format!("(?i){}", parts.join("|")))?)
+        };
+        self.cut = Some((self.order.len(), r.clone()));
+        Ok(r)
     }
 }
 
@@ -265,10 +290,13 @@ fn confidence_of(words: &HashMap<String, f32>, m: &str) -> Option<f32> {
 }
 
 /// Whether a word of a person's name goes on the list. A small word inside a
-/// capitalised name is a particle (`von`, `van`), not a name.
+/// capitalised name is a particle (`von`, `van`), not a name, and so is a
+/// particle written with a capital at the start of one (`Von Hagen, Ole`):
+/// learned, it would make every `von` of the file a person.
 fn learnable(w: &str, capitalised: bool) -> bool {
     w.chars().count() >= MIN_WORD
         && (!capitalised || starts_upper(w))
+        && !detect::PARTICLES.contains(&key(w).as_str())
         && !detect::only_role_words(w)
         && !detect::brand_word(w)
         && !detect::ACCOUNTS.contains(&w.to_lowercase().as_str())
@@ -305,6 +333,7 @@ mod tests {
     fn found(names: &Names, text: &str, source: Source) -> Vec<String> {
         names
             .candidates(text, source)
+            .unwrap()
             .into_iter()
             .map(|c| text[c.start..c.end].to_owned())
             .collect()
@@ -329,7 +358,7 @@ mod tests {
         assert_eq!(found(&names, "jonas fragt", Source::Text), ["jonas"]);
         // A whole word only.
         assert!(found(&names, "Brandtschutz", Source::Text).is_empty());
-        let c = &names.candidates("Herr Brandt", Source::Text)[0];
+        let c = &names.candidates("Herr Brandt", Source::Text).unwrap()[0];
         assert_eq!((c.confidence, c.detector.as_str()), (0.9, DETECTOR));
         // Learned once: no new word.
         assert!(!learn(&names, "Jonas Brandt", "Jonas Brandt"));
@@ -353,6 +382,26 @@ mod tests {
         // A name written all in lower case (a home directory) is learned.
         learn(&names, "mira.albers", "mira.albers");
         assert_eq!(found(&names, "Frau Albers", Source::Text), ["Albers"]);
+        // A particle with a capital at a name's start is no name either:
+        // learned, every `von` of the file would be a person.
+        let names = Names::default();
+        learn(&names, "Von Hagen, Ole", "Von Hagen, Ole");
+        learn(&names, "Van Dyke", "Van Dyke");
+        assert_eq!(
+            found(&names, "Brief von Ole an van Dyke und Hagen", Source::Text),
+            ["Ole", "Dyke", "Hagen"]
+        );
+    }
+
+    #[test]
+    fn a_list_too_large_for_a_matcher_is_an_error_not_a_panic() {
+        let words: Vec<String> = (0..2000).map(|i| format!("Name{i:04}x")).collect();
+        let pattern = format!(r"(?i)\b(?:{})\b", detect::alternation(words));
+        assert!(matches!(
+            compile_with(&pattern, 1 << 10),
+            Err(Error::Format(m)) if m.contains("everywhere = false")
+        ));
+        assert!(compile_with(&pattern, LIMIT).is_ok());
     }
 
     #[test]
