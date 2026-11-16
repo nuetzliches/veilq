@@ -6,6 +6,13 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A diagonal watermark across a page (`ENTWURF`, `KOPIE`) is no longer
+  filled as a signature over half the page: a signature box over three
+  lines of printed text or more is left, and the report asks for a review
+  instead. A signature inside the watermark is still filled on its own.
+
 ## [0.4.0] - 2026-11-16
 
 **Before you update:** pictures need one more component, the signature

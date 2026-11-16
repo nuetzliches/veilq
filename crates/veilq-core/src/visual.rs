@@ -52,6 +52,13 @@ pub const FACES_FOUND: &str = "faces were found and filled black; the face detec
 /// Said when signatures were filled: what the detector missed stays, and
 /// what it took for one (a watermark, a stamp) is filled too.
 pub const SIGNATURES_FOUND: &str = "signatures were found and filled black; the signature detector can miss one (small, faint, crossing text) and take a watermark or a stamp for one: check the picture";
+/// Said when the signature detector marked an area of printed text (a
+/// watermark across a page) and it was left: a signature inside it is
+/// filled on its own, one the detector saw only as part of it is not.
+pub const SIGNATURES_PRINTED: &str = "the signature detector marked an area of printed text (a watermark?) that was not filled: check the picture for a signature inside it";
+/// The score a line of OCR needs to count as printed text under a
+/// signature's box.
+const PRINTED_SCORE: f32 = 0.8;
 /// Verify rounds at most: reading a filled picture again moves rows and
 /// labels, so a round can find what the one before did not (ADR-0026).
 const ROUNDS: usize = 6;
@@ -375,7 +382,7 @@ pub fn redact_picture(
     out: &mut Outcome,
 ) -> Result<Vec<Rect>, Error> {
     let mut boxes = faces(engine, img, frame, apply, out, &[])?;
-    boxes.extend(signatures(engine, img, frame, apply, out, &[])?);
+    boxes.extend(signatures(engine, ocr, img, frame, apply, out, &[])?);
     boxes.extend(read_whole(engine, ocr, img, frame, apply, out)?);
     Ok(boxes)
 }
@@ -429,6 +436,7 @@ fn faces(
 /// signatures.
 fn signatures(
     engine: &Engine,
+    ocr: &Ocr,
     img: &mut RgbaImage,
     frame: Option<u64>,
     apply: bool,
@@ -439,8 +447,26 @@ fn signatures(
         return Ok(Vec::new());
     };
     let rgb = DynamicImage::ImageRgba8(img.clone()).to_rgb8();
-    let found = detector
-        .find(&rgb)?
+    // The lines of printed text, read only when the detector found a box:
+    // read well and of three letters or digits, so a signature's own
+    // strokes read as text do not count.
+    let mut text = || -> Result<Vec<Rect>, Error> {
+        Ok(ocr
+            .read(&rgb)?
+            .into_iter()
+            .filter(|l| {
+                l.score >= PRINTED_SCORE
+                    && l.text.chars().filter(|c| c.is_alphanumeric()).count() >= 3
+            })
+            .map(|l| l.rect)
+            .collect())
+    };
+    let found = detector.find(&rgb, &mut text)?;
+    if found.printed > 0 && !out.review_reasons.iter().any(|r| r == SIGNATURES_PRINTED) {
+        out.review_reasons.push(SIGNATURES_PRINTED.into());
+    }
+    let found = found
+        .signatures
         .into_iter()
         .map(|s| (s.rect, crate::signature::confidence(s.score)))
         .collect();
@@ -885,7 +911,7 @@ fn redact_changed(
 ) -> Result<Vec<Rect>, Error> {
     let (w, h) = img.dimensions();
     let mut boxes = faces(engine, img, frame, apply, out, kept)?;
-    boxes.extend(signatures(engine, img, frame, apply, out, kept)?);
+    boxes.extend(signatures(engine, ocr, img, frame, apply, out, kept)?);
     let margin = MARGIN.max(h / 20);
     let mut bands = changed_bands(before, after, margin);
     // Read each band on a copy; a band cut short starts the reading over, so

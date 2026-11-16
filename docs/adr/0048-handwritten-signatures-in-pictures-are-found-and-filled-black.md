@@ -71,6 +71,15 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
   boxes that only overlap are both filled. So a box of part of the strokes
   never takes the place of the whole, and no box grows over what lies
   between two (found in the review before 0.4.0).
+- **No box over printed text (after 0.4.0):** a box under which three lines
+  of printed text or more lie (OCR read them well, three letters or digits
+  each, half of a line's area inside the box) is a watermark across the
+  page, not a signature: it is not filled, and the report asks for a review
+  with its own reason. This runs before the boxes are compared, so the
+  watermark's box does not swallow the signature inside it. OCR reads the
+  picture for it only when the detector found a box. A signature crosses
+  one or two lines (the name, the role under it). The 0.4.0 rule filled a
+  reported invoice preview's watermark as one box over half the page.
 - **Synthetic signatures only:** tests and the corpus hold handwriting-style
   fonts and drawn strokes, never a real person's signature. The model test
   reads a picture named by environment variables, on the machine that runs
@@ -95,8 +104,11 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
 - Every user who reads pictures fetches one more component (26 MB), or sets
   `signatures = "keep"`; a policy that did not mention signatures refuses
   pictures until then.
-- Large diagonal watermark text is filled as a signature and can cover a
-  table below it; #80 fine-tunes the model with watermarks as background.
+- Large diagonal watermark text over a page of text is left and reported;
+  a part of it over little text (a corner, an empty margin) is still filled
+  as a signature. #80 fine-tunes the model with watermarks as background.
+- A signature written across three lines of text or more is left too, with
+  the same review reason: the report says to check the picture.
 - A signature's box takes a line below it as well when the strokes reach
   into it (the signer's printed name, a role).
 - The search adds about 0.1 s for a page and 0.5 s for a wide screenshot on

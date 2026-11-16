@@ -37,6 +37,14 @@ const MIN_WIDTH: f32 = 40.0;
 /// A box with this share of its area inside another is that one's: the same
 /// signature, read from the whole picture and from a square.
 const INSIDE: f32 = 0.7;
+/// A box over this many lines of printed text is no signature but a
+/// watermark across a page (`ENTWURF`, `KOPIE`), which the model takes for
+/// one (#80). A signature crosses one or two: the name or the role under it.
+const PRINTED_LINES: usize = 3;
+/// A line counts as under a box with this share of its height inside it,
+/// and this share of its length or [`WORDS`] times its height.
+const LINE_INSIDE: f32 = 0.5;
+const WORDS: f32 = 3.0;
 /// A box is grown by this share of its size on every side: a stroke's tail
 /// may end outside it.
 const MARGIN: f32 = 0.05;
@@ -54,6 +62,15 @@ pub struct Signature {
     pub score: f32,
 }
 
+/// What [`Signatures::find`] found in a picture.
+#[derive(Debug, Default)]
+pub struct Found {
+    /// The signatures, the best first.
+    pub signatures: Vec<Signature>,
+    /// The boxes left out because they lay over printed text.
+    pub printed: usize,
+}
+
 /// The files of an installed signature detector.
 pub struct ModelFiles<'a> {
     pub model: &'a Path,
@@ -66,7 +83,7 @@ pub struct Signatures {
 
 /// A box in pixels of the picture, before it is grown and cut.
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct Found {
+struct Candidate {
     x: f32,
     y: f32,
     w: f32,
@@ -86,14 +103,20 @@ impl Signatures {
         })
     }
 
-    /// The signatures in `img`, the best first.
-    pub fn find(&self, img: &RgbImage) -> Result<Vec<Signature>, Error> {
+    /// The signatures in `img`, the best first, and how many boxes lay over
+    /// printed text and were left out. `text` gives the boxes of the lines
+    /// of printed text in `img`; it is called only when there is a box.
+    pub fn find(
+        &self,
+        img: &RgbImage,
+        text: &mut dyn FnMut() -> Result<Vec<Rect>, Error>,
+    ) -> Result<Found, Error> {
         let (w, h) = img.dimensions();
-        let mut found = Vec::new();
+        let mut boxes = Vec::new();
         for (x, y, side_w, side_h) in parts(w, h) {
             let part = imageops::crop_imm(img, x, y, side_w, side_h).to_image();
             for f in self.read(&part)? {
-                found.push(Found {
+                boxes.push(Candidate {
                     x: x as f32 + f.x,
                     y: y as f32 + f.y,
                     ..f
@@ -102,8 +125,18 @@ impl Signatures {
         }
         // Narrow boxes go first: kept, one could take the place of the box
         // of the whole signature and then be dropped itself.
-        found.retain(|f| f.w >= MIN_WIDTH);
-        Ok(distinct(found)
+        boxes.retain(|f| f.w >= MIN_WIDTH);
+        if boxes.is_empty() {
+            return Ok(Found::default());
+        }
+        // Then the boxes over printed text: a watermark across a page, not
+        // a signature; kept, one would take the place of the signature
+        // inside it and black out the text around.
+        let lines = text()?;
+        let before = boxes.len();
+        boxes.retain(|f| !printed(f, &lines));
+        let printed = before - boxes.len();
+        let signatures = distinct(boxes)
             .into_iter()
             .filter_map(|f| {
                 place(&f, w, h).map(|rect| Signature {
@@ -111,11 +144,15 @@ impl Signatures {
                     score: f.score,
                 })
             })
-            .collect())
+            .collect();
+        Ok(Found {
+            signatures,
+            printed,
+        })
     }
 
     /// The signatures in `part`, in its pixels.
-    fn read(&self, part: &RgbImage) -> Result<Vec<Found>, Error> {
+    fn read(&self, part: &RgbImage) -> Result<Vec<Candidate>, Error> {
         let (w, h) = part.dimensions();
         let input = imageops::resize(part, SIDE, SIDE, imageops::FilterType::Triangle);
         let side = SIDE as usize;
@@ -177,7 +214,7 @@ fn parts(w: u32, h: u32) -> Vec<(u32, u32, u32, u32)> {
 
 /// The boxes of one reading, in pixels of a part `w` x `h`: per query two
 /// logits (signature, nothing), a softmax, and the box as shares.
-fn decode(logits: &[f32], boxes: &[f32], w: f32, h: f32) -> Vec<Found> {
+fn decode(logits: &[f32], boxes: &[f32], w: f32, h: f32) -> Vec<Candidate> {
     let mut out = Vec::new();
     for (l, b) in logits
         .as_chunks::<2>()
@@ -192,7 +229,7 @@ fn decode(logits: &[f32], boxes: &[f32], w: f32, h: f32) -> Vec<Found> {
             continue;
         }
         let (bw, bh) = (b[2] * w, b[3] * h);
-        out.push(Found {
+        out.push(Candidate {
             x: b[0] * w - bw / 2.0,
             y: b[1] * h - bh / 2.0,
             w: bw,
@@ -208,9 +245,9 @@ fn decode(logits: &[f32], boxes: &[f32], w: f32, h: f32) -> Vec<Found> {
 /// box of part of the strokes never takes the place of the whole. Boxes
 /// that only overlap both stay: filling both costs nothing, and joining them
 /// would grow a box over what lies between (a watermark beside a signature).
-fn distinct(mut found: Vec<Found>) -> Vec<Found> {
+fn distinct(mut found: Vec<Candidate>) -> Vec<Candidate> {
     found.sort_by(|a, b| b.score.total_cmp(&a.score));
-    let mut out: Vec<Found> = Vec::new();
+    let mut out: Vec<Candidate> = Vec::new();
     for f in found {
         if out.iter().any(|k| inside(&f, k)) {
             continue;
@@ -221,21 +258,37 @@ fn distinct(mut found: Vec<Found>) -> Vec<Found> {
             .map(|k| k.score)
             .fold(f.score, f32::max);
         out.retain(|k| !inside(k, &f));
-        out.push(Found { score, ..f });
+        out.push(Candidate { score, ..f });
     }
     out.sort_by(|a, b| b.score.total_cmp(&a.score));
     out
 }
 
+/// Whether `f` lies over [`PRINTED_LINES`] lines of printed text or more. A
+/// line is under it when half its height is, and half its length or a piece
+/// as long as three times its height (a few words of a long line).
+fn printed(f: &Candidate, lines: &[Rect]) -> bool {
+    lines
+        .iter()
+        .filter(|l| {
+            let w = (f.x + f.w).min((l.x + l.w) as f32) - f.x.max(l.x as f32);
+            let h = (f.y + f.h).min((l.y + l.h) as f32) - f.y.max(l.y as f32);
+            let (lw, lh) = (l.w as f32, l.h as f32);
+            h >= LINE_INSIDE * lh && w >= (LINE_INSIDE * lw).min(WORDS * lh)
+        })
+        .count()
+        >= PRINTED_LINES
+}
+
 /// Whether `a` lies (nearly) inside `b`.
-fn inside(a: &Found, b: &Found) -> bool {
+fn inside(a: &Candidate, b: &Candidate) -> bool {
     let w = (a.x + a.w).min(b.x + b.w) - a.x.max(b.x);
     let h = (a.y + a.h).min(b.y + b.h) - a.y.max(b.y);
     w > 0.0 && h > 0.0 && w * h >= INSIDE * a.w * a.h
 }
 
 /// `f` grown by [`MARGIN`] and cut to the picture; `None` outside it.
-fn place(f: &Found, width: u32, height: u32) -> Option<Rect> {
+fn place(f: &Candidate, width: u32, height: u32) -> Option<Rect> {
     let (mx, my) = (f.w * MARGIN, f.h * MARGIN);
     let x0 = (f.x - mx).max(0.0);
     let y0 = (f.y - my).max(0.0);
@@ -312,7 +365,7 @@ mod tests {
 
     #[test]
     fn one_signature_found_twice_is_one() {
-        let f = |x, y, w, h, score| Found { x, y, w, h, score };
+        let f = |x, y, w, h, score| Candidate { x, y, w, h, score };
         let found = distinct(vec![
             f(100.0, 100.0, 200.0, 60.0, 0.8),
             // The same from a square.
@@ -334,7 +387,7 @@ mod tests {
 
     #[test]
     fn a_box_of_part_of_the_strokes_does_not_leave_the_rest() {
-        let f = |x, y, w, h, score| Found { x, y, w, h, score };
+        let f = |x, y, w, h, score| Candidate { x, y, w, h, score };
         // A square's box over the left half scores higher than the box of
         // the whole signature: the whole stays covered.
         let found = distinct(vec![
@@ -349,8 +402,37 @@ mod tests {
     }
 
     #[test]
+    fn a_box_over_lines_of_printed_text_is_a_watermark() {
+        let line = |x, y, w| Rect { x, y, w, h: 20 };
+        // A page: a table of three rows, a greeting, a role under the
+        // signature.
+        let lines = [
+            line(100, 100, 300),
+            line(100, 130, 300),
+            line(100, 160, 300),
+            line(100, 230, 200),
+            line(100, 330, 150),
+        ];
+        let f = |x, y, w, h| Candidate {
+            x,
+            y,
+            w,
+            h,
+            score: 0.9,
+        };
+        // A watermark across the table: three rows under it.
+        assert!(printed(&f(90.0, 90.0, 400.0, 100.0), &lines));
+        // A signature between the greeting and its role crosses both.
+        assert!(!printed(&f(90.0, 225.0, 220.0, 120.0), &lines));
+        // A line only touched at its edge does not count.
+        assert!(!printed(&f(385.0, 90.0, 100.0, 100.0), &lines));
+        // The right part of long lines counts: a few words of each.
+        assert!(printed(&f(300.0, 90.0, 300.0, 100.0), &lines));
+    }
+
+    #[test]
     fn a_box_takes_a_strokes_tail_and_stays_in_the_picture() {
-        let f = Found {
+        let f = Candidate {
             x: 100.0,
             y: 100.0,
             w: 200.0,
@@ -366,7 +448,7 @@ mod tests {
                 h: 110
             })
         );
-        let outside = Found { x: 2000.0, ..f };
+        let outside = Candidate { x: 2000.0, ..f };
         assert_eq!(place(&outside, 1000, 1000), None);
     }
 
@@ -396,8 +478,8 @@ mod tests {
         })
         .unwrap();
         let img = image::open(image).unwrap().to_rgb8();
-        let found = signatures.find(&img).unwrap();
-        let strong = found.iter().filter(|f| f.score >= 0.7).count();
+        let found = signatures.find(&img, &mut || Ok(Vec::new())).unwrap();
+        let strong = found.signatures.iter().filter(|f| f.score >= 0.7).count();
         assert!(
             strong >= expect.parse::<usize>().unwrap(),
             "{strong} signatures: {found:?}"
