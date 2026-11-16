@@ -38,14 +38,31 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
 
 - **Model:** YOLOS-tiny (`mdefrance/yolos-tiny-signature-detection`,
   Apache-2.0) at a fixed revision, converted to ONNX with its weights
-  unchanged by `scripts/export-signature-model.py` (reproducible: the same
-  versions give the same file), published as
+  unchanged (by `scripts/export-signature-model.py`, in the history of
+  0.4.0; the same versions gave the same file), published as
   `nuetzliches/yolos-tiny-signature-detection-onnx` with the base model's
   name, origin, licence and the note that only the format changed, and
   pinned by its SHA-256 as the component `signature`
   (`signature/yolos-tiny-signature/model.onnx`), run in the ONNX Runtime
   that NER, OCR and the face detector load. The first model veilq fetches
   from nuetzliches rather than from its maker: the maker publishes no ONNX.
+- **From 0.4.1: veilq-signature-v1 (#80).** The base model filled a draft
+  watermark across a reported invoice preview, and on letters with a
+  watermark it found 12 of 20 signatures with 55 false boxes. nuetzliches
+  fine-tuned it (16 epochs on a CPU, the first 6 of 12 encoder layers kept)
+  on 1,200 synthetic letters and screenshots: signatures in OFL/Apache
+  handwriting fonts and drawn strokes, some across the printed name,
+  watermarks often across the signature, stamps and logos, invented names
+  only. The training code lives in a private repository; the model card
+  says what changed (base, data, fonts, training, measurements), and the
+  pinned SHA-256 is that of the published file. Published under Apache-2.0 as
+  `nuetzliches/veilq-signature-v1` and pinned at its own path
+  (`signature/veilq-signature-v1/model.onnx`), so an installed 0.4.0 model
+  is not taken for it. Measured on letters of another generator: 20/20
+  found with a watermark (14 small false boxes), 20/20 without (none); on
+  the reported preview the signature alone is filled. A rule that left
+  boxes over three lines of printed text (#86) is not needed and was not
+  merged: it would also have left a signature written across a name.
 - **Found, never compared:** veilq finds where a signature is. It computes
   no features of it, compares none, keeps none, and nothing leaves the
   machine.
@@ -66,7 +83,9 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
   (from 1.3 : 1: a screenshot, an A4 page) is also read in squares of its
   shorter side that overlap by half. A box narrower than 40 pixels is
   dropped first: the model gate's screen recording had two such boxes on
-  empty space, and no signature that narrow can be read. Of the rest, a box
+  empty space, and no signature that narrow can be read. There is no such
+  floor for the height: in a scaled-down screenshot a signature can be
+  lower than a line of print elsewhere. Of the rest, a box
   that lies (nearly) inside another is that one's and the outer box stays;
   boxes that only overlap are both filled. So a box of part of the strokes
   never takes the place of the whole, and no box grows over what lies
@@ -95,8 +114,16 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
 - Every user who reads pictures fetches one more component (26 MB), or sets
   `signatures = "keep"`; a policy that did not mention signatures refuses
   pictures until then.
-- Large diagonal watermark text is filled as a signature and can cover a
-  table below it; #80 fine-tunes the model with watermarks as background.
+- With the base model (0.4.0), large diagonal watermark text was filled as
+  a signature; veilq-signature-v1 (0.4.1) learned watermarks as background.
+  A small false box on a watermark is still possible, and it is trained on
+  synthetic pictures only: real signatures and scans vary more. In the
+  corpus' form screenshots it fills a grey field label (`Steuer-ID`, 56 x 15
+  pixels) as a signature, 17 boxes over the five held-out seeds; a floor
+  for the height would drop them but also a signature in a scaled-down
+  picture, so the next training takes form screenshots as background.
+- 0.4.1 pins the model at a new path: an installed 0.4.0 model does not
+  count, and pictures are refused until `veilq models fetch signature`.
 - A signature's box takes a line below it as well when the strokes reach
   into it (the signer's printed name, a role).
 - The search adds about 0.1 s for a page and 0.5 s for a wide screenshot on
@@ -111,7 +138,7 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
 - `crates/veilq-core/src/models.rs` (`signature` pinned), `policy.rs`
   (`[picture] signatures`), `engine.rs` (`reads`: no picture without the
   detector unless signatures are kept)
-- `scripts/export-signature-model.py`; `schema/policy.schema.json`;
+- `schema/policy.schema.json`;
   `.github/workflows/ci.yml` fetches `signature` for the model gate
 
 ## What this ADR does not say
