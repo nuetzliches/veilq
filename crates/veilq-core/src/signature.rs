@@ -34,10 +34,6 @@ pub const MIN_SCORE: f32 = 0.5;
 /// anyone could read: the model's few small boxes lay on empty space or a
 /// mouse pointer in a screen recording.
 const MIN_WIDTH: f32 = 40.0;
-/// A box lower than this holds no signature either: one line of small
-/// print. veilq-signature-v1 took a grey form label (`Steuer-ID`, 56 x 15)
-/// in the corpus' screenshots for one.
-const MIN_HEIGHT: f32 = 20.0;
 /// A box with this share of its area inside another is that one's: the same
 /// signature, read from the whole picture and from a square.
 const INSIDE: f32 = 0.7;
@@ -104,9 +100,9 @@ impl Signatures {
                 });
             }
         }
-        // Narrow and low boxes go first: kept, one could take the place of the box
+        // Narrow boxes go first: kept, one could take the place of the box
         // of the whole signature and then be dropped itself.
-        found.retain(|f| f.w >= MIN_WIDTH && f.h >= MIN_HEIGHT);
+        found.retain(|f| f.w >= MIN_WIDTH);
         Ok(distinct(found)
             .into_iter()
             .filter_map(|f| {

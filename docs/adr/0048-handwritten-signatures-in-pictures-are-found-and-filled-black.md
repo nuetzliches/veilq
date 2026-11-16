@@ -38,7 +38,8 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
 
 - **Model:** YOLOS-tiny (`mdefrance/yolos-tiny-signature-detection`,
   Apache-2.0) at a fixed revision, converted to ONNX with its weights
-  unchanged (reproducible: the same versions gave the same file), published as
+  unchanged (by `scripts/export-signature-model.py`, in the history of
+  0.4.0; the same versions gave the same file), published as
   `nuetzliches/yolos-tiny-signature-detection-onnx` with the base model's
   name, origin, licence and the note that only the format changed, and
   pinned by its SHA-256 as the component `signature`
@@ -52,8 +53,9 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
   on 1,200 synthetic letters and screenshots: signatures in OFL/Apache
   handwriting fonts and drawn strokes, some across the printed name,
   watermarks often across the signature, stamps and logos, invented names
-  only. The training lives in a repository of its own; the model card
-  says what changed. Published under Apache-2.0 as
+  only. The training code lives in a private repository; the model card
+  says what changed (base, data, fonts, training, measurements), and the
+  pinned SHA-256 is that of the published file. Published under Apache-2.0 as
   `nuetzliches/veilq-signature-v1` and pinned at its own path
   (`signature/veilq-signature-v1/model.onnx`), so an installed 0.4.0 model
   is not taken for it. Measured on letters of another generator: 20/20
@@ -81,9 +83,9 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
   (from 1.3 : 1: a screenshot, an A4 page) is also read in squares of its
   shorter side that overlap by half. A box narrower than 40 pixels is
   dropped first: the model gate's screen recording had two such boxes on
-  empty space, and no signature that narrow can be read. From 0.4.1 so is a
-  box lower than 20 pixels: veilq-signature-v1 took a grey form label of
-  the corpus' screenshots (56 x 15) for a signature. Of the rest, a box
+  empty space, and no signature that narrow can be read. There is no such
+  floor for the height: in a scaled-down screenshot a signature can be
+  lower than a line of print elsewhere. Of the rest, a box
   that lies (nearly) inside another is that one's and the outer box stays;
   boxes that only overlap are both filled. So a box of part of the strokes
   never takes the place of the whole, and no box grows over what lies
@@ -115,7 +117,11 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
 - With the base model (0.4.0), large diagonal watermark text was filled as
   a signature; veilq-signature-v1 (0.4.1) learned watermarks as background.
   A small false box on a watermark is still possible, and it is trained on
-  synthetic pictures only: real signatures and scans vary more.
+  synthetic pictures only: real signatures and scans vary more. In the
+  corpus' form screenshots it fills a grey field label (`Steuer-ID`, 56 x 15
+  pixels) as a signature, 17 boxes over the five held-out seeds; a floor
+  for the height would drop them but also a signature in a scaled-down
+  picture, so the next training takes form screenshots as background.
 - 0.4.1 pins the model at a new path: an installed 0.4.0 model does not
   count, and pictures are refused until `veilq models fetch signature`.
 - A signature's box takes a line below it as well when the strokes reach

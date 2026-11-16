@@ -17,7 +17,8 @@ until then.
   diagonal watermark across a page (`ENTWURF`, `DRAFT`) is no longer filled
   as a signature, and a signature under a watermark is found: on letters
   with a watermark 20 of 20 signatures against 12, with 14 small false
-  boxes against 55.
+  boxes against 55. In form screenshots it can fill a small grey field
+  label as a signature.
 
 - Small text in pictures (ADR-0049): a picture below 1600 pixels is read
   at up to twice its size, so a scaled-down screenshot's lines are found
