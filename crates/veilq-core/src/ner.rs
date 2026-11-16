@@ -422,11 +422,28 @@ mod tests {
             "Verfasser",
             "Kindern",
             "Betroffene Personen",
+            // An office under a letter's signature.
+            "Geschäftsführer",
+            "Geschäftsführerin",
+            "Steuerberater",
+            "Rechtsanwalt",
+            "Rechtsanwältin",
+            "Prokuristin",
+            "Vorstand",
+            "Direktorin",
+            "Sachbearbeiter",
         ] {
             assert!(!can_be_name(span), "{span}");
         }
         // A surname that is also such a word stays a name for NER.
-        for name in ["Schüler", "Bürger", "Gast", "Richter", "Lena Teilnehmer"] {
+        for name in [
+            "Schüler",
+            "Bürger",
+            "Gast",
+            "Richter",
+            "Lena Teilnehmer",
+            "Jonas Brandt Geschäftsführer",
+        ] {
             assert!(can_be_name(name), "{name}");
         }
         assert!(can_be_name("Jonas Brandt's"));
