@@ -6,6 +6,8 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-16
+
 **Before you update:** the signature detector is a new model; fetch it
 again with `veilq models fetch signature` (26 MB), pictures are refused
 until then.
