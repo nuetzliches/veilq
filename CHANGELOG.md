@@ -6,7 +6,18 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+**Before you update:** the signature detector is a new model; fetch it
+again with `veilq models fetch signature` (26 MB), pictures are refused
+until then.
+
 ### Fixed
+
+- Signatures (ADR-0048, #80): the detector is now veilq-signature-v1,
+  YOLOS-tiny fine-tuned by nuetzliches on synthetic letters (Apache-2.0). A
+  diagonal watermark across a page (`ENTWURF`, `DRAFT`) is no longer filled
+  as a signature, and a signature under a watermark is found: on letters
+  with a watermark 20 of 20 signatures against 12, with 14 small false
+  boxes against 55.
 
 - Small text in pictures (ADR-0049): a picture below 1600 pixels is read
   at up to twice its size, so a scaled-down screenshot's lines are found
