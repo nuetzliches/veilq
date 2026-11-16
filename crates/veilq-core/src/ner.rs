@@ -254,12 +254,6 @@ pub(crate) fn cut_genitives(text: &str, found: &mut [Candidate]) {
     }
 }
 
-/// Lowercase words inside a name.
-const PARTICLES: &[&str] = &[
-    "von", "van", "vom", "zu", "zur", "der", "den", "de", "del", "della", "di", "da", "du", "la",
-    "le", "ten", "ter", "bin", "ibn", "al", "el", "y",
-];
-
 /// Whether a span can be a name: every word capitalised or a particle
 /// (`von der`), and one word written like a name (`Kern`, not `IBAN`) that
 /// is no role word. On a few words the model calls anything a person (a
@@ -276,7 +270,9 @@ fn can_be_name(span: &str) -> bool {
         .filter(|w| w.chars().count() >= 2)
         .collect();
     let capital = |w: &str| w.chars().next().is_some_and(char::is_uppercase);
-    words.iter().all(|w| capital(w) || PARTICLES.contains(w))
+    words
+        .iter()
+        .all(|w| capital(w) || crate::detect::PARTICLES.contains(w))
         && words.iter().any(|w| {
             capital(w)
                 && w.chars().skip(1).any(char::is_lowercase)

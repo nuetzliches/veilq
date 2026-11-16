@@ -631,7 +631,7 @@ impl Engine {
         let mut at = 0;
         for seg in segments {
             let mut found: Vec<Candidate> = self
-                .decided(&seg.text, &seg.context, false, Source::Text, false)?
+                .decided(&seg.text, &seg.context, false, Source::Text, false, &[])?
                 .into_iter()
                 .filter(|c| seg.raw_of(c.start) < upto)
                 .collect();
@@ -950,13 +950,13 @@ impl Engine {
 
     /// The findings in `text`, decided (for formats beside this module).
     pub(crate) fn findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
-        self.decided(text, context, true, Source::Text, false)
+        self.decided(text, context, true, Source::Text, false, &[])
     }
 
     /// [`findings`](Self::findings) in text OCR read off a picture: a
     /// failed checksum costs less (ADR-0037).
     pub(crate) fn ocr_findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
-        self.decided(text, context, true, Source::Ocr, false)
+        self.decided(text, context, true, Source::Ocr, false, &[])
     }
 
     /// [`ocr_findings`](Self::ocr_findings) in a picture read again after
@@ -966,13 +966,15 @@ impl Engine {
         text: &str,
         context: &str,
     ) -> Result<Vec<Candidate>, Error> {
-        self.decided(text, context, true, Source::Ocr, true)
+        self.decided(text, context, true, Source::Ocr, true, &[])
     }
 
     /// The detector's findings in `text`, written to the explanation when
     /// there is one; with `placeholders`, what lies inside one of veilq's
     /// own placeholders (`<PERSON>`, `[PERSON:0a1b2c3d]`, ADR-0001) is
     /// dropped, so a model that reads `<PERSON>` as a name changes nothing.
+    /// A person inside `replaced` (a verify round's stand-ins, a `fake`
+    /// name among them) does not go on the file's list of names.
     fn decided(
         &self,
         text: &str,
@@ -980,6 +982,7 @@ impl Engine {
         placeholders: bool,
         source: Source,
         verify: bool,
+        replaced: &[Range<usize>],
     ) -> Result<Vec<Candidate>, Error> {
         static PLACEHOLDER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
             regex::Regex::new(r"\\?<[A-Z][A-Z0-9_]*\\?>|\[[A-Z][A-Z0-9_]*:[0-9a-f]{8}\]")
@@ -989,7 +992,7 @@ impl Engine {
         let decide = |names: Option<&crate::names::Names>| {
             let mut all = found.clone();
             if let Some(n) = names {
-                all.extend(n.candidates(text, source));
+                all.extend(n.candidates(text, source)?);
             }
             let mut decisions = self.detector.resolve(text, all);
             if placeholders && text.contains(['<', '[']) {
@@ -1004,9 +1007,9 @@ impl Engine {
                     }
                 }
             }
-            decisions
+            Ok::<_, Error>(decisions)
         };
-        let mut decisions = decide(self.names.as_deref());
+        let mut decisions = decide(self.names.as_deref())?;
         // The file's names (ADR-0047): a person found here goes on the list,
         // and a name new to it is looked for in this text too.
         if let Some(names) = &self.names {
@@ -1017,6 +1020,9 @@ impl Engine {
                 .filter(|d| {
                     d.candidate.entity.as_str() == "PERSON"
                         && d.candidate.detector != crate::names::DETECTOR
+                        && !replaced
+                            .iter()
+                            .any(|r| r.start < d.candidate.end && d.candidate.start < r.end)
                 })
                 .map(|d| (d.candidate.start, d.candidate.end, d.candidate.confidence))
                 .collect();
@@ -1027,7 +1033,7 @@ impl Engine {
                     .collect()
             };
             if names.read(text, &persons, &spans(&decisions)) {
-                decisions = decide(Some(names));
+                decisions = decide(Some(names))?;
             }
         }
         if let Some(explain) = &self.explain {
@@ -1124,11 +1130,13 @@ impl Engine {
         // Each kept piece: its range in the new text and where it starts in
         // the old one.
         let mut kept: Vec<(Range<usize>, usize)> = Vec::new();
+        let mut stand_ins: Vec<Range<usize>> = Vec::new();
         let (mut new_at, mut old_at, mut k) = (0, 0, 0);
         for (p, replaced) in pieces {
             if *replaced {
                 old_at = found[k].end;
                 k += 1;
+                stand_ins.push(new_at..new_at + p.len());
             } else {
                 kept.push((new_at..new_at + p.len(), old_at));
                 old_at += p.len();
@@ -1136,7 +1144,7 @@ impl Engine {
             new_at += p.len();
         }
         let mut out = Vec::new();
-        for f in self.decided(&new, context, false, Source::Text, true)? {
+        for f in self.decided(&new, context, false, Source::Text, true, &stand_ins)? {
             let Some((range, old)) = kept
                 .iter()
                 .find(|(r, _)| r.start <= f.start && f.end <= r.end)
@@ -1720,6 +1728,32 @@ mod tests {
         let e = Engine::new(&off, None, b"seed", None).unwrap();
         let found = values(text, &e.scan_str(text, Format::Text).unwrap());
         assert!(!found.iter().any(|v| v == "Brandt"), "{found:?}");
+    }
+
+    #[test]
+    fn a_stand_in_a_verify_round_reads_is_not_learned() {
+        // `fake` writes a stand-in name; the verify round finds it as a
+        // person. Learned, every `Brandt` of the file would be filled.
+        let text = "Herr Jonas Brandt";
+        let later = "Brandt kommt";
+        let found = |e: &Engine, t: &str, replaced: &[Range<usize>]| -> Vec<String> {
+            e.decided(t, "", false, Source::Text, true, replaced)
+                .unwrap()
+                .into_iter()
+                .map(|c| t[c.start..c.end].to_owned())
+                .collect()
+        };
+        let e = engine().with_names();
+        let stand_in = vec![Range {
+            start: 0,
+            end: text.len(),
+        }];
+        assert!(!found(&e, text, &stand_in).is_empty());
+        assert!(found(&e, later, &[]).is_empty());
+        // Outside a stand-in the name is learned as before.
+        let e = engine().with_names();
+        found(&e, text, &[]);
+        assert_eq!(found(&e, later, &[]), ["Brandt"]);
     }
 
     #[test]

@@ -582,6 +582,12 @@ pub(crate) const ACCOUNTS: &[&str] = &[
     "$user",
 ];
 
+/// Lowercase words inside a name (`Ursula von der Leyen`).
+pub(crate) const PARTICLES: &[&str] = &[
+    "von", "van", "vom", "zu", "zur", "der", "den", "de", "del", "della", "di", "da", "du", "la",
+    "le", "ten", "ter", "bin", "ibn", "al", "el", "y",
+];
+
 /// Words a span of only these is not a name.
 pub(crate) const NOT_NAMES: &[&str] = &[
     "der",

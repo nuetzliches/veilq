@@ -64,10 +64,13 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
 - **Whole and in squares:** the model reads 640 x 640, the picture resized
   to it whatever its shape. A picture much wider or taller than square
   (from 1.3 : 1: a screenshot, an A4 page) is also read in squares of its
-  shorter side that overlap by half; one signature found twice is one. A
-  box narrower than 40 pixels is dropped: the model gate's screen
-  recording had two such boxes on empty space, and no signature that
-  narrow can be read.
+  shorter side that overlap by half. A box narrower than 40 pixels is
+  dropped first: the model gate's screen recording had two such boxes on
+  empty space, and no signature that narrow can be read. Of the rest, a box
+  that lies (nearly) inside another is that one's and the outer box stays;
+  boxes that only overlap are both filled. So a box of part of the strokes
+  never takes the place of the whole, and no box grows over what lies
+  between two (found in the review before 0.4.0).
 - **Synthetic signatures only:** tests and the corpus hold handwriting-style
   fonts and drawn strokes, never a real person's signature. The model test
   reads a picture named by environment variables, on the machine that runs
