@@ -290,7 +290,18 @@ export interface RedactOptions {
  */
 export type Mark =
   | { kind: 'missed'; value: string; entity: string; label?: string }
-  | { kind: 'extra'; value: string; entity: string };
+  | { kind: 'extra'; value: string; entity: string }
+  | { kind: 'missed_area'; area: Area; entity: string; label?: string }
+  | { kind: 'extra_area'; area: Area; entity: string };
+
+/** An area of a still image (no `frame`) or of a PDF's page `frame`, in the picture's pixels. */
+export interface Area {
+  frame?: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 /** The case store: how many cases, and whether an excerpt can be kept. */
 export interface CaseCount {

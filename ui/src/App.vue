@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { ApiError, createApi, type Info, type Mark, type Redaction, type Source } from '@/api';
+import { ApiError, createApi, type Area, type Info, type Mark, type Redaction, type Source } from '@/api';
 import BrandMark from '@/components/BrandMark.vue';
 import ComparePane from '@/components/ComparePane.vue';
 import FileBrowser from '@/components/FileBrowser.vue';
@@ -293,8 +293,10 @@ async function run(source: Source, name: string | null, unverified = false, expl
     explained.value = false;
     marks.value = [];
     markNote.value = null;
+    drawing.value = false;
   }
   selection.value = null;
+  drawnArea.value = null;
   if (explain) explained.value = true;
   sourceName.value = name;
   lastRun.value = { source, name };
@@ -369,6 +371,7 @@ async function addMark(mark: Mark) {
   const source = lastRun.value.source;
   marks.value = [...marks.value, mark];
   selection.value = null;
+  drawnArea.value = null;
   window.getSelection()?.removeAllRanges();
   markNote.value = null;
   const kept = api.addCase(source, mark, threshold.value ?? undefined);
@@ -385,16 +388,60 @@ function markMissed() {
   if (selection.value) void addMark({ kind: 'missed', value: selection.value, entity: markType.value });
 }
 
-/** Per finding, whether a mark can release it: a box in text, with its place in the input. */
+/** A still image or a PDF's pages in the output: where an area can be marked (not a GIF's frames). */
+const areaOutput = computed(() => (!!image.value && image.value.media_type !== 'image/gif') || !!pdf.value);
+/** A drag on the output picture draws an area to mark. */
+const drawing = ref(false);
+/** The area drawn, while it is offered as a mark; `frame` names a PDF's page. */
+const drawnArea = ref<Area | null>(null);
+
+function onDraw(area: Omit<Area, 'frame'>, page?: number) {
+  drawnArea.value = page === undefined ? area : { ...area, frame: page };
+}
+
+function markArea() {
+  const area = drawnArea.value;
+  if (!area) return;
+  drawnArea.value = null;
+  drawing.value = false;
+  void addMark({ kind: 'missed_area', area, entity: markType.value });
+}
+
+/**
+ * Per finding, whether a mark can release it: a box in text with its place in the input, or a box
+ * on a still image or a PDF page.
+ */
 const releasable = computed(() =>
-  findings.value.map((_, i) => markableOutput.value && !!result.value?.input_spans[i]),
+  findings.value.map((f, i) =>
+    markableOutput.value
+      ? !!result.value?.input_spans[i]
+      : areaOutput.value && f.location.kind === 'region' && f.location.part === undefined,
+  ),
 );
+
+/** Room around a released box: OCR reads it a pixel or two off the next time. */
+const RELEASE_MARGIN = 3;
 
 function release(i: number) {
   const r = result.value;
-  const span = r?.input_spans[i];
-  if (!r || !span) return;
-  void addMark({ kind: 'extra', value: byteSlice(r.input, span).trim(), entity: findings.value[i].entity });
+  const f = findings.value[i];
+  if (!r || !f) return;
+  const l = f.location;
+  if (l.kind === 'region') {
+    const x = Math.max(0, l.x - RELEASE_MARGIN);
+    const y = Math.max(0, l.y - RELEASE_MARGIN);
+    const area: Area = {
+      x,
+      y,
+      width: l.width + (l.x - x) + RELEASE_MARGIN,
+      height: l.height + (l.y - y) + RELEASE_MARGIN,
+    };
+    if (l.frame !== undefined) area.frame = l.frame;
+    void addMark({ kind: 'extra_area', area, entity: f.entity });
+    return;
+  }
+  const span = r.input_spans[i];
+  if (span) void addMark({ kind: 'extra', value: byteSlice(r.input, span).trim(), entity: f.entity });
 }
 
 /** The marks of this document taken back: it runs as the policy alone has it; the cases stay. */
@@ -834,6 +881,19 @@ onBeforeUnmount(() => {
             </span>
           </label>
           <span class="spacer" />
+          <button
+            v-if="areaOutput && !busy"
+            class="small"
+            :class="{ on: drawing }"
+            :aria-pressed="drawing"
+            :title="t('marks.drawTitle')"
+            @click="
+              drawing = !drawing;
+              drawnArea = null;
+            "
+          >
+            {{ t('marks.draw') }}
+          </button>
           <button v-if="outputPictures" class="small" :title="t('pane.zoomTitle')" @click="openViewer('output')">
             {{ t('pane.zoom') }}
           </button>
@@ -871,6 +931,15 @@ onBeforeUnmount(() => {
             </button>
             <button class="small" :aria-label="t('common.close')" @click="selection = null">×</button>
           </div>
+          <div v-else-if="drawnArea" class="markbar" role="group" :aria-label="t('marks.missedTitle')">
+            <span class="what">{{ t('marks.areaMissed') }}</span>
+            <select v-model="markType" :aria-label="t('marks.missedTitle')">
+              <option v-for="e in MARK_TYPES" :key="e" :value="e">{{ entityLabel(e) }}</option>
+            </select>
+            <button class="primary small" :disabled="busy" @click="markArea">{{ t('marks.mark') }}</button>
+            <button class="small" :aria-label="t('common.close')" @click="drawnArea = null">×</button>
+          </div>
+          <p v-else-if="drawing" class="markbar hint">{{ t('marks.drawHint') }}</p>
           <div v-if="result?.report.review_required" class="review" role="status">
             <strong>{{ t('output.review') }}</strong>
             <span v-for="(r, i) in result.report.review_reasons ?? []" :key="i">{{ r }}</span>
@@ -894,8 +963,11 @@ onBeforeUnmount(() => {
               :findings="findings"
               :hovered="hovered"
               :selected="selected"
+              :drawing="drawing && areaOutput"
+              :drawn="drawnArea && drawnArea.frame === undefined ? drawnArea : null"
               @hover="hovered = $event"
               @select="selectIn('output', $event)"
+              @draw="onDraw($event)"
               :zoom="paneZoom"
               @open="openViewer('output')"
             />
@@ -911,8 +983,11 @@ onBeforeUnmount(() => {
                 :findings="findings"
                 :hovered="hovered"
                 :selected="selected"
+                :drawing="drawing"
+                :drawn="drawnArea?.frame === i + 1 ? drawnArea : null"
                 @hover="hovered = $event"
                 @select="selectIn('output', $event)"
+                @draw="onDraw($event, i + 1)"
                 :zoom="paneZoom"
                 @open="openViewer('output')"
               />

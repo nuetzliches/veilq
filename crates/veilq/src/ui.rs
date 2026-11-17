@@ -682,7 +682,7 @@ fn list(root: &Path, dir: &str) -> Result<Listing, Error> {
     })
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum Source {
     /// Pasted text.
@@ -922,6 +922,17 @@ fn redact_source(
         Some(n) => Format::from_path(Path::new(n)).map_err(Failure::from)?,
         None => Format::Text,
     };
+    // Fail closed: an area marked where it cannot be applied (a GIF's
+    // frames, text) is an error, not a mark left out.
+    if engine.has_picture_marks() && !cases::takes_areas(format) {
+        return Err(Failure(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!(
+                "areas are marked on images and PDF pages, not on {}",
+                format.name()
+            ),
+        ));
+    }
     if format.is_container() {
         // Read whole (ADR-0019, ADR-0020). A mail is text: both sides are
         // shown, without marks (its findings name their parts). An Office
@@ -1233,6 +1244,88 @@ mod tests {
         )
         .await;
         assert_eq!(body["deleted"], 2);
+    }
+
+    /// A white PNG of one pixel.
+    const ONE_PIXEL_PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+    #[cfg(feature = "ocr")]
+    #[tokio::test]
+    async fn an_area_on_a_picture_is_kept_as_a_case_with_the_picture_around_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let key = age::x25519::Identity::generate();
+        let source =
+            serde_json::json!({ "kind": "upload", "name": "shot.png", "data": ONE_PIXEL_PNG });
+        let mark = serde_json::json!({
+            "kind": "missed_area",
+            "area": { "x": 0, "y": 0, "width": 1, "height": 1 },
+            "entity": "PERSON"
+        });
+        let (status, body) = send(
+            cases_app(dir.path(), store.path(), Some(key.clone())),
+            json_post(
+                "/api/cases",
+                serde_json::json!({ "source": source, "mark": mark }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["excerpt"], true);
+        let store = veilq_core::cases::Store::open(store.path()).unwrap();
+        let case = &store.list().unwrap()[0];
+        assert!(matches!(
+            case.location,
+            veilq_core::Location::Region {
+                frame: None,
+                width: 1,
+                height: 1,
+                ..
+            }
+        ));
+        assert_eq!(case.excerpt.as_ref().unwrap().media_type, "image/png");
+        let png = store.excerpt(&case.id, &key).unwrap().unwrap();
+        assert!(png.starts_with(b"\x89PNG"));
+    }
+
+    #[tokio::test]
+    async fn an_area_where_it_cannot_be_applied_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let area = serde_json::json!({
+            "kind": "missed_area",
+            "area": { "x": 0, "y": 0, "width": 1, "height": 1 },
+            "entity": "PERSON"
+        });
+        let text = serde_json::json!({ "kind": "text", "text": "Hallo Welt" });
+        // Fail closed: not a mark left out, an error.
+        let (status, body) = send(
+            cases_app(dir.path(), store.path(), None),
+            json_post(
+                "/api/redact",
+                serde_json::json!({ "source": text, "marks": [area] }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        let gif =
+            serde_json::json!({ "kind": "upload", "name": "clip.gif", "data": ONE_PIXEL_PNG });
+        let (status, _) = send(
+            cases_app(dir.path(), store.path(), None),
+            json_post(
+                "/api/cases",
+                serde_json::json!({ "source": gif, "mark": area }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            veilq_core::cases::Store::open(store.path())
+                .unwrap()
+                .list()
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]
