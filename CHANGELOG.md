@@ -43,6 +43,21 @@ Notable changes per release. The format follows
 
 ### Fixed
 
+- A file number after `Aktenzeichen`, `Az.`, `Geschäftszeichen`,
+  `Geschäftsnummer` or `Unser/Ihr Zeichen` is found whatever its shape, as
+  long as it holds a digit (ADR-0051): a dunning court's `26431907720` or
+  `26-4319077-2-0`, a firm's `KL-4471`. Before, only numbers with a slash
+  (`3 O 128/26`) were. A dunning court's number is also found after `Mahn…`
+  or `Vollstreckungsbescheid` without the word.
+- Under the purpose `legal`, a name a screen cut short in a tab or a cell
+  (`Albers,…`, `Albers, M ...`) is filled in a picture even where it stands
+  nowhere else on the page (ADR-0051). Written text and the default
+  threshold are not affected.
+- A black box in a picture grows with the line it covers (ADR-0051): a
+  quarter of the line's height to the sides, an eighth up and down, at least
+  2 pixels as before. The edges of large or bold letters no longer show
+  beside and under it; boxes on lines of 12 pixels and more are wider than
+  before.
 - An IBAN in `[allow] values` is allowed however it is grouped or cased:
   `DE89370400440532013000` in the policy now also leaves `DE89 3704 0044
   0532 0130 00` (as a letterhead or OCR writes it), and the other way round.

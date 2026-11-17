@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "x": 251,
+        "y": 15,
+        "width": 27,
+        "height": 10
+      }
+    },
+    {
+      "entity": "COURT_FILE_NUMBER",
+      "location": {
+        "kind": "region",
+        "x": 135,
+        "y": 134,
+        "width": 88,
+        "height": 12
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "x": 115,
+        "y": 164,
+        "width": 75,
+        "height": 15
+      }
+    },
+    {
+      "entity": "ADDRESS",
+      "location": {
+        "kind": "region",
+        "x": 41,
+        "y": 194,
+        "width": 219,
+        "height": 15
+      }
+    }
+  ]
+}

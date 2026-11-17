@@ -197,3 +197,36 @@ entity = "COURT_FILE_NUMBER"
 regex = '\b(?:\d{1,3}|[IVX]{1,5})\s?[A-Z][A-Za-z]{0,3}\s?\d{1,5}/\d{2}\b'
 confidence = 0.6
 context = { words = ["az", "aktenzeichen", "geschäftszeichen", "akte", "verfahren"], boost = 0.35 }
+
+# The value after a word that names a file's number, whatever its shape, as
+# long as it holds a digit: `Aktenzeichen: 26431907720`, `Az. 12-345-6`,
+# `Geschäftszeichen KL-4471`. A dunning court's number has no slash, and a
+# firm's own has letters; `court-file` knows neither.
+[[patterns]]
+name = "file-number-label"
+entity = "COURT_FILE_NUMBER"
+regex = '(?i:\b(?:aktenzeichen|az\.?|geschäftszeichen|geschäftsnummer|(?:unser|ihr)\s+zeichen))[ \t]*:?[ \t]*(?P<pii>\d(?:[\p{L}\d./\-]*[\p{L}\d])?|\p{L}[\p{L}./\-]*\d(?:[\p{L}\d./\-]*[\p{L}\d])?)'
+confidence = 0.8
+
+# A German dunning court's number: two digits of the year, seven, and two
+# check digits (`26-4319077-2-0`), as often without the hyphens. Eleven
+# digits alone are an order's or a phone's as well: the court, the dunning
+# notice or the file's word must stand before it.
+[[patterns]]
+name = "dunning-number"
+entity = "COURT_FILE_NUMBER"
+regex = '\b\d{2}-?\d{7}-?\d-?\d\b'
+confidence = 0.4
+context = { words = ["mahn", "vollstreckungsbescheid", "aktenzeichen", "geschäftsnummer", "az"], boost = 0.4, window = 48 }
+
+# A name a screen cut short in a cell or a tab: a surname, its comma, maybe
+# the start of the given name, and the dots of the cut (`Albers,…`,
+# `Albers, M ...`). Nothing else around it says it is a name, so it stays
+# below the default threshold and is found under `legal` (ADR-0051). Read in
+# text from a picture only (`detect::OCR_ONLY`): written text cut like this
+# is rare, and a town cut the same way would be taken for a name.
+[[patterns]]
+name = "name-cut"
+entity = "PERSON"
+regex = '(?m)(?:^|[ \t])(?P<pii>\p{Lu}\p{Ll}{2,}(?:-\p{Lu}\p{Ll}+)?,(?:[ \t]?\p{Lu}\p{Ll}*)?)[ \t]?(?:\.{2,3}|…)\.?(?:[ \t]|$)'
+confidence = 0.65
