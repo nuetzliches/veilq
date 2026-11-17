@@ -64,6 +64,11 @@ enum Command {
         /// it they are skipped.
         #[arg(long)]
         ocr: bool,
+        /// Measure what a redaction finds, not a scan (#108): a picture's
+        /// faces and signatures are filled as a redaction fills them, and
+        /// it is read again until a round finds nothing new.
+        #[arg(long)]
+        redact: bool,
         /// How many misses and false positives to list.
         #[arg(long, default_value_t = 40)]
         list: usize,
@@ -142,6 +147,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             list,
             ner,
             ocr,
+            redact,
             jobs,
         } => {
             let gate_path = gate.unwrap_or_else(|| dir.join("gate.toml"));
@@ -164,7 +170,9 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 let done: Vec<_> = std::thread::scope(|s| {
                     let handles: Vec<_> = chunk
                         .iter()
-                        .map(|(_, d)| s.spawn(|| check::evaluate(d, only.as_deref(), ner, ocr)))
+                        .map(|(_, d)| {
+                            s.spawn(|| check::evaluate(d, only.as_deref(), ner, ocr, redact))
+                        })
                         .collect();
                     handles
                         .into_iter()
