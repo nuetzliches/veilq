@@ -26,7 +26,14 @@ Notable changes per release. The format follows
 - `scan --explain` names the hand rules that hold for each candidate,
   whatever its verdict: `role_words`, `account`, `brand_word`,
   `can_be_birth_date`, `beside_name`, `allowed` (#35). What veilq finds does
-  not change; a learned decider will weigh them.
+  not change; a learned decider will weigh them. `check_failed` names a
+  candidate whose pattern's check (a checksum, a date) fails on it.
+- The engine can run a learned decider (#35): it may lift a candidate below
+  its threshold into the findings, never one whose check failed or that the
+  allow lists name, and never drops what a rule keeps; the report then asks
+  for a review and says how many it lifted. `--no-decider` (`scan`,
+  `redact`) and `[decider] enabled = false` in the policy switch it off.
+  None ships yet: until one does, nothing changes.
 
 ### Fixed
 

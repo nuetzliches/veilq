@@ -223,6 +223,12 @@ struct InputArgs {
     /// for a review and says by how much. Saves nothing.
     #[arg(long, value_name = "0..0.95")]
     min_confidence: Option<f32>,
+    /// No learned decider for this run (#35), as `[decider] enabled =
+    /// false` in the policy: every decision is the thresholds' and the
+    /// rules'. Where one is installed, it may lift a candidate below its
+    /// threshold into the findings and never drops one.
+    #[arg(long)]
+    no_decider: bool,
 }
 
 impl InputArgs {
@@ -717,7 +723,9 @@ fn scan(
 ) -> anyhow::Result<Outcome> {
     let policy = input.policy()?;
     let explanation = veilq_core::Explain::new();
-    let mut engine = engine(&policy, None)?.with_min_confidence(input.min_confidence)?;
+    let mut engine = engine(&policy, None)?
+        .with_min_confidence(input.min_confidence)?
+        .without_decider(input.no_decider);
     if explain {
         engine = engine.with_explain(explanation.clone());
     }
@@ -889,6 +897,7 @@ fn redact(
     };
     let engine = engine(&policy, action)?
         .with_min_confidence(input.min_confidence)?
+        .without_decider(input.no_decider)
         .with_unverified(pictures.unverified)
         .without_watermark(pictures.no_watermark);
     let format = format_of(path, input.format.as_deref())?;

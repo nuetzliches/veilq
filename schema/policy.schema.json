@@ -96,6 +96,18 @@
       ],
       "type": "object"
     },
+    "DeciderPolicy": {
+      "additionalProperties": false,
+      "description": "The learned decider (#35).",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "`true` (the default): where a learned decider is installed, it may\nlift a candidate below its threshold into the findings, and the\nreport says how many it lifted. It never drops what a rule keeps.\n`false` leaves every decision to the thresholds and rules, as\n`--no-decider` does for one run.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "Defaults": {
       "additionalProperties": false,
       "properties": {
@@ -381,6 +393,13 @@
         }
       },
       "type": "object"
+    },
+    "decider": {
+      "$ref": "#/$defs/DeciderPolicy",
+      "default": {
+        "enabled": true
+      },
+      "description": "The learned decider (#35)."
     },
     "defaults": {
       "$ref": "#/$defs/Defaults",

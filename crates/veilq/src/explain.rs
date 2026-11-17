@@ -82,6 +82,8 @@ fn text(out: &mut dyn Write, reading: &Reading) -> std::io::Result<()> {
             c.value,
             if c.raised {
                 "  (raised: a date beside a name)"
+            } else if c.lifted {
+                "  (lifted by the learned decider)"
             } else {
                 ""
             },
