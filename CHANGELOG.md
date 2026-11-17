@@ -12,6 +12,10 @@ Notable changes per release. The format follows
   `DE89370400440532013000` in the policy now also leaves `DE89 3704 0044
   0532 0130 00` (as a letterhead or OCR writes it), and the other way round.
   Every other IBAN is still found.
+- The UI's two panes keep equal widths, and the findings panel keeps its
+  column while a run replaces the result: letting go of the threshold slider
+  no longer moves the slider away from the pointer, and a wide picture no
+  longer takes more than its half.
 
 ## [0.4.1] - 2026-11-16
 

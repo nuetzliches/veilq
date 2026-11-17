@@ -40,7 +40,7 @@ watch(
   <aside class="panel" :aria-label="t('findings.title')">
     <header>
       <h2>{{ t('findings.title') }}</h2>
-      <span class="count">{{ plural(findings.length, 'output.findingsOne', 'output.findingsOther') }}</span>
+      <span v-if="!busy" class="count">{{ plural(findings.length, 'output.findingsOne', 'output.findingsOther') }}</span>
       <span class="spacer" />
       <button class="small" :aria-label="t('common.close')" @click="emit('close')">×</button>
     </header>
@@ -71,7 +71,7 @@ watch(
           </button>
         </li>
       </ol>
-      <p v-else class="none">{{ t('output.nothingFound') }}</p>
+      <p v-else class="none">{{ busy ? t('output.redacting') : t('output.nothingFound') }}</p>
       <ExplainList v-if="readings" :readings="readings" />
       <p v-else class="more">
         <button class="small" :disabled="busy" :title="t('findings.explainTitle')" @click="emit('explain')">
