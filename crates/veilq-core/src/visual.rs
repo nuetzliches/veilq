@@ -12,10 +12,10 @@
 //! into pixels faithfully. **verify** reads the filled image again; what it
 //! still finds is filled too, for up to three rounds (ADR-0022).
 //!
-//! Faces are found first (ADR-0038), when the policy has them filled: each
-//! is a `FACE` finding and filled black before OCR reads the picture. A
-//! face in a GIF is looked for in every frame that changed, in the whole
-//! frame.
+//! Faces (ADR-0038) and signatures (ADR-0048), when the policy has them
+//! filled, are `FACE` and `SIGNATURE` findings, found on the picture OCR
+//! reads too and filled with the first reading's boxes (ADR-0053). A face
+//! in a GIF is looked for in every frame that changed, in the whole frame.
 //!
 //! A GIF is read frame by frame. A box stays filled in the following frames
 //! as long as its pixels do not change there, so a value that stands still
@@ -381,11 +381,15 @@ pub fn redact_picture(
     apply: bool,
     out: &mut Outcome,
 ) -> Result<Vec<Rect>, Error> {
-    let mut boxes = marked(engine, img, frame, apply, out);
-    boxes.extend(faces(engine, img, frame, apply, out, &[])?);
-    boxes.extend(signatures(engine, img, frame, apply, out, &[])?);
-    boxes.extend(read_whole(engine, ocr, img, frame, apply, out)?);
-    Ok(boxes)
+    // Every detector reads the same unfilled picture (#108): a region filled
+    // first took the context word a pattern beside it needs. The regions
+    // are found and reported here and filled with the first reading's boxes.
+    let mut regions = marked(engine, img, frame, out);
+    regions.extend(faces(engine, img, frame, out, &[])?);
+    regions.extend(signatures(engine, img, frame, out, &[])?);
+    let read = read_whole(engine, ocr, img, frame, apply, out, &regions)?;
+    regions.extend(read);
+    Ok(regions)
 }
 
 fn rect(a: &crate::Area) -> Rect {
@@ -398,15 +402,9 @@ fn rect(a: &crate::Area) -> Rect {
 }
 
 /// The areas of `frame` a user marked as personal data (#34): reported as
-/// their type (detector `mark`) and filled (with `apply`) before anything
-/// reads the picture, clipped to it. The boxes filled are returned.
-fn marked(
-    engine: &Engine,
-    img: &mut RgbaImage,
-    frame: Option<u64>,
-    apply: bool,
-    out: &mut Outcome,
-) -> Vec<Rect> {
+/// their type (detector `mark`), clipped to the picture. The boxes to fill
+/// are returned; they are filled with the first reading's (#108).
+fn marked(engine: &Engine, img: &RgbaImage, frame: Option<u64>, out: &mut Outcome) -> Vec<Rect> {
     let (w, h) = img.dimensions();
     let mut filled = Vec::new();
     for (area, entity) in engine
@@ -438,9 +436,6 @@ fn marked(
             detector: MARK_DETECTOR.into(),
             pseudonym: None,
         });
-        if apply {
-            fill(img, &r);
-        }
         filled.push(r);
     }
     filled
@@ -462,7 +457,8 @@ fn released(engine: &Engine, frame: Option<u64>, r: &Rect) -> bool {
     !areas.is_empty() && covered(r, areas.iter())
 }
 
-/// The text of a whole picture, redacted: [`settle`] without a band.
+/// The text of a whole picture, redacted: [`settle`] without a band, with
+/// `regions` filled with its first reading's boxes.
 fn read_whole(
     engine: &Engine,
     ocr: &Ocr,
@@ -470,20 +466,20 @@ fn read_whole(
     frame: Option<u64>,
     apply: bool,
     out: &mut Outcome,
+    regions: &[Rect],
 ) -> Result<Vec<Rect>, Error> {
-    settle(engine, ocr, img, frame, apply, out, Band::WHOLE)?
+    settle(engine, ocr, img, frame, apply, out, Band::WHOLE, regions)?
         .ok_or_else(|| error("a whole picture has no edge a line could be cut at"))
 }
 
-/// The faces in `img`, reported as `FACE` and filled (with `apply`), at
-/// `frame`; nothing when the policy keeps faces. A face inside a box of
-/// `kept` (a box of the frame before, whose pixels stood still) is that
-/// box's and not reported again. The boxes filled are returned.
+/// The faces in `img`, reported as `FACE`, at `frame`; nothing when the
+/// policy keeps faces. A face inside a box of `kept` (a box of the frame
+/// before, whose pixels stood still) is that box's and not reported again.
+/// The boxes to fill are returned.
 fn faces(
     engine: &Engine,
-    img: &mut RgbaImage,
+    img: &RgbaImage,
     frame: Option<u64>,
-    apply: bool,
     out: &mut Outcome,
     kept: &[Rect],
 ) -> Result<Vec<Rect>, Error> {
@@ -501,19 +497,16 @@ fn faces(
         detector: "face",
         reason: FACES_FOUND,
     };
-    Ok(regions(
-        engine, &region, found, img, frame, apply, out, kept,
-    ))
+    Ok(regions(engine, &region, found, frame, out, kept))
 }
 
 /// The handwritten signatures in `img` (ADR-0048), as [`faces`] does with
-/// faces: reported as `SIGNATURE` and filled; nothing when the policy keeps
+/// faces: reported as `SIGNATURE`; nothing when the policy keeps
 /// signatures.
 fn signatures(
     engine: &Engine,
-    img: &mut RgbaImage,
+    img: &RgbaImage,
     frame: Option<u64>,
-    apply: bool,
     out: &mut Outcome,
     kept: &[Rect],
 ) -> Result<Vec<Rect>, Error> {
@@ -531,9 +524,7 @@ fn signatures(
         detector: "signature",
         reason: SIGNATURES_FOUND,
     };
-    Ok(regions(
-        engine, &region, found, img, frame, apply, out, kept,
-    ))
+    Ok(regions(engine, &region, found, frame, out, kept))
 }
 
 /// What a detector of regions (faces, signatures) reports.
@@ -544,18 +535,15 @@ struct Region {
     reason: &'static str,
 }
 
-/// `found` (boxes and confidences) reported as findings of `region` and
-/// filled (with `apply`), at `frame`. One below its threshold, or inside a
-/// box of `kept` (a box of the frame before, whose pixels stood still), is
-/// left out. The boxes filled are returned.
-#[allow(clippy::too_many_arguments)]
+/// `found` (boxes and confidences) reported as findings of `region`, at
+/// `frame`. One below its threshold, or inside a box of `kept` (a box of
+/// the frame before, whose pixels stood still), is left out. The boxes to
+/// fill are returned.
 fn regions(
     engine: &Engine,
     region: &Region,
     found: Vec<(Rect, f32)>,
-    img: &mut RgbaImage,
     frame: Option<u64>,
-    apply: bool,
     out: &mut Outcome,
     kept: &[Rect],
 ) -> Vec<Rect> {
@@ -580,9 +568,6 @@ fn regions(
             detector: region.detector.into(),
             pseudonym: None,
         });
-        if apply {
-            fill(img, &rect);
-        }
         filled.push(rect);
     }
     if !filled.is_empty() {
@@ -791,6 +776,12 @@ fn candidates(
 /// reported where they are in the picture, the boxes returned are in the
 /// band. `None` when OCR reads a line at an edge of the band that was left
 /// out: the line may be cut there, and the band must be read larger.
+///
+/// `regions` (in the band) are what the other detectors found in the same
+/// unfilled picture (#108): a candidate inside one is theirs, a line read
+/// badly inside one is no reason for review, and they are filled with the
+/// first reading's boxes. The boxes returned are the reading's own.
+#[allow(clippy::too_many_arguments)]
 fn settle(
     engine: &Engine,
     ocr: &Ocr,
@@ -799,6 +790,7 @@ fn settle(
     apply: bool,
     out: &mut Outcome,
     band: Band,
+    regions: &[Rect],
 ) -> Result<Option<Vec<Rect>>, Error> {
     let (w, h) = img.dimensions();
     let mut filled: Vec<Rect> = Vec::new();
@@ -815,8 +807,13 @@ fn settle(
         let candidates = candidates(engine, &lines, w, h, round > 1)?;
         let mut new: Vec<Rect> = Vec::new();
         for (c, rects) in candidates {
-            // Found twice (page and line), or inside a box already filled.
-            if rects.is_empty() || rects.iter().all(|r| covered(r, filled.iter().chain(&new))) {
+            // Found twice (page and line), inside a box already filled, or
+            // inside a region.
+            if rects.is_empty()
+                || rects
+                    .iter()
+                    .all(|r| covered(r, filled.iter().chain(regions).chain(&new)))
+            {
                 continue;
             }
             // In an area the user released (#34), in every round: a check
@@ -860,10 +857,14 @@ fn settle(
         // Read badly where nothing is filled: on the first reading only, as
         // a later one reads the boxes' edges.
         if round == 1 {
-            let unread = unread(engine, &lines, &new, &band, frame, (w, h), out)?;
+            let quiet: Vec<Rect> = new.iter().chain(regions).copied().collect();
+            let unread = unread(engine, &lines, &quiet, &band, frame, (w, h), out)?;
             new.extend(unread);
         }
-        if new.is_empty() || !apply {
+        // The regions are filled with the first reading's boxes, and the
+        // picture is read again to verify it.
+        let regions_open = round == 1 && !regions.is_empty();
+        if (new.is_empty() && !regions_open) || !apply {
             return Ok(Some(filled));
         }
         let last = round == ROUNDS;
@@ -875,7 +876,7 @@ fn settle(
                 rounds: ROUNDS,
             });
         }
-        for r in &new {
+        for r in new.iter().chain(if round == 1 { regions } else { &[] }) {
             fill(img, r);
         }
         filled.extend(new);
@@ -1019,6 +1020,23 @@ fn joined(mut bands: Vec<(u32, u32)>) -> Vec<(u32, u32)> {
     out
 }
 
+/// The parts of `regions` (in a picture) between rows `top` and `bottom`, in
+/// the band those rows make.
+fn in_band(regions: &[Rect], top: u32, bottom: u32) -> Vec<Rect> {
+    regions
+        .iter()
+        .filter_map(|r| {
+            let y = r.y.max(top);
+            let end = r.bottom().min(bottom);
+            (end > y).then(|| Rect {
+                y: y - top,
+                h: end - y,
+                ..*r
+            })
+        })
+        .collect()
+}
+
 /// Whether bands of this many rows are worth reading on their own: above
 /// half the picture (a scroll, a new page), reading it whole costs no more.
 fn too_much(bands: &[(u32, u32)], height: u32) -> bool {
@@ -1045,15 +1063,16 @@ fn redact_changed(
     kept: &[Rect],
 ) -> Result<Vec<Rect>, Error> {
     let (w, h) = img.dimensions();
-    let mut boxes = faces(engine, img, frame, apply, out, kept)?;
-    boxes.extend(signatures(engine, img, frame, apply, out, kept)?);
+    let mut boxes = faces(engine, img, frame, out, kept)?;
+    boxes.extend(signatures(engine, img, frame, out, kept)?);
     let margin = MARGIN.max(h / 20);
     let mut bands = changed_bands(before, after, margin);
     // Read each band on a copy; a band cut short starts the reading over, so
     // nothing of a reading given up reaches the frame or the report.
     let read = 'read: loop {
         if too_much(&bands, h) {
-            boxes.extend(read_whole(engine, ocr, img, frame, apply, out)?);
+            let read = read_whole(engine, ocr, img, frame, apply, out, &boxes)?;
+            boxes.extend(read);
             return Ok(boxes);
         }
         let mut read = Vec::new();
@@ -1065,7 +1084,10 @@ fn redact_changed(
                 open_above: top > 0,
                 open_below: bottom < h,
             };
-            match settle(engine, ocr, &mut part, frame, apply, &mut found, band)? {
+            let regions = in_band(&boxes, top, bottom);
+            match settle(
+                engine, ocr, &mut part, frame, apply, &mut found, band, &regions,
+            )? {
                 Some(rects) => read.push((top, part, found, rects)),
                 None => {
                     // Larger on the open sides; each time by `margin` at
@@ -1078,6 +1100,12 @@ fn redact_changed(
         }
         break read;
     };
+    // The faces and signatures whole, where a band holds a part of one only.
+    if apply {
+        for r in &boxes {
+            fill(img, r);
+        }
+    }
     for (top, part, found, rects) in read {
         if apply {
             image::imageops::replace(img, &part, 0, i64::from(top));
@@ -1278,7 +1306,7 @@ mod tests {
     }
 
     #[test]
-    fn a_marked_area_is_filled_and_reported_on_its_page_only() {
+    fn a_marked_area_is_reported_on_its_page_only_and_left_to_fill() {
         let engine = Engine::new(&crate::Policy::default(), None, b"test", None)
             .unwrap()
             .with_picture_marks(
@@ -1297,25 +1325,39 @@ mod tests {
             );
         let white = RgbaImage::from_pixel(100, 100, Rgba([255, 255, 255, 255]));
         let mut out = outcome();
-        let mut img = white.clone();
         assert!(
-            marked(&engine, &mut img, Some(1), true, &mut out).is_empty(),
+            marked(&engine, &white, Some(1), &mut out).is_empty(),
             "another page"
         );
-        assert_eq!(img, white);
-        let filled = marked(&engine, &mut img, Some(2), true, &mut out);
-        assert_eq!(filled.len(), 2);
-        assert_eq!(filled[1].w, 10, "clipped at the edge");
-        assert_eq!(img.get_pixel(15, 15), &Rgba([0, 0, 0, 255]));
-        assert_eq!(img.get_pixel(5, 5), &Rgba([255, 255, 255, 255]));
+        assert!(out.findings.is_empty());
+        // Filled with the first reading's boxes, not before it (#108).
+        let boxes = marked(&engine, &white, Some(2), &mut out);
+        assert_eq!(boxes.len(), 2);
+        assert_eq!(boxes[1].w, 10, "clipped at the edge");
+        assert_eq!(out.findings.len(), 2);
         assert_eq!(out.findings[0].detector, MARK_DETECTOR);
         assert_eq!(out.findings[0].confidence, 1.0);
-        // Not filled for a scan, still reported.
-        let mut scan = outcome();
-        let mut img = white.clone();
-        marked(&engine, &mut img, Some(2), false, &mut scan);
-        assert_eq!(img, white);
-        assert_eq!(scan.findings.len(), 2);
+    }
+
+    #[test]
+    fn a_region_is_cut_to_the_band_it_reaches_into() {
+        let face = Rect {
+            x: 5,
+            y: 40,
+            w: 20,
+            h: 30,
+        };
+        assert_eq!(
+            in_band(&[face], 50, 100),
+            vec![Rect {
+                x: 5,
+                y: 0,
+                w: 20,
+                h: 20
+            }]
+        );
+        assert_eq!(in_band(&[face], 0, 50)[0].h, 10);
+        assert!(in_band(&[face], 70, 90).is_empty(), "below it");
     }
 
     #[test]
@@ -1344,15 +1386,12 @@ mod tests {
             detector: "face",
             reason: FACES_FOUND,
         };
-        let mut img = RgbaImage::from_pixel(100, 100, Rgba([255, 255, 255, 255]));
         let mut out = outcome();
         let filled = regions(
             &engine,
             &region,
             vec![(inside, 0.99), (across, 0.99)],
-            &mut img,
             None,
-            true,
             &mut out,
             &[],
         );
@@ -1404,6 +1443,45 @@ mod tests {
             ]
         );
         assert!(out.weak_lines.is_empty());
+    }
+
+    #[test]
+    fn a_line_read_badly_inside_a_region_is_no_reason() {
+        let engine = Engine::new(&crate::Policy::default(), None, b"test", None).unwrap();
+        let mut l = line("Lena Albrecht", 0, 0);
+        l.scores[5] = 0.6;
+        // A signature's box over the line (#108): filled whole, so nothing
+        // read badly there can leave.
+        let signature = Rect {
+            x: 0,
+            y: 0,
+            w: 400,
+            h: 40,
+        };
+        let mut out = outcome();
+        let lines = [l];
+        let boxes = unread(
+            &engine,
+            &lines,
+            &[signature],
+            &Band::WHOLE,
+            None,
+            (1000, 1000),
+            &mut out,
+        );
+        assert!(boxes.unwrap().is_empty());
+        assert!(out.weak_lines.is_empty());
+        unread(
+            &engine,
+            &lines,
+            &[],
+            &Band::WHOLE,
+            None,
+            (1000, 1000),
+            &mut out,
+        )
+        .unwrap();
+        assert_eq!(out.weak_lines.len(), 1, "outside every region");
     }
 
     #[test]
