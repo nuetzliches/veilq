@@ -13,8 +13,7 @@ Notable changes per release. The format follows
   them, and it is read again. It sees what a filled region costs a text
   detector, which a scan cannot: on the corpus and every held-out seed,
   a signature found on a field label hides the tax ID or licence plate
-  beside it. CI reports it beside the gate until pictures are read before
-  they are filled.
+  beside it. CI gates on it as on the scan.
 - Every picture veilq writes (an image, each GIF frame, each PDF page)
   carries a small `veilq <version>` mark at its bottom right (ADR-0050),
   drawn after redaction and verification, so it never hides or causes a
@@ -56,8 +55,7 @@ Notable changes per release. The format follows
   deletes them all. Text, CSV and JSON for now; pictures follow.
 - **Marks on images and PDF pages** (#34): "Mark an area" in the output
   draws a frame around personal data veilq left; it is filled black and
-  reported as its type (detector `mark`) before anything reads the
-  picture. A box on a picture is released from the findings panel: what
+  reported as its type (detector `mark`). A box on a picture is released from the findings panel: what
   OCR, the face or the signature detector finds inside is left, in every
   round of the check. A case keeps the picture around the area, encrypted.
   Not on a GIF's frames yet: an area marked there is an error, not a mark
@@ -76,6 +74,17 @@ Notable changes per release. The format follows
   twins); "Add to my rules" saves it into the user's policy, checked as the
   settings save it. Where a project's `veilq.toml` is in effect, the rule
   is offered as TOML to copy instead.
+
+### Changed
+
+- Every detector reads a picture before anything in it is filled
+  (ADR-0053, #108): marked areas, faces and signatures are found on the
+  picture as it came, OCR reads the same picture, and all of it is filled
+  once with the first reading's boxes, then verified as before. A field
+  label taken for a signature no longer costs the tax ID or licence plate
+  beside it: in a redaction, both are found on the corpus and every
+  held-out seed. A line read badly inside a face or signature is no longer
+  a review reason.
 
 ### Fixed
 

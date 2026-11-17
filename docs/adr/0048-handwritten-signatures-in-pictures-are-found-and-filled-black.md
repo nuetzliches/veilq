@@ -1,6 +1,6 @@
 # ADR-0048: Handwritten signatures in pictures are found and filled black
 
-- **Status:** Accepted (card in the conversation, points B1 to B6, approved by the owner 2026-11-13; the model changed after measuring, approved 2026-11-16); amends [ADR-0023](0023-pictures-are-read-with-ocr-and-redacted-with-black-boxes.md) and [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md)
+- **Status:** Accepted (card in the conversation, points B1 to B6, approved by the owner 2026-11-13; the model changed after measuring, approved 2026-11-16); amends [ADR-0023](0023-pictures-are-read-with-ocr-and-redacted-with-black-boxes.md) and [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md); amended by [ADR-0053](0053-every-detector-reads-the-picture-before-anything-is-filled.md) (filled with the first reading's boxes, not before OCR)
 - **Date:** 2026-11-16
 - **Deciders:** project owner
 - **Related:** [ADR-0038](0038-faces-in-pictures-are-found-and-filled-black.md), #80

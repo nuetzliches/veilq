@@ -116,11 +116,9 @@ jobs:
           target/release/veilq models list
           target/release/veilq-eval check eval --ner --ocr --gate eval/gate-ner.toml --held-out ${{ matrix.seeds }} --list 20
       # What a redaction finds, pictures filled and read again (#108): it
-      # sees what a filled region costs a text detector, which a scan cannot.
-      # Reported, not yet a gate: it fails until a picture is read before it
-      # is filled (#108, card point 2), which makes it one.
+      # sees what a filled region costs a text detector, which a scan cannot
+      # (ADR-0053).
       - name: gate (redaction)
-        continue-on-error: true
         run: target/release/veilq-eval check eval --ner --ocr --redact --gate eval/gate-ner.toml --held-out ${{ matrix.seeds }} --list 20
 
   eval-models:
