@@ -34,6 +34,12 @@ Notable changes per release. The format follows
   for a review and says how many it lifted. `--no-decider` (`scan`,
   `redact`) and `[decider] enabled = false` in the policy switch it off.
   None ships yet: until one does, nothing changes.
+- The case store in the engine (#34): what a user marks as veilq's
+  mistake becomes a case under the user's local data (`veilq\cases`), in
+  the format of `schema/case.schema.json`, which holds no value. The line,
+  cell or picture crop around the mark is kept only encrypted with age, for
+  30 days; without a key nothing of it is written. Nothing marks a case
+  yet: the UI's marks come next.
 
 ### Fixed
 
