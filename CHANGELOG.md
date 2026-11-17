@@ -8,6 +8,13 @@ Notable changes per release. The format follows
 
 ### Added
 
+- `veilq-eval check --redact` measures what a redaction finds, not a scan
+  (#108): a picture's faces and signatures are filled as a redaction fills
+  them, and it is read again. It sees what a filled region costs a text
+  detector, which a scan cannot: on the corpus and every held-out seed,
+  a signature found on a field label hides the tax ID or licence plate
+  beside it. CI reports it beside the gate until pictures are read before
+  they are filled.
 - Every picture veilq writes (an image, each GIF frame, each PDF page)
   carries a small `veilq <version>` mark at its bottom right (ADR-0050),
   drawn after redaction and verification, so it never hides or causes a
