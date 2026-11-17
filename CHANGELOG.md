@@ -23,6 +23,10 @@ Notable changes per release. The format follows
   that starts like an international one, a build version, a meeting date
   beside a name. veilq redacts the first two today; they count as false
   positives (precision on the corpus 0.972 with NER, gate 0.97).
+- `scan --explain` names the hand rules that hold for each candidate,
+  whatever its verdict: `role_words`, `account`, `brand_word`,
+  `can_be_birth_date`, `beside_name`, `allowed` (#35). What veilq finds does
+  not change; a learned decider will weigh them.
 
 ### Fixed
 

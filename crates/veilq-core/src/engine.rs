@@ -213,6 +213,7 @@ impl Explain {
                     threshold: d.threshold,
                     verdict: d.verdict,
                     raised: d.raised,
+                    features: d.features.clone(),
                 })
                 .collect(),
         };
@@ -256,6 +257,9 @@ pub struct Explained {
     /// A birth date beside a name lifted its confidence.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub raised: bool,
+    /// The hand rules that hold for it ([`crate::detect::FEATURES`]).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub features: Vec<&'static str>,
 }
 
 /// The highest threshold a run may set (ADR-0046): a finding at 1.0 (a
