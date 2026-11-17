@@ -83,6 +83,8 @@ const folderRun = ref(false);
 const browsing = ref(false);
 const menu = ref(false);
 const panel = ref(false);
+/** The findings panel keeps its column while a run replaces the result: the panes do not jump under the slider. */
+const panelOpen = computed(() => panel.value && (!!result.value || busy.value));
 
 const findings = computed(() => result.value?.report.findings ?? []);
 /** Where the threshold slider stands: dragged, set for this run, or the policy's default. */
@@ -541,7 +543,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app" :class="{ 'with-panel': panel && result }" @dragover="onDragOver" @drop="onDrop">
+  <div class="app" :class="{ 'with-panel': panelOpen }" @dragover="onDragOver" @drop="onDrop">
     <header class="topbar">
       <div class="brand">
         <BrandMark />
@@ -866,12 +868,12 @@ onBeforeUnmount(() => {
     </main>
 
     <FindingsPanel
-      v-if="panel && result"
+      v-if="panelOpen"
       :findings="findings"
       :hovered="hovered"
       :selected="selected"
       :shown="shown"
-      :readings="explained ? (result.explain ?? null) : null"
+      :readings="explained ? (result?.explain ?? null) : null"
       :busy="busy"
       @hover="hovered = $event"
       @select="select"
@@ -1007,7 +1009,8 @@ button.icon {
 .compare {
   grid-area: main;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* Two equal columns whatever they hold: a wide picture or a run in progress does not move the divider. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   min-height: 0;
 }
 .pane {
