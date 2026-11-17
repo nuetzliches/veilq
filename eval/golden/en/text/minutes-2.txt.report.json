@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 75,
+        "end": 81,
+        "line": 3,
+        "column": 32
+      },
+      "confidence": 0.85,
+      "detector": "names:file"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 99,
+        "end": 105,
+        "line": 4,
+        "column": 18
+      },
+      "confidence": 0.85,
+      "detector": "pattern:en.name-title"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "start": 183,
+        "end": 195,
+        "line": 5,
+        "column": 51
+      },
+      "confidence": 0.8,
+      "detector": "pattern:intl.phone-international"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "start": 276,
+        "end": 290,
+        "line": 7,
+        "column": 29
+      },
+      "confidence": 0.9,
+      "detector": "pattern:en.phone"
+    }
+  ],
+  "review_required": true,
+  "review_reasons": [
+    "NER did not run: names without a word that marks them (`Frau`, `Hallo`, a column `name`) may be left; `veilq models fetch ner`"
+  ],
+  "purposes": [
+    "general"
+  ]
+}

@@ -12,6 +12,11 @@ Notable changes per release. The format follows
   detectors proposed, kept or not, as one JSON line with its context and a
   label from the corpus truth (text, CSV, JSON, NDJSON), for measuring the
   models of a learned decider (#95).
+- The corpus holds meeting minutes in German and English with hard
+  negatives: a ticket number written like a phone number, an order number
+  that starts like an international one, a build version, a meeting date
+  beside a name. veilq redacts the first two today; they count as false
+  positives (precision on the corpus 0.972 with NER, gate 0.97).
 
 ### Fixed
 

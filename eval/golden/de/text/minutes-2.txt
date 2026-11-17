@@ -1,0 +1,7 @@
+Protokoll der Teamrunde vom 04.11.2026
+
+Anwesend: Moritz Krüger, Tobias <PERSON>
+Termin mit Herrn <PERSON> am 16.11.2027 bestätigt.
+Ticketnummer <PHONE_NUMBER> ist geschlossen, Bestellnummer <PHONE_NUMBER>.
+Build 12.3.6.6 ist ausgerollt, Vorgang 2026-8792-6855 über 815,62 EUR.
+Rückruf an Moritz Krüger unter <PHONE_NUMBER>.
