@@ -38,8 +38,15 @@ Notable changes per release. The format follows
   mistake becomes a case under the user's local data (`veilq\cases`), in
   the format of `schema/case.schema.json`, which holds no value. The line,
   cell or picture crop around the mark is kept only encrypted with age, for
-  30 days; without a key nothing of it is written. Nothing marks a case
-  yet: the UI's marks come next.
+  30 days; without a key nothing of it is written.
+- **Marks in the UI** (#34): select text in the output to mark it as
+  personal data veilq left, with its type; a finding's "No personal data:
+  release here" leaves its box out. A mark acts on this document at once
+  and changes no other file; a value both marked and released is found.
+  Each mark is kept as a case, the line around it encrypted to a key in the
+  OS key store (Credential Manager, Keychain, Secret Service), without that
+  line where there is none. Settings → Detection shows the cases and
+  deletes them all. Text, CSV and JSON for now; pictures follow.
 
 ### Fixed
 

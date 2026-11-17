@@ -25,6 +25,8 @@ use include_dir::{Dir, include_dir};
 use serde::{Deserialize, Serialize};
 use veilq_core::{Action, Engine, Error, Format, Policy, Report, root};
 
+#[path = "ui_cases.rs"]
+mod cases;
 #[path = "ui_settings.rs"]
 mod settings;
 #[path = "ui_setup.rs"]
@@ -120,6 +122,8 @@ struct AppState {
     focus: Option<Box<dyn Fn() + Send + Sync>>,
     /// The models loading beside the server, and who waits for them.
     loading: (Mutex<ModelState>, std::sync::Condvar),
+    /// Where marks are kept as cases (#34).
+    cases: cases::Cases,
 }
 
 pub fn run(options: Options) -> anyhow::Result<()> {
@@ -268,6 +272,14 @@ impl AppState {
             jobs: Mutex::new(HashMap::new()),
             batch: Mutex::new(None),
             loading: (Mutex::new(ModelState::Ready), std::sync::Condvar::new()),
+            // A test never writes to the user's cases or key store.
+            #[cfg(not(test))]
+            cases: cases::Cases::user(),
+            #[cfg(test)]
+            cases: cases::Cases {
+                dir: std::env::temp_dir().join(format!("veilq-ui-cases-{}", std::process::id())),
+                key: Arc::new(|| None),
+            },
         }
     }
 
@@ -367,6 +379,10 @@ fn router(state: Arc<AppState>) -> Router {
             get(settings::policy_view).put(settings::policy_save),
         )
         .route("/policy/try", post(settings::policy_try))
+        .route(
+            "/cases",
+            get(cases::count).post(cases::add).delete(cases::delete_all),
+        )
         .route("/folders", get(settings::folders))
         .route("/root", axum::routing::put(settings::set_root))
         .route(
@@ -766,6 +782,9 @@ struct RedactRequest {
     /// values in clear, for this machine's UI only.
     #[serde(default)]
     explain: bool,
+    /// The marks the user made on this document (#34): for this run only.
+    #[serde(default)]
+    marks: Vec<cases::Mark>,
 }
 
 #[derive(Serialize)]
@@ -831,6 +850,7 @@ async fn redact(
         .with_min_confidence(request.min_confidence)
         .map_err(Failure::from)?
         .with_unverified(request.unverified);
+        let engine = cases::apply(&engine, &request.marks)?;
         if !request.explain {
             return redact_source(&state, &engine, request.source);
         }
@@ -850,11 +870,9 @@ async fn redact(
     }
 }
 
-fn redact_source(
-    state: &AppState,
-    engine: &Engine,
-    source: Source,
-) -> Result<RedactResponse, Failure> {
+/// The name and bytes of a source: a file's path or upload name (absent
+/// for text), within the root and the size limit.
+fn source_bytes(state: &AppState, source: Source) -> Result<(Option<String>, Vec<u8>), Failure> {
     let (name, bytes) = match source {
         Source::Text { text } => (None, text.into_bytes()),
         Source::Upload { name, data } => {
@@ -887,10 +905,19 @@ fn redact_source(
             (Some(path), bytes)
         }
     };
-    let label = name.as_deref().unwrap_or("the text");
     if bytes.len() > MAX_INPUT {
-        return Err(too_large(label));
+        return Err(too_large(name.as_deref().unwrap_or("the text")));
     }
+    Ok((name, bytes))
+}
+
+fn redact_source(
+    state: &AppState,
+    engine: &Engine,
+    source: Source,
+) -> Result<RedactResponse, Failure> {
+    let (name, bytes) = source_bytes(state, source)?;
+    let label = name.as_deref().unwrap_or("the text");
     let format = match &name {
         Some(n) => Format::from_path(Path::new(n)).map_err(Failure::from)?,
         None => Format::Text,
@@ -1076,6 +1103,175 @@ mod tests {
             "built-in defaults".into(),
             Engine::new(&Policy::default(), None, b"test", None).unwrap(),
         )))
+    }
+
+    /// A server whose cases go to `cases`, encrypted to `key` when given.
+    fn cases_app(root: &Path, cases: &Path, key: Option<age::x25519::Identity>) -> Router {
+        let mut state = AppState::new(
+            TOKEN.into(),
+            &[PORT, PROXY_PORT],
+            root.canonicalize().unwrap(),
+            Policy::default(),
+            "built-in defaults".into(),
+            Engine::new(&Policy::default(), None, b"test", None).unwrap(),
+        );
+        state.cases = cases::Cases {
+            dir: cases.to_owned(),
+            key: Arc::new(move || key.clone()),
+        };
+        router(Arc::new(state))
+    }
+
+    fn json_post(uri: &str, body: serde_json::Value) -> Request<Body> {
+        authed("POST", uri)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_mark_acts_on_the_run_and_is_kept_as_a_case_without_its_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let key = age::x25519::Identity::generate();
+        let app = || cases_app(dir.path(), store.path(), Some(key.clone()));
+        let text = "Projekt Falkenstein. Hallo Erika Mustermann!";
+        let source = serde_json::json!({ "kind": "text", "text": text });
+        let (_, body) = send(
+            app(),
+            json_post("/api/redact", serde_json::json!({ "source": source })),
+        )
+        .await;
+        assert_eq!(body["output"], "Projekt Falkenstein. Hallo <PERSON>!");
+        // A miss marked: found in this run.
+        let mark =
+            serde_json::json!({ "kind": "missed", "value": "Falkenstein", "entity": "LOCATION" });
+        let (status, body) = send(
+            app(),
+            json_post(
+                "/api/redact",
+                serde_json::json!({ "source": source, "marks": [mark] }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert!(
+            body["output"].as_str().unwrap().contains("<LOCATION>"),
+            "{body}"
+        );
+        // A box released: left in this run.
+        let release =
+            serde_json::json!({ "kind": "extra", "value": "Erika Mustermann", "entity": "PERSON" });
+        let (_, body) = send(
+            app(),
+            json_post(
+                "/api/redact",
+                serde_json::json!({ "source": source, "marks": [release] }),
+            ),
+        )
+        .await;
+        assert!(
+            body["output"]
+                .as_str()
+                .unwrap()
+                .contains("Erika Mustermann"),
+            "{body}"
+        );
+        // Kept as cases: the miss where it is found, the box where it was.
+        for mark in [mark, release] {
+            let (status, body) = send(
+                app(),
+                json_post(
+                    "/api/cases",
+                    serde_json::json!({ "source": source, "mark": mark }),
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["excerpt"], true);
+        }
+        let (_, body) = send(
+            app(),
+            authed("GET", "/api/cases").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(body["count"], 2);
+        assert_eq!(body["key_store"], true);
+        let cases = veilq_core::cases::Store::open(store.path())
+            .unwrap()
+            .list()
+            .unwrap();
+        assert_eq!(cases[0].kind, veilq_core::cases::Kind::Missed);
+        assert!(matches!(
+            cases[0].location,
+            veilq_core::Location::Span {
+                start: 8,
+                end: 19,
+                ..
+            }
+        ));
+        assert_eq!(cases[1].kind, veilq_core::cases::Kind::Extra);
+        // No file of the store holds a value in the clear.
+        let mut files = vec![store.path().to_owned()];
+        while let Some(p) = files.pop() {
+            if p.is_dir() {
+                files.extend(std::fs::read_dir(&p).unwrap().map(|e| e.unwrap().path()));
+            } else {
+                let bytes = std::fs::read(&p).unwrap();
+                for v in [&b"Falkenstein"[..], b"Mustermann"] {
+                    assert!(
+                        !bytes.windows(v.len()).any(|w| w == v),
+                        "{} holds a value",
+                        p.display()
+                    );
+                }
+            }
+        }
+        let (_, body) = send(
+            app(),
+            authed("DELETE", "/api/cases").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(body["deleted"], 2);
+    }
+
+    #[tokio::test]
+    async fn without_a_key_store_a_case_keeps_no_excerpt() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let source = serde_json::json!({ "kind": "text", "text": "Projekt Falkenstein." });
+        let mark =
+            serde_json::json!({ "kind": "missed", "value": "Falkenstein", "entity": "LOCATION" });
+        let (status, body) = send(
+            cases_app(dir.path(), store.path(), None),
+            json_post(
+                "/api/cases",
+                serde_json::json!({ "source": source, "mark": mark }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["excerpt"], false);
+        // A mark on text that is not there is refused, and kept nowhere.
+        let wrong =
+            serde_json::json!({ "kind": "missed", "value": "Nirgendwo", "entity": "LOCATION" });
+        let (status, _) = send(
+            cases_app(dir.path(), store.path(), None),
+            json_post(
+                "/api/cases",
+                serde_json::json!({ "source": source, "mark": wrong }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            veilq_core::cases::Store::open(store.path())
+                .unwrap()
+                .list()
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     /// A server whose models are still loading, and its state to end that.

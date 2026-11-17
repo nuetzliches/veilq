@@ -19,8 +19,16 @@ const props = defineProps<{
   shown: boolean[];
   readings?: Reading[] | null;
   busy?: boolean;
+  /** Per finding, whether it can be released by a mark (#34): a box in text. */
+  releasable?: boolean[];
 }>();
-const emit = defineEmits<{ hover: [index: number | null]; select: [index: number]; close: []; explain: [] }>();
+const emit = defineEmits<{
+  hover: [index: number | null];
+  select: [index: number];
+  close: [];
+  explain: [];
+  release: [index: number];
+}>();
 
 const list = ref<HTMLElement | null>(null);
 
@@ -69,6 +77,11 @@ watch(
               {{ Math.round(f.confidence * 100) }} %
             </span>
           </button>
+          <p v-if="selected === i && releasable?.[i]" class="release">
+            <button class="small" :disabled="busy" :title="t('marks.releaseTitle')" @click="emit('release', i)">
+              {{ t('marks.release') }}
+            </button>
+          </p>
         </li>
       </ol>
       <p v-else class="none">{{ busy ? t('output.redacting') : t('output.nothingFound') }}</p>
@@ -182,6 +195,10 @@ li.sel {
   color: var(--text-muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+.release {
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-2) calc(var(--space-4) + 22px + var(--space-3));
 }
 .none {
   padding: var(--space-4);

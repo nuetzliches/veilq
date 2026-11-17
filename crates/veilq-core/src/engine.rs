@@ -922,6 +922,39 @@ impl Engine {
         self.unverified
     }
 
+    /// This engine with the marks a user made on one document (#34): each
+    /// `missed` value is found as its type wherever the document holds it
+    /// (a deny value, ADR-0044, which wins over `allow`), each `released`
+    /// value is left (an allow value). For this run only: the policy is not
+    /// changed. Fail closed: a value both missed and released is found.
+    pub fn with_marks(
+        &self,
+        missed: &[(EntityType, String)],
+        released: &[String],
+    ) -> Result<Self, Error> {
+        if missed.is_empty() && released.is_empty() {
+            return Ok(self.clone());
+        }
+        let mut policy = self.detector.policy().clone();
+        for (entity, value) in missed {
+            policy.deny.push(crate::policy::Deny {
+                entity: entity.clone(),
+                values: vec![value.clone()],
+                files: Vec::new(),
+                parts: false,
+                read: None,
+            });
+        }
+        for value in released {
+            if !policy.allow.values.contains(value) {
+                policy.allow.values.push(value.clone());
+            }
+        }
+        let mut engine = self.clone();
+        engine.detector = self.detector.with_policy(&policy)?;
+        Ok(engine)
+    }
+
     /// This engine with a learned decider (#35), unless the policy switched
     /// it off (`[decider] enabled = false`): it may lift a candidate below
     /// its threshold into the findings, and never drops one.
@@ -2249,6 +2282,43 @@ mod tests {
         let p = r.report.findings[0].pseudonym.clone().unwrap();
         assert!(p.starts_with("[EMAIL_ADDRESS:"));
         assert_eq!(r.text, format!("mail an {p} und {p}"));
+    }
+
+    #[test]
+    fn a_mark_acts_on_this_run_and_a_value_both_missed_and_released_is_found() {
+        let text = "Projekt Falkenstein, Kontakt Lena Brandt.\n";
+        let entities = |e: &Engine| -> Vec<String> {
+            e.scan_str(text, Format::Text)
+                .unwrap()
+                .report
+                .findings
+                .iter()
+                .map(|f| f.entity.as_str().to_owned())
+                .collect()
+        };
+        let plain = engine();
+        assert!(!entities(&plain).contains(&"LOCATION".to_owned()));
+        let location = EntityType::new("LOCATION").unwrap();
+        let marked = plain
+            .with_marks(&[(location.clone(), "Falkenstein".into())], &[])
+            .unwrap();
+        assert!(entities(&marked).contains(&"LOCATION".to_owned()));
+        // The engine it came from is as it was.
+        assert!(!entities(&plain).contains(&"LOCATION".to_owned()));
+        // A name released is left; released and missed at once, it is found.
+        let released = plain.with_marks(&[], &["Lena Brandt".into()]).unwrap();
+        assert!(
+            !entities(&released).contains(&"PERSON".to_owned()),
+            "{:?}",
+            entities(&released)
+        );
+        let both = plain
+            .with_marks(
+                &[(EntityType::new("PERSON").unwrap(), "Lena Brandt".into())],
+                &["Lena Brandt".into()],
+            )
+            .unwrap();
+        assert!(entities(&both).contains(&"PERSON".to_owned()));
     }
 
     fn decider(json: &str) -> std::sync::Arc<crate::decider::Decider> {

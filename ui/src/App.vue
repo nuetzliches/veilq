@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { ApiError, createApi, type Info, type Redaction, type Source } from '@/api';
+import { ApiError, createApi, type Info, type Mark, type Redaction, type Source } from '@/api';
 import BrandMark from '@/components/BrandMark.vue';
 import ComparePane from '@/components/ComparePane.vue';
 import FileBrowser from '@/components/FileBrowser.vue';
@@ -14,7 +14,8 @@ import SettingsPage from '@/components/SettingsPage.vue';
 import WelcomeDialog from '@/components/WelcomeDialog.vue';
 import { copyablePicture, copyIsOurs, pngBlob } from '@/lib/clipboard';
 import { locale, plural, t } from '@/lib/i18n';
-import { actionLabel, missingModels } from '@/lib/labels';
+import { actionLabel, entityLabel, missingModels } from '@/lib/labels';
+import { byteSlice, MARK_TYPES, markable } from '@/lib/marks';
 import { pastedName } from '@/lib/paste';
 import { change, percent } from '@/lib/threshold';
 import {
@@ -75,6 +76,16 @@ const threshold = ref<number | null>(null);
 const dragged = ref<number | null>(null);
 /** The findings panel shows what veilq read and why: asked for with its switch (ADR-0034). */
 const explained = ref(false);
+/**
+ * The marks made on this source (#34): each run of it applies them, and each was kept as a case.
+ * Another source starts without.
+ */
+const marks = ref<Mark[]>([]);
+/** A selection in the text output that can be marked as missed. */
+const selection = ref<string | null>(null);
+const markType = ref<string>('PERSON');
+/** What became of the last mark's case. */
+const markNote = ref<string | null>(null);
 
 /** What is open over the surface. */
 const settings = ref(false);
@@ -280,7 +291,10 @@ async function run(source: Source, name: string | null, unverified = false, expl
     zoom.value = 'fit';
     threshold.value = null;
     explained.value = false;
+    marks.value = [];
+    markNote.value = null;
   }
+  selection.value = null;
   if (explain) explained.value = true;
   sourceName.value = name;
   lastRun.value = { source, name };
@@ -291,6 +305,7 @@ async function run(source: Source, name: string | null, unverified = false, expl
       unverified,
       explain: true,
       minConfidence: threshold.value ?? undefined,
+      marks: marks.value,
     });
   } catch (e) {
     // Fail closed: no output at all when veilq could not redact.
@@ -330,6 +345,63 @@ function onThresholdChange(event: Event) {
 /** The last source again: the action changed, or a model it needed arrived. */
 function runAgain() {
   if (lastRun.value && !busy.value && !editing.value) void run(lastRun.value.source, lastRun.value.name);
+}
+
+/** Text in the output, not a picture or an Office file: where a selection can be marked. */
+const markableOutput = computed(() => !!result.value && !result.value.output_base64 && !image.value && !pdf.value);
+
+/** A selection in the text output offers to mark it as missed. */
+function onOutputSelect() {
+  const sel = window.getSelection();
+  if (!markableOutput.value || !sel || sel.isCollapsed || !outputBody.value?.contains(sel.anchorNode)) {
+    selection.value = null;
+    return;
+  }
+  selection.value = markable(sel.toString());
+}
+
+/**
+ * A mark (#34): it acts on this document at once (the source runs again with it), and is kept as
+ * a case; that it could not be kept is said, the mark acts all the same.
+ */
+async function addMark(mark: Mark) {
+  if (!lastRun.value) return;
+  const source = lastRun.value.source;
+  marks.value = [...marks.value, mark];
+  selection.value = null;
+  window.getSelection()?.removeAllRanges();
+  markNote.value = null;
+  const kept = api.addCase(source, mark, threshold.value ?? undefined);
+  runAgain();
+  try {
+    const added = await kept;
+    markNote.value = added.excerpt ? t('marks.kept') : t('marks.keptNoExcerpt');
+  } catch (e) {
+    markNote.value = t('marks.notKept', { error: e instanceof Error ? e.message : String(e) });
+  }
+}
+
+function markMissed() {
+  if (selection.value) void addMark({ kind: 'missed', value: selection.value, entity: markType.value });
+}
+
+/** Per finding, whether a mark can release it: a box in text, with its place in the input. */
+const releasable = computed(() =>
+  findings.value.map((_, i) => markableOutput.value && !!result.value?.input_spans[i]),
+);
+
+function release(i: number) {
+  const r = result.value;
+  const span = r?.input_spans[i];
+  if (!r || !span) return;
+  void addMark({ kind: 'extra', value: byteSlice(r.input, span).trim(), entity: findings.value[i].entity });
+}
+
+/** The marks of this document taken back: it runs as the policy alone has it; the cases stay. */
+function clearMarks() {
+  marks.value = [];
+  markNote.value = null;
+  runAgain();
 }
 
 function redactText() {
@@ -786,7 +858,19 @@ onBeforeUnmount(() => {
           @pointermove="pan.move"
           @pointerup="pan.up"
           @pointercancel="pan.up"
+          @mouseup="onOutputSelect"
+          @keyup="onOutputSelect"
         >
+          <div v-if="selection" class="markbar" role="group" :aria-label="t('marks.missedTitle')">
+            <span class="what">{{ t('marks.missed', { value: selection }) }}</span>
+            <select v-model="markType" :aria-label="t('marks.missedTitle')">
+              <option v-for="e in MARK_TYPES" :key="e" :value="e">{{ entityLabel(e) }}</option>
+            </select>
+            <button class="primary small" :disabled="busy" @mousedown.prevent @click="markMissed">
+              {{ t('marks.mark') }}
+            </button>
+            <button class="small" :aria-label="t('common.close')" @click="selection = null">×</button>
+          </div>
           <div v-if="result?.report.review_required" class="review" role="status">
             <strong>{{ t('output.review') }}</strong>
             <span v-for="(r, i) in result.report.review_reasons ?? []" :key="i">{{ r }}</span>
@@ -858,6 +942,16 @@ onBeforeUnmount(() => {
         </div>
         <footer v-if="result && !error" class="pane-foot">
           <span v-if="!findings.length" class="faint">{{ t('output.nothingFound') }}</span>
+          <button
+            v-if="marks.length"
+            class="small"
+            :disabled="busy"
+            :title="[t('marks.resetTitle'), markNote].filter(Boolean).join(' ')"
+            @click="clearMarks"
+          >
+            {{ plural(marks.length, 'marks.undoOne', 'marks.undoOther') }}
+          </button>
+          <span v-if="markNote" class="faint mark-note">{{ markNote }}</span>
           <span class="spacer" />
           <button v-if="copyable" class="primary" :title="t('output.copyTitle')" @click="copyOutput">
             {{ copied ? t('output.copied') : t('output.copy') }}
@@ -875,10 +969,12 @@ onBeforeUnmount(() => {
       :shown="shown"
       :readings="explained ? (result?.explain ?? null) : null"
       :busy="busy"
+      :releasable="releasable"
       @hover="hovered = $event"
       @select="select"
       @close="panel = false"
       @explain="runExplained"
+      @release="release"
     />
 
     <div v-if="dragging" class="drop" @dragleave.self="dragging = false">
@@ -1245,6 +1341,47 @@ button.icon {
   background: var(--warn-soft);
   color: var(--warn-text);
   font-size: 12.5px;
+}
+/* A selection in the output, offered as a mark (#34): above the review note, while it stands. */
+.markbar {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.markbar .what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.markbar select {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-1);
+  font-size: 12.5px;
+}
+.pane-foot button {
+  flex: none;
+  white-space: nowrap;
+}
+.pane-foot .mark-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
 }
 .drop {
   position: fixed;

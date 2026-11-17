@@ -1,6 +1,7 @@
 import {
   ApiError,
   type Api,
+  type CaseCount,
   type Info,
   type Listing,
   type Models,
@@ -61,8 +62,16 @@ export function httpApi(token: string): Api {
           unverified: options.unverified || undefined,
           explain: options.explain || undefined,
           min_confidence: options.minConfidence,
+          marks: options.marks?.length ? options.marks : undefined,
         }),
       }),
+    addCase: (source, mark, minConfidence) =>
+      call<{ id: string; excerpt: boolean }>('/cases', {
+        method: 'POST',
+        body: JSON.stringify({ source, mark, min_confidence: minConfidence }),
+      }),
+    cases: () => call<CaseCount>('/cases'),
+    deleteCases: () => call<{ deleted: number }>('/cases', { method: 'DELETE' }),
     setup: () => call<SetupStatus>('/setup'),
     install: (request) => call<SetupStatus>('/setup', { method: 'POST', body: JSON.stringify(request) }),
     uninstall: async (models) => {
