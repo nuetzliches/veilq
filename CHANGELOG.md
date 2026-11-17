@@ -62,6 +62,13 @@ Notable changes per release. The format follows
   and if none of the original values is in it; twins are what every later
   rule is tried on. A box released gets none: its twin would have to keep
   the released value.
+- **A mark proposes a rule** (#34): a value marked on text as always found
+  as its type (a deny value), a value released as never found (an allow
+  value). The proposal says what it changes in the document and in the
+  earlier cases (their excerpts where the key reads them, else their
+  twins); "Add to my rules" saves it into the user's policy, checked as the
+  settings save it. Where a project's `veilq.toml` is in effect, the rule
+  is offered as TOML to copy instead.
 
 ### Fixed
 

@@ -303,6 +303,27 @@ export interface Area {
   height: number;
 }
 
+/** A rule a mark proposes (#34): a value always found as its type, or one never found. */
+export type Rule = { kind: 'deny'; entity: string; value: string } | { kind: 'allow'; value: string };
+
+/** What a rule changes: findings it adds and findings it drops. */
+export interface RuleChange {
+  gained: number;
+  lost: number;
+}
+
+/** A rule tried on the document and on the earlier cases (their excerpts or twins). */
+export interface Proposal {
+  rule: Rule;
+  document: RuleChange;
+  cases: RuleChange;
+  tried: number;
+  /** The rule as TOML, to copy where a project's policy is in effect. */
+  toml: string;
+  /** The user's policy is in use: the rule can be saved there. */
+  user_in_use: boolean;
+}
+
 /** The case store: how many cases, and whether an excerpt can be kept. */
 export interface CaseCount {
   count: number;
@@ -320,6 +341,10 @@ export interface Api {
   /** `twin`: a synthetic twin reproduces the mistake and was kept beside it (a miss on text). */
   addCase(source: Source, mark: Mark, minConfidence?: number): Promise<{ id: string; excerpt: boolean; twin?: boolean }>;
   cases(): Promise<CaseCount>;
+  /** The rule a mark proposes, tried on the document and the earlier cases. */
+  propose(source: Source, mark: Mark, minConfidence?: number): Promise<Proposal>;
+  /** Saves a rule into the user's policy. */
+  adoptRule(rule: Rule): Promise<{ path: string; in_use: boolean }>;
   /** "Delete all cases". */
   deleteCases(): Promise<{ deleted: number }>;
   setup(): Promise<SetupStatus>;

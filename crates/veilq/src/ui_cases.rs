@@ -459,3 +459,221 @@ pub async fn delete_all(State(state): State<Arc<AppState>>) -> Response {
         Err(e) => api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
     }
 }
+
+// ---- rules from marks (card point 5) -------------------------------------
+
+/// A rule a mark proposes, the cheapest first: a value always found as its
+/// type (a deny value, ADR-0044), or one never found (an allow value).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Rule {
+    Deny { entity: EntityType, value: String },
+    Allow { value: String },
+}
+
+impl Rule {
+    fn of(mark: &Mark) -> Option<Self> {
+        match mark {
+            Mark::Missed { value, entity, .. } => Some(Rule::Deny {
+                entity: entity.clone(),
+                value: value.trim().to_owned(),
+            }),
+            Mark::Extra { value, .. } => Some(Rule::Allow {
+                value: value.trim().to_owned(),
+            }),
+            // An area holds no value a rule could name.
+            Mark::MissedArea { .. } | Mark::ExtraArea { .. } => None,
+        }
+    }
+
+    fn mark(&self) -> Mark {
+        match self {
+            Rule::Deny { entity, value } => Mark::Missed {
+                value: value.clone(),
+                entity: entity.clone(),
+                label: None,
+            },
+            Rule::Allow { value } => Mark::Extra {
+                value: value.clone(),
+                entity: EntityType::new("PERSON").expect("a valid type"),
+            },
+        }
+    }
+
+    /// The rule in a policy: a `[[deny]]` table of its own (exact value,
+    /// no parts), or the value added to `[allow] values`.
+    pub(super) fn add_to(&self, policy: &mut veilq_core::Policy) {
+        match self {
+            Rule::Deny { entity, value } => policy.deny.push(veilq_core::policy::Deny {
+                entity: entity.clone(),
+                values: vec![value.clone()],
+                files: Vec::new(),
+                parts: false,
+                read: None,
+            }),
+            Rule::Allow { value } => {
+                if !policy.allow.values.contains(value) {
+                    policy.allow.values.push(value.clone());
+                }
+            }
+        }
+    }
+
+    /// The rule as TOML, to copy into a project's `veilq.toml`.
+    pub(super) fn toml(&self) -> String {
+        let quoted = |v: &str| serde_json::to_string(v).expect("a string serialises");
+        match self {
+            Rule::Deny { entity, value } => format!(
+                "[[deny]]\nentity = {}\nvalues = [{}]\nparts = false\n",
+                quoted(entity.as_str()),
+                quoted(value)
+            ),
+            Rule::Allow { value } => format!("[allow]\nvalues = [{}]\n", quoted(value)),
+        }
+    }
+}
+
+/// What a rule changes on a text: findings it adds and findings it drops.
+#[derive(Debug, Default, Serialize)]
+pub struct Change {
+    gained: usize,
+    lost: usize,
+}
+
+impl Change {
+    fn add(&mut self, other: Change) {
+        self.gained += other.gained;
+        self.lost += other.lost;
+    }
+}
+
+/// The findings of `text` without and with `rule`, compared by place.
+fn change(base: &Engine, rule: &Rule, text: &str, format: Format) -> Result<Change, Failure> {
+    let without = base.redact_str(text, format).map_err(Failure::from)?;
+    let with = apply(base, &[rule.mark()])?
+        .redact_str(text, format)
+        .map_err(Failure::from)?;
+    let has = |r: &veilq_core::Redacted, l: &veilq_core::Location| {
+        r.report.findings.iter().any(|f| &f.location == l)
+    };
+    Ok(Change {
+        gained: with
+            .report
+            .findings
+            .iter()
+            .filter(|f| !has(&without, &f.location))
+            .count(),
+        lost: without
+            .report
+            .findings
+            .iter()
+            .filter(|f| !has(&with, &f.location))
+            .count(),
+    })
+}
+
+#[derive(Serialize)]
+pub struct Proposal {
+    rule: Rule,
+    /// On this document.
+    document: Change,
+    /// On the earlier cases: their excerpts where the key reads them, else
+    /// their twins; how many were tried.
+    cases: Change,
+    tried: usize,
+    /// The rule as TOML, to copy where a project's policy is in effect.
+    toml: String,
+    /// Whether the user's policy is the one in use: then the rule is saved
+    /// there, else it is offered to copy.
+    user_in_use: bool,
+}
+
+/// `POST /api/cases/propose`: the rule a mark proposes, tried on the
+/// document and on every earlier case.
+pub async fn propose(
+    State(state): State<Arc<AppState>>,
+    axum::Json(request): axum::Json<CaseRequest>,
+) -> Response {
+    let result = tokio::task::spawn_blocking(move || propose_rule(&state, request)).await;
+    match result {
+        Ok(Ok(p)) => axum::Json(p).into_response(),
+        Ok(Err(failure)) => failure.into_response(),
+        Err(e) => api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}
+
+fn propose_rule(state: &AppState, request: CaseRequest) -> Result<Proposal, Failure> {
+    let rule = Rule::of(&request.mark)
+        .ok_or_else(|| unprocessable("an area holds no value a rule could name yet"))?;
+    let (name, bytes) = source_bytes(state, request.source)?;
+    let format = match &name {
+        Some(n) => Format::from_path(std::path::Path::new(n)).map_err(Failure::from)?,
+        None => Format::Text,
+    };
+    if format.is_container() {
+        return Err(unprocessable(format!(
+            "rules are tried on text for now, not on {}",
+            format.name()
+        )));
+    }
+    let input = String::from_utf8(bytes).map_err(|_| unprocessable("not UTF-8 text"))?;
+    let base = state
+        .ready_engine()?
+        .with_min_confidence(request.min_confidence)
+        .map_err(Failure::from)?;
+    let document = change(&base, &rule, &input, format)?;
+    let store = store(state)?;
+    let key = (state.cases.key)();
+    let mut cases = Change::default();
+    let mut tried = 0;
+    for case in store.list().map_err(Failure::from)? {
+        let excerpt = match (&case.excerpt, &key) {
+            (Some(e), Some(k)) if e.media_type == "text/plain" => store
+                .excerpt(&case.id, k)
+                .ok()
+                .flatten()
+                .and_then(|b| String::from_utf8(b).ok()),
+            _ => None,
+        };
+        let Some(text) = excerpt.or_else(|| store.twin(&case.id).ok().flatten()) else {
+            continue;
+        };
+        cases.add(change(&base, &rule, &text, Format::Text)?);
+        tried += 1;
+    }
+    Ok(Proposal {
+        toml: rule.toml(),
+        rule,
+        document,
+        cases,
+        tried,
+        user_in_use: super::settings::is_user_in_use(state),
+    })
+}
+
+/// `POST /api/policy/rule`: a rule saved into the user's policy (ADR-0028),
+/// checked as the settings save it. Refused where a project's policy is in
+/// effect: there the rule is copied into it by hand.
+pub async fn adopt(
+    State(state): State<Arc<AppState>>,
+    axum::Json(rule): axum::Json<Rule>,
+) -> Response {
+    let result = tokio::task::spawn_blocking(move || {
+        if !super::settings::is_user_in_use(&state) {
+            return Err((
+                StatusCode::CONFLICT,
+                "a project's veilq.toml is in effect here: copy the rule into it".to_owned(),
+            ));
+        }
+        let mut policy =
+            super::settings::user_policy().map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
+        rule.add_to(&mut policy);
+        super::settings::save_user_policy(&state, &super::settings::PolicyTry::of(policy))
+    })
+    .await;
+    match result {
+        Ok(Ok(saved)) => axum::Json(saved).into_response(),
+        Ok(Err((status, e))) => api_error(status, e),
+        Err(e) => api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}
