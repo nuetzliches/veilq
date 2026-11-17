@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 62,
+        "end": 68,
+        "line": 3,
+        "column": 16
+      },
+      "confidence": 0.85,
+      "detector": "names:file"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 76,
+        "end": 82,
+        "line": 3,
+        "column": 30
+      },
+      "confidence": 0.85,
+      "detector": "names:file"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 100,
+        "end": 106,
+        "line": 4,
+        "column": 18
+      },
+      "confidence": 0.85,
+      "detector": "pattern:en.name-title"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "start": 189,
+        "end": 201,
+        "line": 5,
+        "column": 51
+      },
+      "confidence": 0.8,
+      "detector": "pattern:intl.phone-international"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 269,
+        "end": 275,
+        "line": 7,
+        "column": 17
+      },
+      "confidence": 0.85,
+      "detector": "names:file"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "start": 279,
+        "end": 293,
+        "line": 7,
+        "column": 27
+      },
+      "confidence": 0.9,
+      "detector": "pattern:en.phone"
+    }
+  ],
+  "review_required": true,
+  "review_reasons": [
+    "NER did not run: names without a word that marks them (`Frau`, `Hallo`, a column `name`) may be left; `veilq models fetch ner`"
+  ],
+  "purposes": [
+    "general"
+  ]
+}

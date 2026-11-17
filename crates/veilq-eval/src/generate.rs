@@ -681,6 +681,94 @@ fn letter_en(r: &mut Rng) -> (String, Vec<Truth>) {
     t.finish()
 }
 
+/// Minutes of a meeting (#95): the people in it are personal data, and so is
+/// a phone number for a call back; a ticket number written like a phone
+/// number, an order number that starts like an international one, a build
+/// version read as a date or an address, and a meeting date beside a name
+/// are not. Only the words around them tell them apart.
+fn minutes_de(r: &mut Rng) -> (String, Vec<Truth>) {
+    let (p, q, x) = (Person::de(r), Person::de(r), Lookalikes::new(r));
+    let mut t = Text::default();
+    t.lit(&format!(
+        "Protokoll der Teamrunde vom {}\n\nAnwesend: ",
+        x.date
+    ))
+    .pii("PERSON", &p.name())
+    .lit(", ")
+    .pii("PERSON", &q.name())
+    .lit("\n");
+    t.lit(if r.chance(50) {
+        "Termin mit Frau "
+    } else {
+        "Termin mit Herrn "
+    })
+    .pii("PERSON", &q.last)
+    .lit(&format!(
+        " am {:02}.{:02}.2027 bestätigt.\n",
+        1 + r.below(28),
+        1 + r.below(12)
+    ));
+    t.lit(&format!(
+        "Ticketnummer 0{} {} ist geschlossen, Bestellnummer +49-2026-{}.\n",
+        r.digits(3),
+        r.digits(7),
+        r.digits(4)
+    ));
+    t.lit(&format!(
+        "Build {} ist ausgerollt, Vorgang {} über {} EUR.\n",
+        x.version, x.invoice, x.amount
+    ));
+    t.lit("Rückruf an ")
+        .pii("PERSON", &p.name())
+        .lit(" unter ")
+        .pii("PHONE_NUMBER", &p.phone)
+        .lit(".\n");
+    t.finish()
+}
+
+/// The English minutes, as [`minutes_de`].
+fn minutes_en(r: &mut Rng) -> (String, Vec<Truth>) {
+    const MONTHS: &[&str] = &["January", "March", "May", "July", "October", "December"];
+    let (p, q, x) = (Person::en(r), Person::en(r), Lookalikes::new(r));
+    let mut t = Text::default();
+    t.lit(&format!(
+        "Minutes of the team meeting, {} {}, 2026\n\nPresent: ",
+        r.pick(MONTHS),
+        1 + r.below(28)
+    ))
+    .pii("PERSON", &p.name())
+    .lit(", ")
+    .pii("PERSON", &q.name())
+    .lit("\n");
+    t.lit(if r.chance(50) {
+        "Meeting with Ms. "
+    } else {
+        "Meeting with Mr. "
+    })
+    .pii("PERSON", &q.last)
+    .lit(&format!(
+        " on {} {}, 2027 confirmed.\n",
+        r.pick(MONTHS),
+        1 + r.below(28)
+    ));
+    t.lit(&format!(
+        "Ticket number (800) {}-{} is closed, order no. +1-2026-{}.\n",
+        r.digits(3),
+        r.digits(4),
+        r.digits(4)
+    ));
+    t.lit(&format!(
+        "Build {} rolled out, invoice {}.\n",
+        x.version, x.invoice
+    ));
+    t.lit("Call back ")
+        .pii("PERSON", &p.name())
+        .lit(" on ")
+        .pii("PHONE_NUMBER", &p.phone)
+        .lit(".\n");
+    t.finish()
+}
+
 /// Pieces of personal data in a value: type and byte range.
 type Spans = Vec<(String, std::ops::Range<usize>)>;
 
@@ -957,6 +1045,22 @@ pub fn corpus(seed: u64) -> Vec<Doc> {
         content,
         truth,
     });
+    // Hard negatives for a learned decider (#95), from a stream of their
+    // own: minutes whose numbers and dates look like personal data beside
+    // the real thing.
+    let mut r = Rng::new(seed ^ 0x0E6A_7000_0000_0000);
+    for i in 1..=2 {
+        for (path, (content, truth)) in [
+            (format!("de/text/minutes-{i}.txt"), minutes_de(&mut r)),
+            (format!("en/text/minutes-{i}.txt"), minutes_en(&mut r)),
+        ] {
+            docs.push(Doc {
+                path,
+                content: content.into_bytes(),
+                truth,
+            });
+        }
+    }
     docs
 }
 

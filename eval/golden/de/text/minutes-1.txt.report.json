@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 72,
+        "end": 77,
+        "line": 3,
+        "column": 33
+      },
+      "confidence": 0.85,
+      "detector": "names:file"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 94,
+        "end": 99,
+        "line": 4,
+        "column": 17
+      },
+      "confidence": 0.85,
+      "detector": "pattern:de.name-salutation"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "start": 139,
+        "end": 151,
+        "line": 5,
+        "column": 14
+      },
+      "confidence": 0.8,
+      "detector": "pattern:intl.phone-international"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "start": 183,
+        "end": 196,
+        "line": 5,
+        "column": 58
+      },
+      "confidence": 0.8,
+      "detector": "pattern:intl.phone-international"
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "span",
+        "start": 303,
+        "end": 315,
+        "line": 7,
+        "column": 32
+      },
+      "confidence": 0.95,
+      "detector": "pattern:de.phone"
+    }
+  ],
+  "review_required": true,
+  "review_reasons": [
+    "NER did not run: names without a word that marks them (`Frau`, `Hallo`, a column `name`) may be left; `veilq models fetch ner`"
+  ],
+  "purposes": [
+    "general"
+  ]
+}
