@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { ApiError, createApi, type Area, type Info, type Mark, type Redaction, type Source } from '@/api';
+import {
+  ApiError,
+  createApi,
+  type Area,
+  type Info,
+  type Mark,
+  type Proposal,
+  type Redaction,
+  type Source,
+} from '@/api';
 import BrandMark from '@/components/BrandMark.vue';
 import ComparePane from '@/components/ComparePane.vue';
 import FileBrowser from '@/components/FileBrowser.vue';
@@ -294,6 +303,8 @@ async function run(source: Source, name: string | null, unverified = false, expl
     marks.value = [];
     markNote.value = null;
     drawing.value = false;
+    proposal.value = null;
+    ruleNote.value = null;
   }
   selection.value = null;
   drawnArea.value = null;
@@ -376,6 +387,7 @@ async function addMark(mark: Mark) {
   markNote.value = null;
   const kept = api.addCase(source, mark, threshold.value ?? undefined);
   runAgain();
+  void offerRule(source, mark);
   try {
     const added = await kept;
     markNote.value = [added.excerpt ? t('marks.kept') : t('marks.keptNoExcerpt'), added.twin ? t('marks.twin') : '']
@@ -383,6 +395,63 @@ async function addMark(mark: Mark) {
       .join(' ');
   } catch (e) {
     markNote.value = t('marks.notKept', { error: e instanceof Error ? e.message : String(e) });
+  }
+}
+
+/** The rule the last mark proposes (#34), tried on the document and the earlier cases. */
+const proposal = ref<Proposal | null>(null);
+/** What became of the proposal: saved, copied, or why not. */
+const ruleNote = ref<string | null>(null);
+
+/** A mark on text proposes its rule; an area names no value a rule could take. */
+async function offerRule(source: Source, mark: Mark) {
+  proposal.value = null;
+  ruleNote.value = null;
+  if (mark.kind !== 'missed' && mark.kind !== 'extra') return;
+  try {
+    proposal.value = await api.propose(source, mark, threshold.value ?? undefined);
+  } catch {
+    // No proposal is no fault of the mark: it acts all the same.
+  }
+}
+
+const ruleText = computed(() => {
+  const r = proposal.value?.rule;
+  if (!r) return '';
+  return r.kind === 'deny'
+    ? t('rules.proposeDeny', { value: r.value, type: entityLabel(r.entity) })
+    : t('rules.proposeAllow', { value: r.value });
+});
+
+const ruleCounts = computed(() => {
+  const p = proposal.value;
+  if (!p) return '';
+  const here = t('rules.proposeHere', { gained: p.document.gained, lost: p.document.lost });
+  return p.tried
+    ? `${here}; ${t('rules.proposeCases', { n: p.tried, gained: p.cases.gained, lost: p.cases.lost })}`
+    : here;
+});
+
+async function adoptRule() {
+  const p = proposal.value;
+  if (!p) return;
+  try {
+    await api.adoptRule(p.rule);
+    proposal.value = null;
+    ruleNote.value = t('rules.adopted');
+  } catch (e) {
+    ruleNote.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+async function copyRule() {
+  const p = proposal.value;
+  if (!p) return;
+  try {
+    await navigator.clipboard.writeText(p.toml);
+    ruleNote.value = t('rules.copied');
+  } catch (e) {
+    ruleNote.value = e instanceof Error ? e.message : String(e);
   }
 }
 
@@ -942,6 +1011,15 @@ onBeforeUnmount(() => {
             <button class="small" :aria-label="t('common.close')" @click="drawnArea = null">×</button>
           </div>
           <p v-else-if="drawing" class="markbar hint">{{ t('marks.drawHint') }}</p>
+          <div v-else-if="proposal" class="markbar proposal" role="group" :aria-label="t('rules.proposeTitle')">
+            <span class="what" :title="`${ruleText} ${ruleCounts}`">
+              <strong>{{ ruleText }}</strong> {{ ruleCounts }}
+            </span>
+            <button v-if="proposal.user_in_use" class="primary small" @click="adoptRule">{{ t('rules.adopt') }}</button>
+            <button v-else class="small" :title="t('rules.copyTitle')" @click="copyRule">{{ t('rules.copy') }}</button>
+            <button class="small" :aria-label="t('common.close')" @click="proposal = null">×</button>
+          </div>
+          <p v-else-if="ruleNote" class="markbar hint">{{ ruleNote }}</p>
           <div v-if="result?.report.review_required" class="review" role="status">
             <strong>{{ t('output.review') }}</strong>
             <span v-for="(r, i) in result.report.review_reasons ?? []" :key="i">{{ r }}</span>
@@ -1440,6 +1518,10 @@ button.icon {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* A rule proposed: its counts are what to decide on, so they wrap rather than hide. */
+.markbar.proposal .what {
+  white-space: normal;
 }
 .markbar select {
   border: 1px solid var(--border-strong);

@@ -221,43 +221,69 @@ pub async fn policy_save(
     State(state): State<Arc<AppState>>,
     axum::Json(request): axum::Json<PolicyTry>,
 ) -> Response {
-    let result = tokio::task::spawn_blocking(move || -> Result<Saved, (StatusCode, String)> {
-        let unprocessable = |e: String| (StatusCode::UNPROCESSABLE_ENTITY, e);
-        let (policy, tried) = try_policy(&request).map_err(unprocessable)?;
-        let file = policy::user_file().ok_or_else(|| {
-            unprocessable("this system names no folder for a user's policy".into())
-        })?;
-        let in_use = user_in_use(&state);
-        if in_use {
-            // Built before it is written: a policy the engine refuses (a
-            // detector it requires is not installed) is not saved.
-            let engine = match &state.reload {
-                Some(reload) => Some(reload(&policy).map_err(|e| unprocessable(format!("{e:#}")))?),
-                None => None,
-            };
-            write_atomically(&file, tried.toml.as_bytes()).map_err(unprocessable)?;
-            if let Some(engine) = engine
-                && let Ok(mut e) = state.engine.write()
-            {
-                *e = engine;
-            }
-            if let Ok(mut p) = state.policy.write() {
-                *p = (policy, file.display().to_string());
-            }
-        } else {
-            write_atomically(&file, tried.toml.as_bytes()).map_err(unprocessable)?;
-        }
-        Ok(Saved {
-            path: display_path(&file),
-            in_use,
-        })
-    })
-    .await;
+    let result = tokio::task::spawn_blocking(move || save_user_policy(&state, &request)).await;
     match result {
         Ok(Ok(saved)) => axum::Json(saved).into_response(),
         Ok(Err((status, e))) => api_error(status, e),
         Err(e) => api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
     }
+}
+
+/// The user's policy checked, written and, where it is the policy in use,
+/// built into the engine (a policy the engine refuses is not saved).
+pub fn save_user_policy(
+    state: &AppState,
+    request: &PolicyTry,
+) -> Result<Saved, (StatusCode, String)> {
+    let unprocessable = |e: String| (StatusCode::UNPROCESSABLE_ENTITY, e);
+    let (policy, tried) = try_policy(request).map_err(unprocessable)?;
+    let file = policy::user_file()
+        .ok_or_else(|| unprocessable("this system names no folder for a user's policy".into()))?;
+    let in_use = user_in_use(state);
+    if in_use {
+        // Built before it is written: a policy the engine refuses (a
+        // detector it requires is not installed) is not saved.
+        let engine = match &state.reload {
+            Some(reload) => Some(reload(&policy).map_err(|e| unprocessable(format!("{e:#}")))?),
+            None => None,
+        };
+        write_atomically(&file, tried.toml.as_bytes()).map_err(unprocessable)?;
+        if let Some(engine) = engine
+            && let Ok(mut e) = state.engine.write()
+        {
+            *e = engine;
+        }
+        if let Ok(mut p) = state.policy.write() {
+            *p = (policy, file.display().to_string());
+        }
+    } else {
+        write_atomically(&file, tried.toml.as_bytes()).map_err(unprocessable)?;
+    }
+    Ok(Saved {
+        path: display_path(&file),
+        in_use,
+    })
+}
+
+/// The user's policy as its file holds it, or the built-in defaults.
+pub fn user_policy() -> Result<Policy, String> {
+    match policy::user_file().filter(|f| f.is_file()) {
+        Some(f) => Policy::load(&f).map_err(|e| e.to_string()),
+        None => Ok(Policy::default()),
+    }
+}
+
+impl PolicyTry {
+    pub fn of(policy: Policy) -> Self {
+        Self {
+            policy,
+            sample: None,
+        }
+    }
+}
+
+pub fn is_user_in_use(state: &AppState) -> bool {
+    user_in_use(state)
 }
 
 fn write_atomically(file: &Path, bytes: &[u8]) -> Result<(), String> {

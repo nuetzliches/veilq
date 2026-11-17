@@ -383,6 +383,8 @@ fn router(state: Arc<AppState>) -> Router {
             "/cases",
             get(cases::count).post(cases::add).delete(cases::delete_all),
         )
+        .route("/cases/propose", post(cases::propose))
+        .route("/policy/rule", post(cases::adopt))
         .route("/folders", get(settings::folders))
         .route("/root", axum::routing::put(settings::set_root))
         .route(
@@ -1335,6 +1337,88 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[tokio::test]
+    async fn a_mark_proposes_a_rule_tried_on_the_document_and_the_earlier_cases() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let key = age::x25519::Identity::generate();
+        let app = || cases_app(dir.path(), store.path(), Some(key.clone()));
+        let mark = serde_json::json!({ "kind": "missed", "value": "Falkenstein", "entity": "ORGANIZATION" });
+        // An earlier case whose line names the value too.
+        let earlier =
+            serde_json::json!({ "kind": "text", "text": "Lieferung an Falkenstein am Montag." });
+        let (status, _) = send(
+            app(),
+            json_post(
+                "/api/cases",
+                serde_json::json!({ "source": earlier, "mark": mark }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let source = serde_json::json!({ "kind": "text", "text": "Projekt Falkenstein, Falkenstein zahlt." });
+        let (status, body) = send(
+            app(),
+            json_post(
+                "/api/cases/propose",
+                serde_json::json!({ "source": source, "mark": mark }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["rule"]["kind"], "deny");
+        assert_eq!(body["rule"]["value"], "Falkenstein");
+        assert_eq!(body["document"]["gained"], 2, "{body}");
+        assert_eq!(body["document"]["lost"], 0);
+        assert_eq!(body["tried"], 1);
+        assert_eq!(body["cases"]["gained"], 1, "{body}");
+        assert!(body["toml"].as_str().unwrap().contains("[[deny]]"));
+        // An area names no value a rule could take.
+        let area = serde_json::json!({
+            "kind": "missed_area", "area": { "x": 0, "y": 0, "width": 1, "height": 1 }, "entity": "PERSON"
+        });
+        let (status, _) = send(
+            app(),
+            json_post(
+                "/api/cases/propose",
+                serde_json::json!({ "source": source, "mark": area }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[test]
+    fn a_rule_goes_into_a_policy_and_reads_as_toml() {
+        let deny: cases::Rule = serde_json::from_value(
+            serde_json::json!({ "kind": "deny", "entity": "ORGANIZATION", "value": "Falkenstein \"Nord\"" }),
+        )
+        .unwrap();
+        let allow: cases::Rule =
+            serde_json::from_value(serde_json::json!({ "kind": "allow", "value": "Copilot" }))
+                .unwrap();
+        let mut policy = Policy::default();
+        deny.add_to(&mut policy);
+        allow.add_to(&mut policy);
+        allow.add_to(&mut policy);
+        assert_eq!(policy.deny.len(), 1);
+        assert!(!policy.deny[0].parts);
+        assert_eq!(
+            policy
+                .allow
+                .values
+                .iter()
+                .filter(|v| *v == "Copilot")
+                .count(),
+            1
+        );
+        // The TOML to copy is a policy veilq reads.
+        let toml = format!("version = 1\n{}{}", deny.toml(), allow.toml());
+        let read = Policy::parse(&toml).unwrap();
+        assert_eq!(read.deny[0].values, vec!["Falkenstein \"Nord\"".to_owned()]);
+        assert_eq!(read.allow.values, vec!["Copilot".to_owned()]);
     }
 
     #[tokio::test]
