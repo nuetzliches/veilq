@@ -316,11 +316,15 @@ export function mockApi(): Api {
       if (mark.kind !== 'missed' && mark.kind !== 'extra') throw new ApiError(422, 'an area holds no value a rule could name yet');
       const rule = mark.kind === 'missed' ? { kind: 'deny' as const, entity: mark.entity, value: mark.value } : { kind: 'allow' as const, value: mark.value };
       return {
-        rule,
-        document: { gained: mark.kind === 'missed' ? 1 : 0, lost: mark.kind === 'extra' ? 1 : 0 },
-        cases: { gained: 0, lost: 0 },
+        rules: [
+          {
+            rule,
+            document: { gained: mark.kind === 'missed' ? 1 : 0, lost: mark.kind === 'extra' ? 1 : 0 },
+            cases: { gained: 0, lost: 0 },
+            toml: '',
+          },
+        ],
         tried: cases,
-        toml: '',
         user_in_use: true,
       };
     },

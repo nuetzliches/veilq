@@ -25,7 +25,9 @@ pub const POLICY_VERSION: u32 = 1;
 pub(crate) const DEFAULT_MIN_CONFIDENCE: f32 = 0.7;
 const DEFAULT_PATTERN_CONFIDENCE: f32 = 0.9;
 const DEFAULT_CONTEXT_BOOST: f32 = 0.3;
-const DEFAULT_CONTEXT_WINDOW: usize = 48;
+/// How many characters before a match its context words are looked for in,
+/// unless a pattern says otherwise.
+pub const DEFAULT_CONTEXT_WINDOW: usize = 48;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

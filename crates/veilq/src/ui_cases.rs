@@ -462,47 +462,144 @@ pub async fn delete_all(State(state): State<Arc<AppState>>) -> Response {
 
 // ---- rules from marks (card point 5) -------------------------------------
 
-/// A rule a mark proposes, the cheapest first: a value always found as its
-/// type (a deny value, ADR-0044), or one never found (an allow value).
+/// A rule a mark proposes. The cheapest first: a value always found as its
+/// type (a deny value, ADR-0044) or never found (an allow value); values of
+/// its shape after the word beside it; values of its shape anywhere (a
+/// pattern, ADR-0011); a threshold for its type (ADR-0046).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Rule {
-    Deny { entity: EntityType, value: String },
-    Allow { value: String },
+    Deny {
+        entity: EntityType,
+        value: String,
+    },
+    Allow {
+        value: String,
+    },
+    /// Values matching `regex` found as `entity` where `word` stands before
+    /// them.
+    Context {
+        entity: EntityType,
+        word: String,
+        regex: String,
+    },
+    /// Values matching `regex` found as `entity` wherever they stand.
+    Shape {
+        entity: EntityType,
+        regex: String,
+    },
+    /// A finding that matches `regex` whole is left.
+    AllowShape {
+        regex: String,
+    },
+    /// The threshold of `entity`'s findings.
+    Threshold {
+        entity: EntityType,
+        min_confidence: f32,
+    },
 }
 
+/// A value of a `context` rule's shape without its word: below every
+/// threshold. With the word, at 0.95.
+const CONTEXT_CONFIDENCE: f32 = 0.3;
+const CONTEXT_BOOST: f32 = 0.65;
+/// A value of a `shape` rule's shape: above every threshold but 1.
+const SHAPE_CONFIDENCE: f32 = 0.95;
+
 impl Rule {
-    fn of(mark: &Mark) -> Option<Self> {
+    /// The rules `mark` proposes, the cheapest first, from what veilq read
+    /// around it (`readings`, of the run without the mark). An area holds no
+    /// value a rule could name.
+    fn of(mark: &Mark, readings: &[veilq_core::Reading]) -> Vec<Self> {
+        let Some(value) = mark.value() else {
+            return Vec::new();
+        };
+        let reading = readings
+            .iter()
+            .find(|r| !r.verify && r.text.contains(value));
+        // What veilq proposed at the mark's place.
+        let candidate = |verdict: veilq_core::detect::Verdict, entity: &EntityType| {
+            let r = reading?;
+            let at = r.text.find(value)?;
+            let end = at + value.len();
+            r.candidates
+                .iter()
+                .filter(|c| c.start < end && at < c.end)
+                .filter(|c| c.verdict == verdict && c.entity == entity.as_str())
+                .map(|c| c.confidence)
+                .reduce(f32::max)
+        };
+        let has_digit = value.chars().any(|c| c.is_ascii_digit());
+        let mut rules = Vec::new();
         match mark {
-            Mark::Missed { value, entity, .. } => Some(Rule::Deny {
-                entity: entity.clone(),
-                value: value.trim().to_owned(),
-            }),
-            Mark::Extra { value, .. } => Some(Rule::Allow {
-                value: value.trim().to_owned(),
-            }),
-            // An area holds no value a rule could name.
-            Mark::MissedArea { .. } | Mark::ExtraArea { .. } => None,
+            Mark::Missed { entity, .. } => {
+                rules.push(Rule::Deny {
+                    entity: entity.clone(),
+                    value: value.to_owned(),
+                });
+                if let Some(word) = reading.and_then(|r| word_before(r, value)) {
+                    rules.push(Rule::Context {
+                        entity: entity.clone(),
+                        word,
+                        regex: bounded(value),
+                    });
+                }
+                // A shape of letters alone (a name) matches nearly every word.
+                if has_digit {
+                    rules.push(Rule::Shape {
+                        entity: entity.clone(),
+                        regex: bounded(value),
+                    });
+                }
+                if let Some(c) = candidate(veilq_core::detect::Verdict::BelowThreshold, entity) {
+                    let min_confidence = (c * 100.0).floor() / 100.0;
+                    if min_confidence > 0.0 {
+                        rules.push(Rule::Threshold {
+                            entity: entity.clone(),
+                            min_confidence,
+                        });
+                    }
+                }
+            }
+            Mark::Extra { entity, .. } => {
+                rules.push(Rule::Allow {
+                    value: value.to_owned(),
+                });
+                if has_digit {
+                    rules.push(Rule::AllowShape {
+                        regex: shape(value),
+                    });
+                }
+                if let Some(c) = candidate(veilq_core::detect::Verdict::Kept, entity) {
+                    let min_confidence = ((c * 100.0).floor() + 1.0) / 100.0;
+                    if min_confidence <= 1.0 {
+                        rules.push(Rule::Threshold {
+                            entity: entity.clone(),
+                            min_confidence,
+                        });
+                    }
+                }
+            }
+            Mark::MissedArea { .. } | Mark::ExtraArea { .. } => {}
         }
+        rules
     }
 
-    fn mark(&self) -> Mark {
-        match self {
-            Rule::Deny { entity, value } => Mark::Missed {
-                value: value.clone(),
-                entity: entity.clone(),
-                label: None,
-            },
-            Rule::Allow { value } => Mark::Extra {
-                value: value.clone(),
-                entity: EntityType::new("PERSON").expect("a valid type"),
-            },
-        }
+    /// The name of a pattern the rule adds: the same rule, the same name.
+    fn pattern_name(&self) -> String {
+        // FNV-1a: stable across builds, unlike the standard hasher.
+        let text = serde_json::to_string(self).expect("a rule serialises");
+        let hash = text.bytes().fold(0xcbf29ce484222325_u64, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x100000001b3)
+        });
+        format!("mark-{:08x}", hash as u32)
     }
 
-    /// The rule in a policy: a `[[deny]]` table of its own (exact value,
-    /// no parts), or the value added to `[allow] values`.
+    /// The rule in a policy: a `[[deny]]` table of its own (exact value, no
+    /// parts), the value added to `[allow] values`, a `[[patterns]]` rule, a
+    /// pattern added to `[allow] patterns`, or the type's `min_confidence`.
     pub(super) fn add_to(&self, policy: &mut veilq_core::Policy) {
+        use veilq_core::policy::{Context, PatternRule};
         match self {
             Rule::Deny { entity, value } => policy.deny.push(veilq_core::policy::Deny {
                 entity: entity.clone(),
@@ -515,6 +612,55 @@ impl Rule {
                 if !policy.allow.values.contains(value) {
                     policy.allow.values.push(value.clone());
                 }
+            }
+            Rule::Context {
+                entity,
+                word,
+                regex,
+            } => {
+                let name = self.pattern_name();
+                if !policy.patterns.iter().any(|p| p.name == name) {
+                    policy.patterns.push(PatternRule {
+                        name,
+                        entity: entity.clone(),
+                        regex: regex.clone(),
+                        confidence: CONTEXT_CONFIDENCE,
+                        context: Some(Context {
+                            words: vec![word.clone()],
+                            boost: CONTEXT_BOOST,
+                            window: veilq_core::policy::DEFAULT_CONTEXT_WINDOW,
+                        }),
+                        validate: None,
+                    });
+                }
+            }
+            Rule::Shape { entity, regex } => {
+                let name = self.pattern_name();
+                if !policy.patterns.iter().any(|p| p.name == name) {
+                    policy.patterns.push(PatternRule {
+                        name,
+                        entity: entity.clone(),
+                        regex: regex.clone(),
+                        confidence: SHAPE_CONFIDENCE,
+                        context: None,
+                        validate: None,
+                    });
+                }
+            }
+            Rule::AllowShape { regex } => {
+                if !policy.allow.patterns.contains(regex) {
+                    policy.allow.patterns.push(regex.clone());
+                }
+            }
+            Rule::Threshold {
+                entity,
+                min_confidence,
+            } => {
+                policy
+                    .entities
+                    .entry(entity.clone())
+                    .or_default()
+                    .min_confidence = Some(*min_confidence);
             }
         }
     }
@@ -529,8 +675,110 @@ impl Rule {
                 quoted(value)
             ),
             Rule::Allow { value } => format!("[allow]\nvalues = [{}]\n", quoted(value)),
+            Rule::Context {
+                entity,
+                word,
+                regex,
+            } => format!(
+                "[[patterns]]\nname = {}\nentity = {}\nregex = {}\nconfidence = {CONTEXT_CONFIDENCE}\ncontext = {{ words = [{}], boost = {CONTEXT_BOOST} }}\n",
+                quoted(&self.pattern_name()),
+                quoted(entity.as_str()),
+                quoted(regex),
+                quoted(word)
+            ),
+            Rule::Shape { entity, regex } => format!(
+                "[[patterns]]\nname = {}\nentity = {}\nregex = {}\nconfidence = {SHAPE_CONFIDENCE}\n",
+                quoted(&self.pattern_name()),
+                quoted(entity.as_str()),
+                quoted(regex)
+            ),
+            Rule::AllowShape { regex } => format!("[allow]\npatterns = [{}]\n", quoted(regex)),
+            Rule::Threshold {
+                entity,
+                min_confidence,
+            } => format!(
+                "[entities.{}]\nmin_confidence = {min_confidence}\n",
+                entity.as_str()
+            ),
         }
     }
+}
+
+/// The word that stands before `value` in its line in `reading`, else the
+/// last word of what it was read with (a column's or key's name): what a
+/// `context` rule looks for. `None` without two letters in it.
+fn word_before(reading: &veilq_core::Reading, value: &str) -> Option<String> {
+    let last_word = |text: &str| {
+        text.split_whitespace()
+            .last()
+            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_owned())
+            .filter(|w| w.chars().filter(|c| c.is_alphabetic()).count() >= 2)
+    };
+    let at = reading.text.find(value)?;
+    let line = reading.text[..at].rsplit('\n').next().unwrap_or_default();
+    last_word(line).or_else(|| last_word(&reading.context))
+}
+
+/// `value`'s shape as a regex: a digit is `\d`, a letter its case, a space
+/// `\s`, anything else itself. With a digit in it the shape counts every
+/// character (`AB-1234` is `\p{Lu}{2}-\d{4}`), without one a run of more
+/// than one letter or of spaces is any length (`Lena Albrecht` is
+/// `\p{Lu}\p{Ll}+\s+\p{Lu}\p{Ll}+`).
+fn shape(value: &str) -> String {
+    let counted = value.chars().any(|c| c.is_ascii_digit());
+    let class = |c: char| -> Option<&'static str> {
+        if c.is_ascii_digit() {
+            Some(r"\d")
+        } else if c.is_uppercase() {
+            Some(r"\p{Lu}")
+        } else if c.is_lowercase() {
+            Some(r"\p{Ll}")
+        } else if c.is_alphabetic() {
+            Some(r"\p{L}")
+        } else if c.is_whitespace() {
+            Some(r"\s")
+        } else {
+            None
+        }
+    };
+    let chars: Vec<char> = value.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let Some(k) = class(chars[i]) else {
+            // What `regex::escape` escapes.
+            if r"\.+*?()|[]{}^$#&-~".contains(chars[i]) {
+                out.push('\\');
+            }
+            out.push(chars[i]);
+            i += 1;
+            continue;
+        };
+        let n = chars[i..]
+            .iter()
+            .take_while(|&&c| class(c) == Some(k))
+            .count();
+        out.push_str(k);
+        if !counted && (n > 1 || k == r"\s") {
+            out.push('+');
+        } else if counted && n > 1 {
+            out.push_str(&format!("{{{n}}}"));
+        }
+        i += n;
+    }
+    out
+}
+
+/// [`shape`] that starts and ends where a word does, at a letter or digit.
+fn bounded(value: &str) -> String {
+    let word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+    let edge = |w: bool| if w { r"\b" } else { "" };
+    format!(
+        "{}{}{}",
+        edge(word(value.chars().next())),
+        shape(value),
+        edge(word(value.chars().last()))
+    )
 }
 
 /// What a rule changes on a text: findings it adds and findings it drops.
@@ -547,12 +795,18 @@ impl Change {
     }
 }
 
-/// The findings of `text` without and with `rule`, compared by place.
-fn change(base: &Engine, rule: &Rule, text: &str, format: Format) -> Result<Change, Failure> {
+/// `base` with `rule` in its policy.
+fn with_rule(base: &Engine, rule: &Rule) -> Result<Engine, Failure> {
+    let mut policy = base.policy().clone();
+    rule.add_to(&mut policy);
+    base.with_policy(&policy).map_err(Failure::from)
+}
+
+/// The findings of `text` by `base` and by `with` (`base` with a rule),
+/// compared by place.
+fn change(base: &Engine, with: &Engine, text: &str, format: Format) -> Result<Change, Failure> {
     let without = base.redact_str(text, format).map_err(Failure::from)?;
-    let with = apply(base, &[rule.mark()])?
-        .redact_str(text, format)
-        .map_err(Failure::from)?;
+    let with = with.redact_str(text, format).map_err(Failure::from)?;
     let has = |r: &veilq_core::Redacted, l: &veilq_core::Location| {
         r.report.findings.iter().any(|f| &f.location == l)
     };
@@ -572,23 +826,31 @@ fn change(base: &Engine, rule: &Rule, text: &str, format: Format) -> Result<Chan
     })
 }
 
+/// A rule proposed and what it changes.
 #[derive(Serialize)]
-pub struct Proposal {
+pub struct Proposed {
     rule: Rule,
     /// On this document.
     document: Change,
     /// On the earlier cases: their excerpts where the key reads them, else
-    /// their twins; how many were tried.
+    /// their twins.
     cases: Change,
-    tried: usize,
     /// The rule as TOML, to copy where a project's policy is in effect.
     toml: String,
-    /// Whether the user's policy is the one in use: then the rule is saved
+}
+
+#[derive(Serialize)]
+pub struct Proposal {
+    /// The cheapest first.
+    rules: Vec<Proposed>,
+    /// How many earlier cases each rule was tried on.
+    tried: usize,
+    /// Whether the user's policy is the one in use: then a rule is saved
     /// there, else it is offered to copy.
     user_in_use: bool,
 }
 
-/// `POST /api/cases/propose`: the rule a mark proposes, tried on the
+/// `POST /api/cases/propose`: the rules a mark proposes, each tried on the
 /// document and on every earlier case.
 pub async fn propose(
     State(state): State<Arc<AppState>>,
@@ -603,8 +865,11 @@ pub async fn propose(
 }
 
 fn propose_rule(state: &AppState, request: CaseRequest) -> Result<Proposal, Failure> {
-    let rule = Rule::of(&request.mark)
-        .ok_or_else(|| unprocessable("an area holds no value a rule could name yet"))?;
+    if request.mark.value().is_none() {
+        return Err(unprocessable(
+            "an area holds no value a rule could name yet",
+        ));
+    }
     let (name, bytes) = source_bytes(state, request.source)?;
     let format = match &name {
         Some(n) => Format::from_path(std::path::Path::new(n)).map_err(Failure::from)?,
@@ -617,15 +882,20 @@ fn propose_rule(state: &AppState, request: CaseRequest) -> Result<Proposal, Fail
         )));
     }
     let input = String::from_utf8(bytes).map_err(|_| unprocessable("not UTF-8 text"))?;
-    let base = state
-        .ready_engine()?
+    let plain = state.ready_engine()?;
+    let base = plain
         .with_min_confidence(request.min_confidence)
         .map_err(Failure::from)?;
-    let document = change(&base, &rule, &input, format)?;
+    let explanation = veilq_core::Explain::new();
+    base.with_explain(explanation.clone())
+        .redact_str(&input, format)
+        .map_err(Failure::from)?;
+    let rules = Rule::of(&request.mark, &explanation.take());
+    // The earlier cases' texts: their excerpts where the key reads them,
+    // else their twins.
     let store = store(state)?;
     let key = (state.cases.key)();
-    let mut cases = Change::default();
-    let mut tried = 0;
+    let mut texts = Vec::new();
     for case in store.list().map_err(Failure::from)? {
         let excerpt = match (&case.excerpt, &key) {
             (Some(e), Some(k)) if e.media_type == "text/plain" => store
@@ -635,18 +905,35 @@ fn propose_rule(state: &AppState, request: CaseRequest) -> Result<Proposal, Fail
                 .and_then(|b| String::from_utf8(b).ok()),
             _ => None,
         };
-        let Some(text) = excerpt.or_else(|| store.twin(&case.id).ok().flatten()) else {
-            continue;
+        if let Some(text) = excerpt.or_else(|| store.twin(&case.id).ok().flatten()) {
+            texts.push(text);
+        }
+    }
+    let mut proposed = Vec::new();
+    for rule in rules {
+        // A threshold is tried as the policy runs: the run's one threshold
+        // would stand in its place (ADR-0046).
+        let base = if matches!(rule, Rule::Threshold { .. }) {
+            &plain
+        } else {
+            &base
         };
-        cases.add(change(&base, &rule, &text, Format::Text)?);
-        tried += 1;
+        let with = with_rule(base, &rule)?;
+        let document = change(base, &with, &input, format)?;
+        let mut cases = Change::default();
+        for text in &texts {
+            cases.add(change(base, &with, text, Format::Text)?);
+        }
+        proposed.push(Proposed {
+            toml: rule.toml(),
+            rule,
+            document,
+            cases,
+        });
     }
     Ok(Proposal {
-        toml: rule.toml(),
-        rule,
-        document,
-        cases,
-        tried,
+        rules: proposed,
+        tried: texts.len(),
         user_in_use: super::settings::is_user_in_use(state),
     })
 }
@@ -675,5 +962,39 @@ pub async fn adopt(
         Ok(Ok(saved)) => axum::Json(saved).into_response(),
         Ok(Err((status, e))) => api_error(status, e),
         Err(e) => api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_shape_counts_with_a_digit_and_not_without() {
+        assert_eq!(shape("AB-1234"), r"\p{Lu}{2}\-\d{4}");
+        assert_eq!(shape("Lena Albrecht"), r"\p{Lu}\p{Ll}+\s+\p{Lu}\p{Ll}+");
+        assert_eq!(shape("+49 (0)30"), r"\+\d{2}\s\(\d\)\d{2}");
+        assert_eq!(bounded("+49 30"), r"\+\d{2}\s\d{2}\b");
+    }
+
+    #[test]
+    fn the_word_before_is_in_the_line_else_the_column() {
+        let reading = |text: &str, context: &str| veilq_core::Reading {
+            text: text.into(),
+            context: context.into(),
+            verify: false,
+            candidates: Vec::new(),
+        };
+        let r = reading("Name: Lena\nSteuer-ID: 12 345 678 901", "");
+        assert_eq!(
+            word_before(&r, "12 345 678 901").as_deref(),
+            Some("Steuer-ID")
+        );
+        // A cell: the column's name.
+        assert_eq!(
+            word_before(&reading("KD-48213", "kundennummer"), "KD-48213").as_deref(),
+            Some("kundennummer")
+        );
+        assert_eq!(word_before(&reading("- 4 KD-48213", ""), "KD-48213"), None);
     }
 }

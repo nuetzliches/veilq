@@ -974,8 +974,14 @@ impl Engine {
                 policy.allow.values.push(value.clone());
             }
         }
+        self.with_policy(&policy)
+    }
+
+    /// This engine with `policy` in place of its own, its models and the
+    /// run's threshold kept: a rule tried before it is saved (#34).
+    pub fn with_policy(&self, policy: &Policy) -> Result<Self, Error> {
         let mut engine = self.clone();
-        engine.detector = self.detector.with_policy(&policy)?;
+        engine.detector = self.detector.with_policy(policy)?;
         Ok(engine)
     }
 

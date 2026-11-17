@@ -74,6 +74,13 @@ Notable changes per release. The format follows
   twins); "Add to my rules" saves it into the user's policy, checked as the
   settings save it. Where a project's `veilq.toml` is in effect, the rule
   is offered as TOML to copy instead.
+- **More rules from a mark** (#34, ADR-0054): besides the value, a miss
+  proposes values of its shape after the word before it (in its line, or
+  its column's name), values of its shape anywhere (only when it holds a
+  digit) and its type's threshold lowered to where veilq had it; a box
+  released proposes values of its shape never found and its type's
+  threshold raised above the finding. The proposal bar lists them, the
+  cheapest first, each with what it changes here and in the earlier cases.
 
 ### Changed
 
