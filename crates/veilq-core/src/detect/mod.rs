@@ -996,11 +996,19 @@ const POSSESSIVES: &[&str] = &[
     "our", "their",
 ];
 
-/// Whether `word` is a role, title or greeting word ([`NOT_NAMES`]) or a
-/// possessive ([`POSSESSIVES`]), whatever its case.
+/// The endings of a form's field labels (`Kundennummer`, `Aktenzeichen`,
+/// `Kennzeichen`, `number`): a model reads one beside a value or beside a
+/// placeholder in veilq's own output as a name (#112). No name ends so.
+const LABEL_ENDINGS: &[&str] = &["nummer", "zeichen", "number"];
+
+/// Whether `word` is a role, title or greeting word ([`NOT_NAMES`]), a
+/// possessive ([`POSSESSIVES`]) or a field label ([`LABEL_ENDINGS`]),
+/// whatever its case.
 pub(crate) fn role_word(word: &str) -> bool {
     let w = word.to_lowercase();
-    NOT_NAMES.contains(&w.as_str()) || POSSESSIVES.contains(&w.as_str())
+    NOT_NAMES.contains(&w.as_str())
+        || POSSESSIVES.contains(&w.as_str())
+        || LABEL_ENDINGS.iter().any(|e| w.ends_with(e))
 }
 
 /// Whether `span` is nothing but role, title and greeting words
@@ -1404,6 +1412,21 @@ mod tests {
         );
         // The possessive alone is a role word: never a word of a name.
         assert!(only_role_words("Ihr"));
+    }
+
+    #[test]
+    fn a_field_label_is_no_name() {
+        // A model reads `Kundennummer <ACCOUNT_ID>` as a name (#112).
+        for label in [
+            "Kundennummer",
+            "Vertragsnummer",
+            "Aktenzeichen",
+            "Kennzeichen",
+            "Customer number",
+        ] {
+            assert!(only_role_words(label), "{label}");
+        }
+        assert!(!only_role_words("Lena Nummerow"), "a name that starts so");
     }
 
     #[test]
