@@ -470,7 +470,7 @@ pub fn evaluate(
 }
 
 /// The text a location names, for the report of a synthetic corpus.
-fn value_at(content: &str, format: Format, location: &Location) -> String {
+pub fn value_at(content: &str, format: Format, location: &Location) -> String {
     let slice = |s: &str, a: u64, b: u64| s.get(a as usize..b as usize).unwrap_or("?").to_owned();
     match location {
         Location::Span {

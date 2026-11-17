@@ -6,6 +6,13 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `veilq-eval candidates <corpus> --out <file>` writes every candidate the
+  detectors proposed, kept or not, as one JSON line with its context and a
+  label from the corpus truth (text, CSV, JSON, NDJSON), for measuring the
+  models of a learned decider (#95).
+
 ### Fixed
 
 - An IBAN in `[allow] values` is allowed however it is grouped or cased:
