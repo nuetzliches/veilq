@@ -95,6 +95,12 @@ Notable changes per release. The format follows
 
 ### Fixed
 
+- A field label beside a redacted value no longer becomes a name for the
+  whole file (ADR-0055, #112): `Kundennummer KD-48213` with the number
+  redacted came out as `<PERSON> <ACCOUNT_ID>`, since the verify round's
+  model took `Kundennummer` before the placeholder for a name and the
+  file's names learned it. A verify round now learns no names, and a word
+  ending in `nummer`, `zeichen` or `number` is no name.
 - `Ihre Nachricht`, `Ihr Anliegen` and other pairs of a possessive and one
   word in a sentence are no longer taken for a name (ADR-0052). NER found
   them in subjects such as `Wir haben Ihre Nachricht erhalten`, and the
