@@ -108,7 +108,29 @@ pub struct Decision {
     pub verdict: Verdict,
     pub threshold: f32,
     pub raised: bool,
+    /// The hand rules that hold for the candidate, from [`FEATURES`],
+    /// whether or not one of them decided its verdict: what a learned
+    /// decider weighs (#35).
+    pub features: Vec<&'static str>,
 }
+
+/// The hand rules as named features of a candidate (#35): each holds or
+/// does not, whatever the verdict. The names are those of the verdicts
+/// they lead to, where they lead to one.
+pub const FEATURES: &[&str] = &[
+    // A name of nothing but role, title and greeting words.
+    "role_words",
+    // An account a system makes (`Public`, `root`).
+    "account",
+    // One word with a capital inside, or a product's name.
+    "brand_word",
+    // A date that can be a birth date: valid, its year at least ten years back.
+    "can_be_birth_date",
+    // A date beside a name found in the same text.
+    "beside_name",
+    // The allow lists name it.
+    "allowed",
+];
 
 #[derive(Clone)]
 struct Rule {
@@ -402,7 +424,8 @@ impl Detector {
             }
         }
         let before: Vec<f32> = chosen.iter().map(|c| c.confidence).collect();
-        self.birth_dates_beside_names(text, &mut chosen);
+        let names = self.names_found(&chosen);
+        self.birth_dates_beside_names(text, &names, &mut chosen);
         for (c, before) in chosen.into_iter().zip(before) {
             let raised = c.confidence > before;
             let verdict = if c.confidence < round(self.threshold(&c.entity)) {
@@ -414,6 +437,9 @@ impl Detector {
             };
             out.push(self.decision(c, verdict, raised));
         }
+        for d in &mut out {
+            d.features = self.features(text, &d.candidate, &names);
+        }
         out.sort_by_key(|d| (d.candidate.start, d.candidate.end));
         out
     }
@@ -424,23 +450,65 @@ impl Detector {
             candidate,
             verdict,
             raised,
+            features: Vec::new(),
         }
+    }
+
+    /// The [`FEATURES`] that hold for `c` in `text`, `names` the spans of
+    /// the names found there.
+    fn features(&self, text: &str, c: &Candidate, names: &[(usize, usize)]) -> Vec<&'static str> {
+        let value = &text[c.start..c.end];
+        let mut out = Vec::new();
+        match c.entity.as_str() {
+            "PERSON" => {
+                if only_role_words(value) {
+                    out.push("role_words");
+                }
+                if ACCOUNTS.contains(&value.to_lowercase().as_str()) {
+                    out.push("account");
+                }
+                if brand_word(value) || PRODUCTS.contains(&value.to_lowercase().as_str()) {
+                    out.push("brand_word");
+                }
+            }
+            "DATE_OF_BIRTH" => {
+                if can_be_birth_date(value) {
+                    out.push("can_be_birth_date");
+                }
+                if beside(text, names, c) {
+                    out.push("beside_name");
+                }
+            }
+            _ => {}
+        }
+        if self.allowed(value) {
+            out.push("allowed");
+        }
+        out
+    }
+
+    /// The spans of the names in `chosen` at or above their threshold.
+    fn names_found(&self, chosen: &[Candidate]) -> Vec<(usize, usize)> {
+        let person = EntityType::new("PERSON").expect("a valid type");
+        chosen
+            .iter()
+            .filter(|c| c.entity == person && c.confidence >= round(self.threshold(&person)))
+            .map(|c| (c.start, c.end))
+            .collect()
     }
 
     /// A date that can be a birth date, beside a name, is one: a record's
     /// header shows it with an icon, not a word (`Mira Albers  14.03.1987
-    /// 0421 …`). Beside: at most [`BESIDE`] bytes apart, on the same line or
+    /// 0421 …`). Beside ([`beside`]): at most 40 bytes apart, on the same line or
     /// at the start of the line right below the name (a picture's header puts
     /// the name above its details); an icon read as a stray mark or two may
     /// come before the date.
-    fn birth_dates_beside_names(&self, text: &str, chosen: &mut [Candidate]) {
-        const BESIDE: usize = 40;
-        let person = EntityType::new("PERSON").expect("a valid type");
-        let names: Vec<(usize, usize)> = chosen
-            .iter()
-            .filter(|c| c.entity == person && c.confidence >= round(self.threshold(&person)))
-            .map(|c| (c.start, c.end))
-            .collect();
+    fn birth_dates_beside_names(
+        &self,
+        text: &str,
+        names: &[(usize, usize)],
+        chosen: &mut [Candidate],
+    ) {
         if names.is_empty() {
             return;
         }
@@ -448,23 +516,7 @@ impl Detector {
             .iter_mut()
             .filter(|c| c.entity.as_str() == "DATE_OF_BIRTH")
         {
-            let beside = names.iter().any(|&(s, e)| {
-                let gap = if e <= c.start {
-                    &text[e..c.start]
-                } else if c.end <= s {
-                    return s - c.end <= BESIDE && !text[c.end..s].contains('\n');
-                } else {
-                    return false;
-                };
-                if gap.len() > BESIDE {
-                    return false;
-                }
-                match gap.split_once('\n') {
-                    None => true,
-                    Some((_, below)) => !below.contains('\n') && below.trim().chars().count() <= 2,
-                }
-            });
-            if beside && can_be_birth_date(&text[c.start..c.end]) {
+            if beside(text, names, c) && can_be_birth_date(&text[c.start..c.end]) {
                 c.confidence = c.confidence.max(round(self.threshold(&c.entity)).max(0.75));
             }
         }
@@ -538,6 +590,29 @@ impl Detector {
     pub fn policy(&self) -> &Policy {
         &self.policy
     }
+}
+
+/// Whether `c` stands beside one of the `names` (spans in `text`): at most
+/// 40 bytes apart, on the same line or at the start of the line right below
+/// the name, as [`Detector::birth_dates_beside_names`] reads it.
+fn beside(text: &str, names: &[(usize, usize)], c: &Candidate) -> bool {
+    const BESIDE: usize = 40;
+    names.iter().any(|&(s, e)| {
+        let gap = if e <= c.start {
+            &text[e..c.start]
+        } else if c.end <= s {
+            return s - c.end <= BESIDE && !text[c.end..s].contains('\n');
+        } else {
+            return false;
+        };
+        if gap.len() > BESIDE {
+            return false;
+        }
+        match gap.split_once('\n') {
+            None => true,
+            Some((_, below)) => !below.contains('\n') && below.trim().chars().count() <= 2,
+        }
+    })
 }
 
 /// Whether `value` is a valid date with a four-digit year at least ten years
@@ -990,6 +1065,35 @@ mod tests {
         findings(text, "")
             .iter()
             .any(|(e, v)| e == entity && v == value)
+    }
+
+    #[test]
+    fn the_hand_rules_report_as_features_whatever_the_verdict() {
+        let d = Detector::new(&Policy::default()).unwrap();
+        let text =
+            "Frau Mira Albers, geb. 14.03.1987, Termin 03.12.2026\nC:\\Users\\Public\\Dokumente\n";
+        let decisions = d.decide(text, "", Source::Text).unwrap();
+        let of = |value: &str, entity: &str| {
+            decisions
+                .iter()
+                .find(|x| {
+                    &text[x.candidate.start..x.candidate.end] == value
+                        && x.candidate.entity.as_str() == entity
+                })
+                .unwrap_or_else(|| panic!("no {entity} {value} in {decisions:?}"))
+        };
+        let birth = of("14.03.1987", "DATE_OF_BIRTH");
+        assert_eq!(birth.verdict, Verdict::Kept);
+        assert_eq!(birth.features, ["can_be_birth_date", "beside_name"]);
+        // Beside the name too, but not a birth date.
+        assert_eq!(of("03.12.2026", "DATE_OF_BIRTH").features, ["beside_name"]);
+        let account = of("Public", "PERSON");
+        assert_eq!(account.verdict, Verdict::Account);
+        assert_eq!(account.features, ["account"]);
+        assert!(of("Mira Albers", "PERSON").features.is_empty());
+        for x in &decisions {
+            assert!(x.features.iter().all(|f| FEATURES.contains(f)), "{x:?}");
+        }
     }
 
     #[test]

@@ -223,5 +223,11 @@ mod tests {
         assert!(lines.iter().any(|l| l["verdict"] == "kept"
             && l["personal"] == true
             && l["truth_entity"].is_string()));
+        // The hand rules come with it as named features (#35).
+        assert!(
+            lines
+                .iter()
+                .any(|l| l["features"].as_array().is_some_and(|f| !f.is_empty()))
+        );
     }
 }

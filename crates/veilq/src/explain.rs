@@ -73,7 +73,7 @@ fn text(out: &mut dyn Write, reading: &Reading) -> std::io::Result<()> {
         };
         writeln!(
             out,
-            "  {:<18} {} {:.2} {compare} {:.2}  {}  {:?}{}{}",
+            "  {:<18} {} {:.2} {compare} {:.2}  {}  {:?}{}{}{}",
             verdict(c.verdict),
             c.entity,
             c.confidence,
@@ -86,6 +86,11 @@ fn text(out: &mut dyn Write, reading: &Reading) -> std::io::Result<()> {
                 ""
             },
             if near { "  (near miss)" } else { "" },
+            if c.features.is_empty() {
+                String::new()
+            } else {
+                format!("  [{}]", c.features.join(", "))
+            },
         )?;
     }
     Ok(())
