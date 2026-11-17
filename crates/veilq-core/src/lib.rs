@@ -7,6 +7,7 @@
 //! root a caller's paths must stay under.
 
 pub mod action;
+pub mod decider;
 pub mod detect;
 pub mod engine;
 pub mod error;

@@ -112,6 +112,9 @@ pub struct Decision {
     /// whether or not one of them decided its verdict: what a learned
     /// decider weighs (#35).
     pub features: Vec<&'static str>,
+    /// Below its threshold, lifted into the findings by the learned decider
+    /// (#35): its verdict is then `Kept`.
+    pub lifted: bool,
 }
 
 /// The hand rules as named features of a candidate (#35): each holds or
@@ -130,7 +133,13 @@ pub const FEATURES: &[&str] = &[
     "beside_name",
     // The allow lists name it.
     "allowed",
+    // Its pattern's check (a checksum, a date) fails on it (ADR-0012).
+    "check_failed",
 ];
+
+/// The features after which the learned decider never lifts a candidate:
+/// the allow lists and a failed check are guarantees, not scores (#35).
+const NEVER_LIFTED: &[&str] = &["allowed", "check_failed"];
 
 #[derive(Clone)]
 struct Rule {
@@ -187,6 +196,8 @@ pub struct Detector {
     /// One threshold for this run, in place of the policy's default and
     /// every type's own (ADR-0046).
     min_confidence: Option<f32>,
+    /// The learned decider (#35), when one is loaded and not switched off.
+    decider: Option<std::sync::Arc<crate::decider::Decider>>,
 }
 
 impl Detector {
@@ -248,7 +259,19 @@ impl Detector {
             ner: None,
             policy: policy.clone(),
             min_confidence: None,
+            decider: None,
         })
+    }
+
+    /// Lets the learned decider lift candidates below their threshold
+    /// (#35); `None` leaves every decision to the policy.
+    pub fn set_decider(&mut self, decider: Option<std::sync::Arc<crate::decider::Decider>>) {
+        self.decider = decider;
+    }
+
+    /// Whether a learned decider runs.
+    pub fn has_decider(&self) -> bool {
+        self.decider.is_some()
     }
 
     /// Runs the NER model beside the patterns.
@@ -440,6 +463,20 @@ impl Detector {
         for d in &mut out {
             d.features = self.features(text, &d.candidate, &names);
         }
+        // The learned decider (#35): only a candidate below its threshold,
+        // never one the allow lists name or whose check failed; it claims
+        // its span already, so lifting it overlaps no finding.
+        if let Some(decider) = &self.decider {
+            for d in &mut out {
+                if d.verdict == Verdict::BelowThreshold
+                    && !d.features.iter().any(|f| NEVER_LIFTED.contains(f))
+                    && decider.lifts(&d.candidate, d.threshold, &d.features)
+                {
+                    d.verdict = Verdict::Kept;
+                    d.lifted = true;
+                }
+            }
+        }
         out.sort_by_key(|d| (d.candidate.start, d.candidate.end));
         out
     }
@@ -451,6 +488,7 @@ impl Detector {
             verdict,
             raised,
             features: Vec::new(),
+            lifted: false,
         }
     }
 
@@ -483,6 +521,14 @@ impl Detector {
         }
         if self.allowed(value) {
             out.push("allowed");
+        }
+        if self.rules.iter().any(|r| {
+            r.detector == c.detector
+                && r.validate
+                    .as_ref()
+                    .is_some_and(|v| !validate::check(v, value))
+        }) {
+            out.push("check_failed");
         }
         out
     }

@@ -76,6 +76,9 @@ pub struct Policy {
     /// Bodies that carry their verdict (`veilq mark`, ADR-0024).
     #[serde(default)]
     pub markers: Markers,
+    /// The learned decider (#35).
+    #[serde(default)]
+    pub decider: DeciderPolicy,
     /// Per entity type: what a miss and a false positive cost (ADR-0040),
     /// before the purposes' costs. Data for a learned decider; no
     /// threshold follows from them yet.
@@ -85,6 +88,25 @@ pub struct Policy {
 
 fn default_purposes() -> Vec<String> {
     vec![crate::purpose::GENERAL.to_owned()]
+}
+
+/// The learned decider (#35).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DeciderPolicy {
+    /// `true` (the default): where a learned decider is installed, it may
+    /// lift a candidate below its threshold into the findings, and the
+    /// report says how many it lifted. It never drops what a rule keeps.
+    /// `false` leaves every decision to the thresholds and rules, as
+    /// `--no-decider` does for one run.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+impl Default for DeciderPolicy {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
 }
 
 /// How `veilq mark` reads a body's first line.
@@ -437,6 +459,7 @@ impl Default for Policy {
             picture: Picture::default(),
             names: Names::default(),
             markers: Markers::default(),
+            decider: DeciderPolicy::default(),
             purposes: default_purposes(),
             costs: BTreeMap::new(),
         }
