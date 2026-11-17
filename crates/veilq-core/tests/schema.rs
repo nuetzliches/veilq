@@ -1,6 +1,7 @@
 //! The committed JSON schemas (`schema/`) are what the code produces: a
 //! change to a report or policy type shows up as a diff in the schema, and a
-//! reviewer sees the contract change (ADR-0002, ADR-0004).
+//! reviewer sees the contract change (ADR-0002, ADR-0004; the case format,
+//! #34).
 //!
 //! `VEILQ_UPDATE_SCHEMA=1 cargo test -p veilq-core --test schema` rewrites
 //! them.
@@ -34,4 +35,9 @@ fn report_schema() {
 #[test]
 fn policy_schema() {
     check("policy.schema.json", veilq_core::Policy::json_schema());
+}
+
+#[test]
+fn case_schema() {
+    check("case.schema.json", veilq_core::cases::Case::json_schema());
 }
