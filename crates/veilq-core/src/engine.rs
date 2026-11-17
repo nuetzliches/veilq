@@ -2169,10 +2169,7 @@ mod tests {
         assert!(engine().watermarks());
         assert!(!engine().without_watermark(true).watermarks());
         assert!(engine().without_watermark(false).watermarks());
-        let off = Policy::parse("version = 1
-[picture]
-watermark = false
-").unwrap();
+        let off = Policy::parse("version = 1\n[picture]\nwatermark = false\n").unwrap();
         let off = Engine::new(&off, None, b"seed", None).unwrap();
         assert!(!off.watermarks());
         // `--no-watermark` absent does not turn the policy's `false` back on.
