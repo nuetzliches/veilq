@@ -403,8 +403,17 @@ impl Detector {
         let mut out = Vec::new();
         let mut kept = Vec::new();
         for c in candidates {
+            let person = c.entity.as_str() == "PERSON" && c.detector != DENY;
+            let c = match person.then(|| after_possessive(text, &c)) {
+                Some(None) => {
+                    out.push(self.decision(c, Verdict::RoleWords, false));
+                    continue;
+                }
+                Some(Some(trimmed)) => trimmed,
+                None => c,
+            };
             let value = &text[c.start..c.end];
-            let dropped = if c.entity.as_str() != "PERSON" || c.detector == DENY {
+            let dropped = if !person {
                 None
             } else if only_role_words(value) {
                 Some(Verdict::RoleWords)
@@ -507,7 +516,7 @@ impl Detector {
         let mut out = Vec::new();
         match c.entity.as_str() {
             "PERSON" => {
-                if only_role_words(value) {
+                if only_role_words(value) || after_possessive(text, c).is_none() {
                     out.push("role_words");
                 }
                 if ACCOUNTS.contains(&value.to_lowercase().as_str()) {
@@ -963,15 +972,64 @@ pub(crate) fn name_words(span: &str) -> impl Iterator<Item = &str> {
         .filter(|w| w.chars().count() >= 2)
 }
 
+/// Possessive determiners (ADR-0052): what follows one is a noun (`Ihre
+/// Nachricht`) or, in a sign-off, a name (`Ihr Jonas Brandt`); they are
+/// never a word of a name.
+const POSSESSIVES: &[&str] = &[
+    "mein", "meine", "meinen", "meinem", "meiner", "meines", "dein", "deine", "deinen", "deinem",
+    "deiner", "deines", "sein", "seine", "seinen", "seinem", "seiner", "seines", "ihr", "ihre",
+    "ihren", "ihrem", "ihrer", "ihres", "unser", "unsere", "unseren", "unserem", "unserer",
+    "unseres", "euer", "eure", "euren", "eurem", "eurer", "eures", "my", "your", "his", "her",
+    "our", "their",
+];
+
+/// Whether `word` is a role, title or greeting word ([`NOT_NAMES`]) or a
+/// possessive ([`POSSESSIVES`]), whatever its case.
+pub(crate) fn role_word(word: &str) -> bool {
+    let w = word.to_lowercase();
+    NOT_NAMES.contains(&w.as_str()) || POSSESSIVES.contains(&w.as_str())
+}
+
 /// Whether `span` is nothing but role, title and greeting words
-/// ([`NOT_NAMES`]): `Herr Doktor`, `Frau Kundin` name no person, whichever
+/// ([`role_word`]): `Herr Doktor`, `Frau Kundin` name no person, whichever
 /// detector found them.
 pub(crate) fn only_role_words(span: &str) -> bool {
     let mut words = span
         .split(|c: char| !c.is_alphabetic())
         .filter(|w| w.chars().count() >= 2)
         .peekable();
-    words.peek().is_some() && words.all(|w| NOT_NAMES.contains(&w.to_lowercase().as_str()))
+    words.peek().is_some() && words.all(role_word)
+}
+
+/// A person's span without the possessive it starts with (`Ihr Jonas
+/// Brandt` is `Jonas Brandt`), or `None` when it is a possessive and one
+/// word with more of the line around it (`Wir haben Ihre Nachricht
+/// erhalten`): a noun, which NER takes for a name. Alone on its line the
+/// pair is a sign-off (`Ihre Lena`) and the word a name (ADR-0052).
+fn after_possessive(text: &str, c: &Candidate) -> Option<Candidate> {
+    let value = &text[c.start..c.end];
+    let first = value
+        .split(|ch: char| !ch.is_alphabetic())
+        .next()
+        .unwrap_or("");
+    if !POSSESSIVES.contains(&first.to_lowercase().as_str()) {
+        return Some(c.clone());
+    }
+    let rest = value[first.len()..].trim_start_matches(|ch: char| !ch.is_alphabetic());
+    if rest.is_empty() {
+        return Some(c.clone());
+    }
+    let line_start = text[..c.start].rfind('\n').map_or(0, |i| i + 1);
+    let line_end = text[c.end..].find('\n').map_or(text.len(), |i| c.end + i);
+    let alone =
+        text[line_start..c.start].trim().is_empty() && text[c.end..line_end].trim().is_empty();
+    if !rest.contains(char::is_whitespace) && !alone {
+        return None;
+    }
+    Some(Candidate {
+        start: c.end - rest.len(),
+        ..c.clone()
+    })
 }
 
 /// The detector of the deny lists (ADR-0044).
@@ -1287,6 +1345,52 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn a_possessive_and_one_word_in_a_sentence_is_no_name() {
+        // NER takes `Ihre Nachricht` for a person, and the names of the file
+        // (ADR-0047) would then fill `Ihre` and `Nachricht` everywhere.
+        let d = Detector::new(&Policy::default()).unwrap();
+        let kept = |text: &str, span: &str| -> Vec<String> {
+            let start = text.find(span).unwrap();
+            let c = Candidate {
+                start,
+                end: start + span.len(),
+                entity: EntityType::new("PERSON").unwrap(),
+                confidence: 0.84,
+                detector: "ner".into(),
+            };
+            d.resolve(text, vec![c])
+                .into_iter()
+                .filter(|x| x.verdict == Verdict::Kept)
+                .map(|x| text[x.candidate.start..x.candidate.end].to_owned())
+                .collect()
+        };
+        for (text, span) in [
+            (
+                "Wir haben Ihre Nachricht vom 17.11.2026 erhalten",
+                "Ihre Nachricht",
+            ),
+            ("Ihre Nachricht hat uns erreicht", "Ihre Nachricht"),
+            ("Ihr Anliegen SCM4471230", "Ihr Anliegen"),
+            ("Danke für deine Anfrage!", "deine Anfrage"),
+            ("Thanks for your Message", "your Message"),
+        ] {
+            assert!(kept(text, span).is_empty(), "{text}");
+        }
+        // A sign-off: the pair alone on its line, or a whole name after the
+        // possessive, is a name without it.
+        assert_eq!(kept("Viele Grüße\nIhre Lena\n", "Ihre Lena"), ["Lena"]);
+        assert_eq!(
+            kept(
+                "Mit freundlichen Grüßen\nIhr Jonas Brandt",
+                "Ihr Jonas Brandt"
+            ),
+            ["Jonas Brandt"]
+        );
+        // The possessive alone is a role word: never a word of a name.
+        assert!(only_role_words("Ihr"));
     }
 
     #[test]

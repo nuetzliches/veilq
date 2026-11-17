@@ -43,6 +43,12 @@ Notable changes per release. The format follows
 
 ### Fixed
 
+- `Ihre Nachricht`, `Ihr Anliegen` and other pairs of a possessive and one
+  word in a sentence are no longer taken for a name (ADR-0052). NER found
+  them in subjects such as `Wir haben Ihre Nachricht erhalten`, and the
+  names of the file then filled every `Ihre` and `Nachricht` on the page. A
+  possessive is never a word of a name: `Ihr Jonas Brandt` under a letter
+  is filled as `Jonas Brandt`, and `Ihr` stays readable elsewhere.
 - A file number after `Aktenzeichen`, `Az.`, `Geschäftszeichen`,
   `Geschäftsnummer` or `Unser/Ihr Zeichen` is found whatever its shape, as
   long as it holds a digit (ADR-0051): a dunning court's `26431907720` or
