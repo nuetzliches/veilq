@@ -66,7 +66,7 @@ export function httpApi(token: string): Api {
         }),
       }),
     addCase: (source, mark, minConfidence) =>
-      call<{ id: string; excerpt: boolean }>('/cases', {
+      call<{ id: string; excerpt: boolean; twin?: boolean }>('/cases', {
         method: 'POST',
         body: JSON.stringify({ source, mark, min_confidence: minConfidence }),
       }),

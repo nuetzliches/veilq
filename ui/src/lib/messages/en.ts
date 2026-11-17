@@ -318,6 +318,7 @@ export const en = {
   'marks.undoOther': 'Undo {n} marks',
   'marks.resetTitle': 'The marks of this document; undone, it runs as the rules have it. The cases stay.',
   'marks.kept': 'Kept as a case on this computer, the line around it encrypted.',
+  'marks.twin': 'A twin with made-up values makes the same mistake: it tests every later rule.',
   'marks.keptNoExcerpt': 'Kept as a case on this computer, without the line around it (no key store).',
   'marks.notKept': 'The mark acts here, but was not kept as a case: {error}',
   'cases.title': 'Cases',

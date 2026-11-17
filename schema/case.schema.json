@@ -243,6 +243,28 @@
           "type": "object"
         }
       ]
+    },
+    "Twin": {
+      "additionalProperties": false,
+      "description": "A case's synthetic twin (#34, card point 6): the excerpt with its values\nreplaced by stand-ins, on which veilq makes the same mistake, holding none\nof the original values veilq or the user named. Kept in the clear: it is\nthe regression set every later rule is tried on.",
+      "properties": {
+        "end": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start": {
+          "description": "Byte offsets of the marked value's stand-in in `twin.txt`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -302,6 +324,17 @@
     "policy_sha256": {
       "description": "SHA-256 of the policy in effect, as TOML: which rules made it.",
       "type": "string"
+    },
+    "twin": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Twin"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The synthetic twin, in `twin.txt`, when one reproduces the mistake."
     },
     "veilq": {
       "description": "The veilq that made the mistake.",

@@ -378,7 +378,9 @@ async function addMark(mark: Mark) {
   runAgain();
   try {
     const added = await kept;
-    markNote.value = added.excerpt ? t('marks.kept') : t('marks.keptNoExcerpt');
+    markNote.value = [added.excerpt ? t('marks.kept') : t('marks.keptNoExcerpt'), added.twin ? t('marks.twin') : '']
+      .filter(Boolean)
+      .join(' ');
   } catch (e) {
     markNote.value = t('marks.notKept', { error: e instanceof Error ? e.message : String(e) });
   }
