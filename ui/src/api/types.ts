@@ -317,7 +317,8 @@ export interface Api {
   picture(path: string): Promise<Picture>;
   redact(source: Source, options?: RedactOptions): Promise<Redaction>;
   /** Keeps a mark as a case; `excerpt`: the line around it was kept, encrypted. */
-  addCase(source: Source, mark: Mark, minConfidence?: number): Promise<{ id: string; excerpt: boolean }>;
+  /** `twin`: a synthetic twin reproduces the mistake and was kept beside it (a miss on text). */
+  addCase(source: Source, mark: Mark, minConfidence?: number): Promise<{ id: string; excerpt: boolean; twin?: boolean }>;
   cases(): Promise<CaseCount>;
   /** "Delete all cases". */
   deleteCases(): Promise<{ deleted: number }>;

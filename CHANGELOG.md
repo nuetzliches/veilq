@@ -55,6 +55,13 @@ Notable changes per release. The format follows
   round of the check. A case keeps the picture around the area, encrypted.
   Not on a GIF's frames yet: an area marked there is an error, not a mark
   left out.
+- **A case's synthetic twin** (#34): a miss marked on text gets a twin, the
+  line it was read in with every value veilq replaced and the marked one
+  as made-up stand-ins (`fake`). It is kept in the clear beside the case
+  only if veilq, without the mark, leaves the stand-in as it left the value,
+  and if none of the original values is in it; twins are what every later
+  rule is tried on. A box released gets none: its twin would have to keep
+  the released value.
 
 ### Fixed
 

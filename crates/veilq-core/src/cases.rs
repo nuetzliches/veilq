@@ -24,6 +24,7 @@ pub const CASE_VERSION: u32 = 1;
 pub const EXCERPT_DAYS: u64 = 30;
 const CASE_FILE: &str = "case.json";
 const EXCERPT_FILE: &str = "excerpt.age";
+const TWIN_FILE: &str = "twin.txt";
 
 /// What the user marked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -66,6 +67,21 @@ pub struct Case {
     /// The encrypted excerpt, while it is kept.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub excerpt: Option<Excerpt>,
+    /// The synthetic twin, in `twin.txt`, when one reproduces the mistake.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub twin: Option<Twin>,
+}
+
+/// A case's synthetic twin (#34, card point 6): the excerpt with its values
+/// replaced by stand-ins, on which veilq makes the same mistake, holding none
+/// of the original values veilq or the user named. Kept in the clear: it is
+/// the regression set every later rule is tried on.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Twin {
+    /// Byte offsets of the marked value's stand-in in `twin.txt`.
+    pub start: usize,
+    pub end: usize,
 }
 
 /// A candidate at the mark, from [`crate::Explained`], without its value.
@@ -138,6 +154,7 @@ impl Case {
             location,
             candidates: Vec::new(),
             excerpt: None,
+            twin: None,
         }
     }
 
@@ -264,6 +281,41 @@ impl Store {
         }
         self.write(&case)?;
         Ok(case)
+    }
+
+    /// Gives case `id` its twin: `text`, the marked value's stand-in at
+    /// `span`. Returns the case as stored.
+    pub fn set_twin(
+        &self,
+        id: &str,
+        text: &str,
+        span: std::ops::Range<usize>,
+    ) -> Result<Case, Error> {
+        if text.get(span.clone()).is_none_or(str::is_empty) {
+            return Err(bad("a twin's span is not in its text"));
+        }
+        let mut case = self
+            .list()?
+            .into_iter()
+            .find(|c| c.id == id)
+            .ok_or_else(|| bad(format!("no case `{id}`")))?;
+        let path = self.folder(id)?.join(TWIN_FILE);
+        write_whole(&path, text.as_bytes())?;
+        case.twin = Some(Twin {
+            start: span.start,
+            end: span.end,
+        });
+        self.write(&case)?;
+        Ok(case)
+    }
+
+    /// The twin of case `id`, if it has one.
+    pub fn twin(&self, id: &str) -> Result<Option<String>, Error> {
+        let path = self.folder(id)?.join(TWIN_FILE);
+        if !path.exists() {
+            return Ok(None);
+        }
+        std::fs::read_to_string(&path).map(Some).map_err(io(&path))
     }
 
     fn write(&self, case: &Case) -> Result<(), Error> {
@@ -513,6 +565,25 @@ mod tests {
         store.purge(2).unwrap();
         assert!(!dir.path().join("0123abcd").exists());
         assert_eq!(store.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_twin_is_kept_beside_its_case_and_goes_with_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let stored = store.add(case(), None, None, 1).unwrap();
+        assert_eq!(store.twin(&stored.id).unwrap(), None);
+        let twin = "Termin mit Jonas Keller am Montag";
+        let with = store.set_twin(&stored.id, twin, 11..23).unwrap();
+        assert_eq!(with.twin, Some(Twin { start: 11, end: 23 }));
+        assert_eq!(store.list().unwrap()[0].twin, with.twin);
+        assert_eq!(store.twin(&stored.id).unwrap().as_deref(), Some(twin));
+        assert!(
+            store.set_twin(&stored.id, twin, 30..40).is_err(),
+            "outside the text"
+        );
+        assert_eq!(store.delete_all().unwrap(), 1);
+        assert!(!dir.path().join(&stored.id).exists());
     }
 
     #[test]

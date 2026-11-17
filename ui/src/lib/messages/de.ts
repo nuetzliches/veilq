@@ -323,6 +323,7 @@ export const de: Record<MessageKey, string> = {
   'marks.undoOther': '{n} Markierungen zurücknehmen',
   'marks.resetTitle': 'Die Markierungen dieses Dokuments; zurückgenommen, gilt wieder nur das Regelwerk. Die Fälle bleiben.',
   'marks.kept': 'Als Fall auf diesem Rechner gespeichert, die Zeile darum verschlüsselt.',
+  'marks.twin': 'Ein Zwilling mit ausgedachten Werten macht denselben Fehler: er prüft jede spätere Regel.',
   'marks.keptNoExcerpt': 'Als Fall auf diesem Rechner gespeichert, ohne die Zeile darum (kein Schlüsselspeicher).',
   'marks.notKept': 'Die Markierung wirkt hier, wurde aber nicht als Fall gespeichert: {error}',
   'cases.title': 'Fälle',

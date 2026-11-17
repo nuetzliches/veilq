@@ -150,6 +150,8 @@ pub struct CaseAdded {
     id: String,
     /// Whether the line or cell around the mark was kept (encrypted).
     excerpt: bool,
+    /// Whether a synthetic twin reproduces the mistake and was kept.
+    twin: bool,
 }
 
 #[derive(Serialize)]
@@ -346,11 +348,63 @@ fn add_case(state: &AppState, request: CaseRequest) -> Result<CaseAdded, Failure
             .map(CaseCandidate::from)
             .collect();
     }
-    keep(
+    let mut added = keep(
         state,
         case,
         reading.map(|r| ("text/plain", r.text.as_bytes())),
-    )
+    )?;
+    if let Some((text, span)) = reading.and_then(|r| twin(&base, &request.mark, &r.text)) {
+        store(state)?
+            .set_twin(&added.id, &text, span)
+            .map_err(Failure::from)?;
+        added.twin = true;
+    }
+    Ok(added)
+}
+
+/// The synthetic twin of a miss marked on text (#34, card point 6):
+/// `excerpt` with the values replaced by stand-ins (`fake`), the marked one
+/// too, and where the marked value's stand-in is in it. `None` unless veilq,
+/// without the mark, leaves that stand-in as it left the value, and none of
+/// the original values veilq replaced or the user marked is in it.
+///
+/// A box released has no twin: it would have to keep the released value to
+/// make the same mistake, and a twin holds no original value; were the
+/// release wrong, a value would lie on the disk in the clear.
+fn twin(base: &Engine, mark: &Mark, excerpt: &str) -> Option<(String, std::ops::Range<usize>)> {
+    let Mark::Missed { value, .. } = mark else {
+        return None;
+    };
+    let value = value.trim();
+    let out = apply(base, std::slice::from_ref(mark))
+        .ok()?
+        .with_action(Some(veilq_core::Action::Fake))
+        .ok()?
+        .redact_str(excerpt, Format::Text)
+        .ok()?;
+    let originals = out
+        .input_spans
+        .iter()
+        .filter_map(|s| excerpt.get(s.clone()))
+        .map(str::trim)
+        .filter(|v| !v.is_empty());
+    if originals.chain([value]).any(|v| out.text.contains(v)) {
+        return None;
+    }
+    let at = excerpt.find(value)?;
+    let end = at + value.len();
+    let i = out
+        .input_spans
+        .iter()
+        .position(|s| s.start <= at && end <= s.end)?;
+    let span = out.output_spans.get(i)?.clone();
+    // The same mistake: veilq without the mark leaves the stand-in.
+    let check = base.redact_str(&out.text, Format::Text).ok()?;
+    let found = check
+        .input_spans
+        .iter()
+        .any(|s| s.start < span.end && span.start < s.end);
+    (!found).then_some((out.text, span))
 }
 
 /// Keeps `case` with its excerpt, encrypted to the key store's key.
@@ -371,6 +425,7 @@ fn keep(
     Ok(CaseAdded {
         excerpt: stored.excerpt.is_some(),
         id: stored.id,
+        twin: false,
     })
 }
 

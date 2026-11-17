@@ -1200,6 +1200,8 @@ mod tests {
             .await;
             assert_eq!(status, StatusCode::OK, "{body}");
             assert_eq!(body["excerpt"], true);
+            // A twin for the miss; none for the box released.
+            assert_eq!(body["twin"], mark["kind"] == "missed", "{body}");
         }
         let (_, body) = send(
             app(),
@@ -1222,6 +1224,13 @@ mod tests {
             }
         ));
         assert_eq!(cases[1].kind, veilq_core::cases::Kind::Extra);
+        // The miss's twin: the text with stand-ins, the marked one at its span.
+        let store_ = veilq_core::cases::Store::open(store.path()).unwrap();
+        let twin = store_.twin(&cases[0].id).unwrap().expect("a twin");
+        let span = cases[0].twin.as_ref().unwrap();
+        assert!(twin.starts_with("Projekt "), "{twin}");
+        assert!(!twin[span.start..span.end].is_empty());
+        assert!(store_.twin(&cases[1].id).unwrap().is_none());
         // No file of the store holds a value in the clear.
         let mut files = vec![store.path().to_owned()];
         while let Some(p) = files.pop() {
