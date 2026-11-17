@@ -381,10 +381,85 @@ pub fn redact_picture(
     apply: bool,
     out: &mut Outcome,
 ) -> Result<Vec<Rect>, Error> {
-    let mut boxes = faces(engine, img, frame, apply, out, &[])?;
+    let mut boxes = marked(engine, img, frame, apply, out);
+    boxes.extend(faces(engine, img, frame, apply, out, &[])?);
     boxes.extend(signatures(engine, img, frame, apply, out, &[])?);
     boxes.extend(read_whole(engine, ocr, img, frame, apply, out)?);
     Ok(boxes)
+}
+
+fn rect(a: &crate::Area) -> Rect {
+    Rect {
+        x: a.x,
+        y: a.y,
+        w: a.width,
+        h: a.height,
+    }
+}
+
+/// The areas of `frame` a user marked as personal data (#34): reported as
+/// their type (detector `mark`) and filled (with `apply`) before anything
+/// reads the picture, clipped to it. The boxes filled are returned.
+fn marked(
+    engine: &Engine,
+    img: &mut RgbaImage,
+    frame: Option<u64>,
+    apply: bool,
+    out: &mut Outcome,
+) -> Vec<Rect> {
+    let (w, h) = img.dimensions();
+    let mut filled = Vec::new();
+    for (area, entity) in engine
+        .picture_marks()
+        .missed
+        .iter()
+        .filter(|(a, _)| a.frame == frame)
+    {
+        let r = Rect {
+            x: area.x.min(w),
+            y: area.y.min(h),
+            w: area.width.min(w.saturating_sub(area.x)),
+            h: area.height.min(h.saturating_sub(area.y)),
+        };
+        if r.w == 0 || r.h == 0 {
+            continue;
+        }
+        out.findings.push(Finding {
+            entity: entity.clone(),
+            location: Location::Region {
+                part: None,
+                frame,
+                x: r.x,
+                y: r.y,
+                width: r.w,
+                height: r.h,
+            },
+            confidence: 1.0,
+            detector: MARK_DETECTOR.into(),
+            pseudonym: None,
+        });
+        if apply {
+            fill(img, &r);
+        }
+        filled.push(r);
+    }
+    filled
+}
+
+/// The detector of an area a user marked (#34).
+pub const MARK_DETECTOR: &str = "mark";
+
+/// Whether `r` (in the picture's pixels, at `frame`) lies in an area a user
+/// released (#34): what a detector finds there is left.
+fn released(engine: &Engine, frame: Option<u64>, r: &Rect) -> bool {
+    let areas: Vec<Rect> = engine
+        .picture_marks()
+        .released
+        .iter()
+        .filter(|a| a.frame == frame)
+        .map(rect)
+        .collect();
+    !areas.is_empty() && covered(r, areas.iter())
 }
 
 /// The text of a whole picture, redacted: [`settle`] without a band.
@@ -488,7 +563,7 @@ fn regions(
     let threshold = engine.threshold(&entity);
     let mut filled = Vec::new();
     for (rect, confidence) in found {
-        if confidence < threshold || covered(&rect, kept.iter()) {
+        if confidence < threshold || covered(&rect, kept.iter()) || released(engine, frame, &rect) {
             continue;
         }
         out.findings.push(Finding {
@@ -744,6 +819,20 @@ fn settle(
             if rects.is_empty() || rects.iter().all(|r| covered(r, filled.iter().chain(&new))) {
                 continue;
             }
+            // In an area the user released (#34), in every round: a check
+            // must not find it again.
+            if rects.iter().all(|r| {
+                released(
+                    engine,
+                    frame,
+                    &Rect {
+                        y: r.y + band.top,
+                        ..*r
+                    },
+                )
+            }) {
+                continue;
+            }
             let bound = rects.iter().skip(1).fold(rects[0], |a, r| a.union(r));
             if matches!(
                 engine.action_for(&c),
@@ -829,6 +918,10 @@ fn unread(
             y: l.rect.y + band.top,
             ..l.rect
         };
+        // A line in an area the user released (#34) is read as it is.
+        if released(engine, frame, &r) {
+            continue;
+        }
         match low {
             LowConfidence::Review => out.weak_lines.push(at(&r, frame)),
             LowConfidence::Error => return Err(Error::Unread { at: at(&r, frame) }),
@@ -852,6 +945,25 @@ fn unread(
         }
     }
     Ok(boxes)
+}
+
+/// The part of a picture (`bytes`, any format veilq reads, or a PDF page
+/// rendered as PNG) around `area`, `margin` pixels on each side within the
+/// picture, as PNG: the excerpt of a case (#34).
+pub fn crop(bytes: &[u8], area: &crate::Area, margin: u32) -> Result<Vec<u8>, Error> {
+    let img = image::load_from_memory_with_format(bytes, format_of(bytes)?)
+        .map_err(error)?
+        .to_rgba8();
+    let (w, h) = img.dimensions();
+    let x = area.x.saturating_sub(margin).min(w);
+    let y = area.y.saturating_sub(margin).min(h);
+    let right = (area.x + area.width + margin).min(w);
+    let bottom = (area.y + area.height + margin).min(h);
+    if right <= x || bottom <= y {
+        return Err(error("the area lies outside the picture"));
+    }
+    let part = image::imageops::crop_imm(&img, x, y, right - x, bottom - y).to_image();
+    encode(&part, ImageFormat::Png)
 }
 
 /// The format of an image file, from its bytes.
@@ -1153,6 +1265,113 @@ mod tests {
             chars,
             score: 1.0,
         }
+    }
+
+    fn area(frame: Option<u64>, x: u32, y: u32, width: u32, height: u32) -> crate::Area {
+        crate::Area {
+            frame,
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    #[test]
+    fn a_marked_area_is_filled_and_reported_on_its_page_only() {
+        let engine = Engine::new(&crate::Policy::default(), None, b"test", None)
+            .unwrap()
+            .with_picture_marks(
+                vec![
+                    (
+                        area(Some(2), 10, 10, 20, 10),
+                        EntityType::new("PERSON").unwrap(),
+                    ),
+                    // Beyond the picture's edge: clipped to it.
+                    (
+                        area(Some(2), 90, 90, 50, 50),
+                        EntityType::new("ADDRESS").unwrap(),
+                    ),
+                ],
+                Vec::new(),
+            );
+        let white = RgbaImage::from_pixel(100, 100, Rgba([255, 255, 255, 255]));
+        let mut out = outcome();
+        let mut img = white.clone();
+        assert!(
+            marked(&engine, &mut img, Some(1), true, &mut out).is_empty(),
+            "another page"
+        );
+        assert_eq!(img, white);
+        let filled = marked(&engine, &mut img, Some(2), true, &mut out);
+        assert_eq!(filled.len(), 2);
+        assert_eq!(filled[1].w, 10, "clipped at the edge");
+        assert_eq!(img.get_pixel(15, 15), &Rgba([0, 0, 0, 255]));
+        assert_eq!(img.get_pixel(5, 5), &Rgba([255, 255, 255, 255]));
+        assert_eq!(out.findings[0].detector, MARK_DETECTOR);
+        assert_eq!(out.findings[0].confidence, 1.0);
+        // Not filled for a scan, still reported.
+        let mut scan = outcome();
+        let mut img = white.clone();
+        marked(&engine, &mut img, Some(2), false, &mut scan);
+        assert_eq!(img, white);
+        assert_eq!(scan.findings.len(), 2);
+    }
+
+    #[test]
+    fn what_lies_in_a_released_area_is_left() {
+        let engine = Engine::new(&crate::Policy::default(), None, b"test", None)
+            .unwrap()
+            .with_picture_marks(Vec::new(), vec![area(None, 0, 0, 50, 50)]);
+        let inside = Rect {
+            x: 10,
+            y: 10,
+            w: 20,
+            h: 10,
+        };
+        let across = Rect {
+            x: 40,
+            y: 40,
+            w: 30,
+            h: 10,
+        };
+        assert!(released(&engine, None, &inside));
+        assert!(!released(&engine, None, &across), "most of it outside");
+        assert!(!released(&engine, Some(1), &inside), "another page");
+        // A face found there is not reported or filled.
+        let region = Region {
+            entity: "FACE",
+            detector: "face",
+            reason: FACES_FOUND,
+        };
+        let mut img = RgbaImage::from_pixel(100, 100, Rgba([255, 255, 255, 255]));
+        let mut out = outcome();
+        let filled = regions(
+            &engine,
+            &region,
+            vec![(inside, 0.99), (across, 0.99)],
+            &mut img,
+            None,
+            true,
+            &mut out,
+            &[],
+        );
+        assert_eq!(filled, vec![across]);
+        assert_eq!(out.findings.len(), 1);
+    }
+
+    #[test]
+    fn a_case_excerpt_is_the_picture_around_the_area() {
+        let img = RgbaImage::from_pixel(100, 80, Rgba([255, 255, 255, 255]));
+        let png = encode(&img, ImageFormat::Png).unwrap();
+        let part = crop(&png, &area(None, 10, 10, 20, 10), 5).unwrap();
+        let part = image::load_from_memory(&part).unwrap();
+        assert_eq!((part.width(), part.height()), (30, 20));
+        // At the edge, the margin ends with the picture.
+        let edge =
+            image::load_from_memory(&crop(&png, &area(None, 95, 75, 20, 20), 5).unwrap()).unwrap();
+        assert_eq!((edge.width(), edge.height()), (10, 10));
+        assert!(crop(&png, &area(None, 200, 200, 5, 5), 0).is_err());
     }
 
     #[test]

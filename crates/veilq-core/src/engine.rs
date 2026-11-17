@@ -267,6 +267,27 @@ pub struct Explained {
     pub lifted: bool,
 }
 
+/// An area of a picture in its pixels: of a still image (`frame` `None`) or
+/// of a PDF's page `frame` (from 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Area {
+    #[serde(default)]
+    pub frame: Option<u64>,
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// The areas a user marked on a picture for one run (#34).
+#[derive(Debug, Clone, Default)]
+pub struct PictureMarks {
+    /// Personal data left: filled and reported as the type.
+    pub missed: Vec<(Area, EntityType)>,
+    /// No personal data: what is found inside is left.
+    pub released: Vec<Area>,
+}
+
 /// The highest threshold a run may set (ADR-0046): a finding at 1.0 (a
 /// valid checksum, a policy's list) never drops out.
 pub const MAX_RUN_CONFIDENCE: f32 = 0.95;
@@ -291,6 +312,8 @@ pub struct Engine {
     /// The names of the file being read (ADR-0047), shared by the clones
     /// that read its parts; `None` outside a run.
     names: Option<std::sync::Arc<crate::names::Names>>,
+    /// The areas a user marked on a picture's pages for this run (#34).
+    picture_marks: std::sync::Arc<PictureMarks>,
     /// How many candidates the learned decider lifted in this run (#35),
     /// shared by the clones that read its parts; `None` outside a run.
     lifted: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
@@ -336,6 +359,7 @@ impl Engine {
             no_watermark: false,
             explain: None,
             names: None,
+            picture_marks: std::sync::Arc::default(),
             lifted: None,
             #[cfg(feature = "ocr")]
             ocr: None,
@@ -984,6 +1008,27 @@ impl Engine {
     /// This engine writing pictures without the `veilq <version>` mark
     /// (`--no-watermark`, ADR-0050) when `off`; with `false` as it was. A
     /// policy that switched the mark off is not overridden.
+    /// This engine with the areas a user marked on a picture (#34), for this
+    /// run: each `missed` area is filled and reported as its type before
+    /// the picture is read; what a detector finds inside a `released` area
+    /// is left, in every round of the check. A still image's area has no
+    /// frame, a PDF page's names its page.
+    pub fn with_picture_marks(&self, missed: Vec<(Area, EntityType)>, released: Vec<Area>) -> Self {
+        let mut engine = self.clone();
+        engine.picture_marks = std::sync::Arc::new(PictureMarks { missed, released });
+        engine
+    }
+
+    #[cfg_attr(not(feature = "ocr"), allow(dead_code))]
+    pub(crate) fn picture_marks(&self) -> &PictureMarks {
+        &self.picture_marks
+    }
+
+    /// Whether this run has areas marked on a picture (#34).
+    pub fn has_picture_marks(&self) -> bool {
+        !self.picture_marks.missed.is_empty() || !self.picture_marks.released.is_empty()
+    }
+
     pub fn without_watermark(&self, off: bool) -> Self {
         let mut engine = self.clone();
         engine.no_watermark |= off;

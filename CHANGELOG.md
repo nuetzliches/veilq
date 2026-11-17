@@ -47,6 +47,14 @@ Notable changes per release. The format follows
   OS key store (Credential Manager, Keychain, Secret Service), without that
   line where there is none. Settings → Detection shows the cases and
   deletes them all. Text, CSV and JSON for now; pictures follow.
+- **Marks on images and PDF pages** (#34): "Mark an area" in the output
+  draws a frame around personal data veilq left; it is filled black and
+  reported as its type (detector `mark`) before anything reads the
+  picture. A box on a picture is released from the findings panel: what
+  OCR, the face or the signature detector finds inside is left, in every
+  round of the check. A case keeps the picture around the area, encrypted.
+  Not on a GIF's frames yet: an area marked there is an error, not a mark
+  left out.
 
 ### Fixed
 

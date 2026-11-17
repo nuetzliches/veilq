@@ -16,7 +16,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use veilq_core::cases::{Case, CaseCandidate, Kind, Store};
-use veilq_core::{Engine, EntityType, Format};
+use veilq_core::{Area, Engine, EntityType, Format, Location};
 
 use super::{AppState, Failure, Source, api_error, source_bytes};
 
@@ -76,12 +76,30 @@ pub enum Mark {
     },
     /// A box released: `value` is no personal data.
     Extra { value: String, entity: EntityType },
+    /// Personal data veilq left in an area of a picture or a PDF page.
+    MissedArea {
+        area: Area,
+        entity: EntityType,
+        #[serde(default)]
+        label: Option<String>,
+    },
+    /// A box on a picture released: nothing in `area` is personal data.
+    ExtraArea { area: Area, entity: EntityType },
 }
 
 impl Mark {
-    fn value(&self) -> &str {
+    /// The value of a mark on text; `None` for an area.
+    fn value(&self) -> Option<&str> {
         match self {
-            Mark::Missed { value, .. } | Mark::Extra { value, .. } => value,
+            Mark::Missed { value, .. } | Mark::Extra { value, .. } => Some(value.trim()),
+            Mark::MissedArea { .. } | Mark::ExtraArea { .. } => None,
+        }
+    }
+
+    fn area(&self) -> Option<&Area> {
+        match self {
+            Mark::MissedArea { area, .. } | Mark::ExtraArea { area, .. } => Some(area),
+            Mark::Missed { .. } | Mark::Extra { .. } => None,
         }
     }
 }
@@ -90,20 +108,31 @@ impl Mark {
 pub fn apply(engine: &Engine, marks: &[Mark]) -> Result<Engine, Failure> {
     let mut missed = Vec::new();
     let mut released = Vec::new();
+    let mut missed_areas = Vec::new();
+    let mut released_areas = Vec::new();
     for mark in marks {
-        let value = mark.value().trim();
-        if value.is_empty() {
-            return Err(Failure(
-                StatusCode::BAD_REQUEST,
-                "a mark without a value".into(),
-            ));
+        if mark.value().is_some_and(str::is_empty)
+            || mark.area().is_some_and(|a| a.width == 0 || a.height == 0)
+        {
+            return Err(Failure(StatusCode::BAD_REQUEST, "an empty mark".into()));
         }
         match mark {
-            Mark::Missed { entity, .. } => missed.push((entity.clone(), value.to_owned())),
-            Mark::Extra { .. } => released.push(value.to_owned()),
+            Mark::Missed { entity, value, .. } => {
+                missed.push((entity.clone(), value.trim().to_owned()))
+            }
+            Mark::Extra { value, .. } => released.push(value.trim().to_owned()),
+            Mark::MissedArea { area, entity, .. } => missed_areas.push((*area, entity.clone())),
+            Mark::ExtraArea { area, .. } => released_areas.push(*area),
         }
     }
-    engine.with_marks(&missed, &released).map_err(Failure::from)
+    let engine = engine
+        .with_marks(&missed, &released)
+        .map_err(Failure::from)?;
+    Ok(if missed_areas.is_empty() && released_areas.is_empty() {
+        engine
+    } else {
+        engine.with_picture_marks(missed_areas, released_areas)
+    })
 }
 
 #[derive(Deserialize)]
@@ -155,20 +184,103 @@ fn unprocessable(message: impl Into<String>) -> Failure {
     Failure(StatusCode::UNPROCESSABLE_ENTITY, message.into())
 }
 
+/// Whether areas can be marked on `format`: a still image, a PDF's pages.
+pub fn takes_areas(format: Format) -> bool {
+    format.is_picture() && format != Format::Gif
+}
+
+/// The case of an area marked on a picture or a PDF page: where it is, and
+/// the picture around it as the excerpt.
+fn area_case(
+    state: &AppState,
+    request: &CaseRequest,
+    format: Format,
+    bytes: &[u8],
+) -> Result<(Case, Vec<u8>), Failure> {
+    let (kind, area, entity, label) = match &request.mark {
+        Mark::MissedArea {
+            area,
+            entity,
+            label,
+        } => (Kind::Missed, area, entity, label.clone()),
+        Mark::ExtraArea { area, entity } => (Kind::Extra, area, entity, None),
+        _ => unreachable!("an area mark"),
+    };
+    if !takes_areas(format) {
+        return Err(unprocessable(format!(
+            "areas are marked on images and PDF pages, not on {}",
+            format.name()
+        )));
+    }
+    let picture = if format == Format::Pdf {
+        let page = area
+            .frame
+            .filter(|p| *p >= 1)
+            .ok_or_else(|| unprocessable("an area on a PDF names its page"))?;
+        let (pages, _) = state
+            .ready_engine()?
+            .pdf_pages(bytes, page as usize)
+            .map_err(Failure::from)?;
+        pages
+            .into_iter()
+            .nth(page as usize - 1)
+            .ok_or_else(|| unprocessable(format!("the PDF has no page {page}")))?
+    } else {
+        bytes.to_vec()
+    };
+    let excerpt = crop(&picture, area)?;
+    let location = Location::Region {
+        part: None,
+        frame: area.frame,
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: area.height,
+    };
+    let mut case = Case::new(
+        kind,
+        entity.clone(),
+        format.name(),
+        location,
+        &state.policy().0,
+    );
+    case.label = label;
+    Ok((case, excerpt))
+}
+
+/// The picture around `area`, as PNG.
+#[cfg(feature = "ocr")]
+fn crop(picture: &[u8], area: &Area) -> Result<Vec<u8>, Failure> {
+    veilq_core::visual::crop(picture, area, AREA_MARGIN).map_err(|e| unprocessable(e.to_string()))
+}
+
+#[cfg(not(feature = "ocr"))]
+fn crop(_: &[u8], _: &Area) -> Result<Vec<u8>, Failure> {
+    Err(unprocessable("this build reads no pictures"))
+}
+
+/// Pixels of the picture kept around a marked area in its excerpt.
+#[cfg_attr(not(feature = "ocr"), allow(dead_code))]
+const AREA_MARGIN: u32 = 24;
+
 fn add_case(state: &AppState, request: CaseRequest) -> Result<CaseAdded, Failure> {
-    let (name, bytes) = source_bytes(state, request.source)?;
+    let (name, bytes) = source_bytes(state, request.source.clone())?;
     let format = match &name {
         Some(n) => Format::from_path(std::path::Path::new(n)).map_err(Failure::from)?,
         None => Format::Text,
     };
+    if request.mark.area().is_some() {
+        let (case, excerpt) = area_case(state, &request, format, &bytes)?;
+        return keep(state, case, Some(("image/png", &excerpt)));
+    }
     if format.is_container() {
         return Err(unprocessable(format!(
-            "marks on {} come later; text, CSV and JSON can be marked",
+            "marks on the text of {} come later; text, CSV and JSON can be marked, and areas on images and PDF pages",
             format.name()
         )));
     }
     let input = String::from_utf8(bytes).map_err(|_| unprocessable("not UTF-8 text"))?;
-    let value = request.mark.value().trim().to_owned();
+    let value = request.mark.value().unwrap_or_default().to_owned();
     let base = state
         .ready_engine()?
         .with_min_confidence(request.min_confidence)
@@ -215,6 +327,7 @@ fn add_case(state: &AppState, request: CaseRequest) -> Result<CaseAdded, Failure
                 .ok_or_else(|| unprocessable("no box holds the released text"))?;
             (Kind::Extra, entity.clone(), None, location)
         }
+        Mark::MissedArea { .. } | Mark::ExtraArea { .. } => unreachable!("handled above"),
     };
     // The excerpt: the line or cell veilq read it in, and what it proposed
     // there.
@@ -233,11 +346,24 @@ fn add_case(state: &AppState, request: CaseRequest) -> Result<CaseAdded, Failure
             .map(CaseCandidate::from)
             .collect();
     }
+    keep(
+        state,
+        case,
+        reading.map(|r| ("text/plain", r.text.as_bytes())),
+    )
+}
+
+/// Keeps `case` with its excerpt, encrypted to the key store's key.
+fn keep(
+    state: &AppState,
+    case: Case,
+    excerpt: Option<(&str, &[u8])>,
+) -> Result<CaseAdded, Failure> {
     let key = (state.cases.key)();
     let stored = store(state)?
         .add(
             case,
-            reading.map(|r| ("text/plain", r.text.as_bytes())),
+            excerpt,
             key.as_ref().map(|k| k.to_public()).as_ref(),
             veilq_core::cases::now(),
         )
