@@ -476,6 +476,49 @@ pub(super) fn dunning_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
     (png(&c.img), c.truth)
 }
 
+/// An inbox of acknowledgements (ADR-0052): subjects with `Ihre Nachricht`
+/// and `Ihr Anliegen`, which NER takes for names, and a row with a real
+/// name beside them.
+pub(super) fn inbox_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
+    const ROW: f32 = 28.0;
+    let rows = 6;
+    let mut c = Canvas::new(900, 48 + rows * ROW as u32, [255, 255, 255]);
+    for (title, x) in [
+        ("Erstellt", 10.0),
+        ("Beschreibung", 150.0),
+        ("Schlagworte", 600.0),
+        ("E", 800.0),
+    ] {
+        c.lit(x, 12.0, 12.0, title, INK);
+    }
+    c.rect(0, 34, 900, 1, [210, 213, 220]);
+    let named = r.below(rows.into()) as u32;
+    for i in 0..rows {
+        let y = 44.0 + i as f32 * ROW;
+        let date = format!(
+            "{:02}.11.2026 {:02}:{:02}",
+            10 + r.below(8),
+            8 + r.below(10),
+            r.below(60)
+        );
+        c.lit(10.0, y, 12.0, &date, INK);
+        if i == named {
+            let end = c.lit(150.0, y, 12.0, "Schreiben zu Händen ", INK);
+            c.pii("PERSON", end, y, 12.0, &Person::de(r).name(), INK);
+        } else {
+            let subject = match r.below(3) {
+                0 => format!("Wir haben Ihre Nachricht vom {date} erhalten"),
+                1 => "Ihre Nachricht hat uns erreicht".to_owned(),
+                _ => format!("Ihr Anliegen SCM{}", r.digits(7)),
+            };
+            c.lit(150.0, y, 12.0, &subject, INK);
+        }
+        c.lit(600.0, y, 12.0, "GL Eingangsbestätigung", INK);
+        c.lit(800.0, y, 12.0, r.pick(&["*MS", "*FW"]), INK);
+    }
+    (png(&c.img), c.truth)
+}
+
 /// `jpeg` with an EXIF segment: a camera's make and model.
 fn with_exif(jpeg: &[u8]) -> Vec<u8> {
     // TIFF, little endian, one IFD with Make (0x010f) as an ASCII string.

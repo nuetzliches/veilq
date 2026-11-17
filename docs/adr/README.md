@@ -91,3 +91,4 @@ keep it to about a page.
 | [0049](0049-small-text-in-a-picture-is-read-larger.md) | Small text in a picture is read larger | Accepted |
 | [0050](0050-a-redacted-picture-names-veilq-and-its-version.md) | A redacted picture names veilq and its version | Accepted |
 | [0051](0051-file-numbers-by-their-label-cut-names-and-boxes-that-grow.md) | File numbers by their label, names cut short, boxes that grow | Accepted |
+| [0052](0052-a-possessive-and-a-noun-are-no-name.md) | A possessive and a noun are no name | Accepted |

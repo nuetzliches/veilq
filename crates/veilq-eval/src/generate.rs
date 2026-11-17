@@ -1053,6 +1053,15 @@ pub fn corpus(seed: u64) -> Vec<Doc> {
         content,
         truth,
     });
+    // An inbox whose subjects NER takes for names (ADR-0052), from a stream
+    // of its own.
+    let mut r = Rng::new(seed ^ 0x1B0C_7000_0000_0000);
+    let (content, truth) = visual::inbox_png(&mut r);
+    docs.push(Doc {
+        path: "de/png/inbox-1.png".to_owned(),
+        content,
+        truth,
+    });
     // Hard negatives for a learned decider (#95), from a stream of their
     // own: minutes whose numbers and dates look like personal data beside
     // the real thing.
