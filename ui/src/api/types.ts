@@ -280,6 +280,22 @@ export interface RedactOptions {
    * to `Info.max_min_confidence`; above the policy's, the report asks for a review.
    */
   minConfidence?: number;
+  /** The marks the user made on this document (#34): for this run only. */
+  marks?: Mark[];
+}
+
+/**
+ * A mark on one document (#34): `missed` is personal data veilq left (the
+ * value as it stands in the text), `extra` a box released (no personal data).
+ */
+export type Mark =
+  | { kind: 'missed'; value: string; entity: string; label?: string }
+  | { kind: 'extra'; value: string; entity: string };
+
+/** The case store: how many cases, and whether an excerpt can be kept. */
+export interface CaseCount {
+  count: number;
+  key_store: boolean;
 }
 
 export interface Api {
@@ -289,6 +305,11 @@ export interface Api {
   /** An image under the root as it is, shown while it is redacted. */
   picture(path: string): Promise<Picture>;
   redact(source: Source, options?: RedactOptions): Promise<Redaction>;
+  /** Keeps a mark as a case; `excerpt`: the line around it was kept, encrypted. */
+  addCase(source: Source, mark: Mark, minConfidence?: number): Promise<{ id: string; excerpt: boolean }>;
+  cases(): Promise<CaseCount>;
+  /** "Delete all cases". */
+  deleteCases(): Promise<{ deleted: number }>;
   setup(): Promise<SetupStatus>;
   install(request: SetupRequest): Promise<SetupStatus>;
   /** Removes setup's work; veilq ends, and its folder goes after it. */

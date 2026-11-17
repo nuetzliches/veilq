@@ -270,6 +270,19 @@ impl Detector {
 
     /// Lets the learned decider lift candidates below their threshold
     /// (#35); `None` leaves every decision to the policy.
+    /// This detector's rules over `policy`, with what was set on `self`
+    /// (the NER model, a run's threshold, the decider) kept.
+    pub fn with_policy(&self, policy: &Policy) -> Result<Self, Error> {
+        let mut out = Self::new(policy)?;
+        #[cfg(feature = "ner")]
+        {
+            out.ner = self.ner.clone();
+        }
+        out.min_confidence = self.min_confidence;
+        out.decider = self.decider.clone();
+        Ok(out)
+    }
+
     pub fn set_decider(&mut self, decider: Option<std::sync::Arc<crate::decider::Decider>>) {
         self.decider = decider;
     }
