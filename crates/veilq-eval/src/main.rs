@@ -5,13 +5,15 @@
 //! - `check <dir>` measures veilq against it, and against corpora of
 //!   held-out seeds generated on the fly; exit 1 when the gate
 //!   (`eval/gate.toml`) fails.
+//! - `candidates <dir> --out <file>` writes every candidate with its label,
+//!   one JSON line each, for measuring a decider's models (#95).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
-use veilq_eval::{check, generate};
+use veilq_eval::{candidates, check, generate};
 
 #[derive(Parser)]
 #[command(name = "veilq-eval")]
@@ -72,6 +74,21 @@ enum Command {
         #[arg(long, default_value_t = 1)]
         jobs: usize,
     },
+    /// Write every candidate the detectors proposed, kept or not, with its
+    /// label from the truth: one JSON line each (text, CSV, JSON, NDJSON).
+    Candidates {
+        /// The corpus: `eval/`, or one written by `generate`.
+        dir: PathBuf,
+        /// Only documents under this path in the corpus (`de/csv`).
+        #[arg(long)]
+        only: Option<String>,
+        /// Run the installed NER model too (`veilq models fetch ner`).
+        #[arg(long)]
+        ner: bool,
+        /// The JSONL file to write.
+        #[arg(long)]
+        out: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -95,6 +112,25 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         Command::Recording { seed, out } => {
             generate::write_recording(&out, seed)?;
             println!("a recording written to {}", out.display());
+            Ok(true)
+        }
+        Command::Candidates {
+            dir,
+            only,
+            ner,
+            out,
+        } => {
+            let mut file = std::io::BufWriter::new(std::fs::File::create(&out)?);
+            let w = candidates::write(&dir, only.as_deref(), ner, &mut file)?;
+            std::io::Write::flush(&mut file)?;
+            println!(
+                "{} candidates ({} personal) from {} documents written to {}; {} skipped (pictures, containers, unreadable truth)",
+                w.candidates,
+                w.personal,
+                w.documents,
+                out.display(),
+                w.skipped
+            );
             Ok(true)
         }
         Command::Check {
