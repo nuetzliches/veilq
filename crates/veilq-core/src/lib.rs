@@ -37,6 +37,8 @@ pub mod runtime;
 pub mod signature;
 #[cfg(feature = "ocr")]
 pub mod visual;
+#[cfg(feature = "ocr")]
+pub mod watermark;
 pub mod xml;
 
 pub use action::Action;

@@ -1025,7 +1025,15 @@ fn gif(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Outcome,
             }
         };
         if let Some(e) = encoder.as_mut() {
-            e.encode_frame(Frame::from_parts(img.clone(), 0, 0, delay))
+            // The mark goes onto the written frame only: the next frame is
+            // compared with this one as redacted, unmarked.
+            let mut written = img.clone();
+            if engine.watermarks() {
+                let (w, h) = written.dimensions();
+                let scale = crate::watermark::scale_for(w, h);
+                crate::watermark::stamp(&mut written, scale, scale * 2);
+            }
+            e.encode_frame(Frame::from_parts(written, 0, 0, delay))
                 .map_err(error)?;
         }
         prev = Some((original, img));
@@ -1073,6 +1081,11 @@ pub fn image(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Ou
     }
     redact_picture(engine, ocr, &mut rgba, None, apply, &mut out)?;
     if apply {
+        // After the verify rounds: OCR never reads the mark (ADR-0050).
+        if engine.watermarks() {
+            let scale = crate::watermark::scale_for(rgba.width(), rgba.height());
+            crate::watermark::stamp(&mut rgba, scale, scale * 2);
+        }
         out.output = encode(&rgba, format)?;
     }
     weak_reason(&mut out);

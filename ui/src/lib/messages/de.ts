@@ -226,6 +226,7 @@ export const de: Record<MessageKey, string> = {
   'folder.suffix': 'geschwärzt',
   'folder.more': 'Weitere Optionen',
   'folder.unverified': 'Bilder, die nicht zur Ruhe kommen, trotzdem schreiben, zur Prüfung markiert',
+  'folder.noWatermark': 'Bilder und PDF-Seiten ohne den Vermerk „veilq <Version>“ schreiben',
   'folder.start': 'Ordner schwärzen',
   'folder.needSource': 'Zuerst bei „Von“ wählen, welcher Ordner geschwärzt wird.',
   'folder.needTarget': 'Bei „Nach“ angeben, wohin die geschwärzten Dateien kommen.',

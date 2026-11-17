@@ -17,6 +17,7 @@ const root = ref(props.info.root);
 const source = ref('');
 const target = ref('');
 const unverified = ref(false);
+const noWatermark = ref(false);
 const picking = ref<'source' | 'target' | null>(null);
 const batch = ref<Batch | null>(null);
 const error = ref<string | null>(null);
@@ -65,6 +66,7 @@ async function start() {
       target: target.value,
       action: props.action || undefined,
       unverified: unverified.value || undefined,
+      no_watermark: noWatermark.value || undefined,
     });
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e);
@@ -97,6 +99,7 @@ onBeforeUnmount(() => clearInterval(poll));
       <details class="more">
         <summary>{{ t('folder.more') }}</summary>
         <label class="check"><input v-model="unverified" type="checkbox" /> {{ t('folder.unverified') }}</label>
+        <label class="check"><input v-model="noWatermark" type="checkbox" /> {{ t('folder.noWatermark') }}</label>
       </details>
       <div class="row">
         <button class="primary" :disabled="!source || !target || batch?.running" @click="start">

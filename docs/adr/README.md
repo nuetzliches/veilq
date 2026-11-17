@@ -89,3 +89,4 @@ keep it to about a page.
 | [0047](0047-a-name-found-once-is-found-wherever-the-file-names-it.md) | A name found once is found wherever the file names it | Accepted |
 | [0048](0048-handwritten-signatures-in-pictures-are-found-and-filled-black.md) | Handwritten signatures in pictures are found and filled black | Accepted |
 | [0049](0049-small-text-in-a-picture-is-read-larger.md) | Small text in a picture is read larger | Accepted |
+| [0050](0050-a-redacted-picture-names-veilq-and-its-version.md) | A redacted picture names veilq and its version | Accepted |

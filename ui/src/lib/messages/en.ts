@@ -222,6 +222,7 @@ export const en = {
   'folder.suffix': 'redacted',
   'folder.more': 'More options',
   'folder.unverified': 'Write pictures that do not settle anyway, marked for a review',
+  'folder.noWatermark': 'Write pictures and PDF pages without the “veilq <version>” mark',
   'folder.start': 'Redact folder',
   'folder.needSource': 'First choose under "From" which folder is redacted.',
   'folder.needTarget': 'Say under "To" where the redacted files go.',

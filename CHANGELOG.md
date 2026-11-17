@@ -8,6 +8,12 @@ Notable changes per release. The format follows
 
 ### Added
 
+- Every picture veilq writes (an image, each GIF frame, each PDF page)
+  carries a small `veilq <version>` mark at its bottom right (ADR-0050),
+  drawn after redaction and verification, so it never hides or causes a
+  finding. Images inside Office files and mails stay unmarked. Switch it off
+  with `[picture] watermark = false` in the policy, `veilq redact
+  --no-watermark` or the folder run's checkbox in the UI.
 - `veilq-eval candidates <corpus> --out <file>` writes every candidate the
   detectors proposed, kept or not, as one JSON line with its context and a
   label from the corpus truth (text, CSV, JSON, NDJSON), for measuring the

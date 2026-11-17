@@ -135,6 +135,8 @@ impl Segment {
 
 /// Redacts (or with `apply == false` scans) an Office file.
 pub fn process(engine: &Engine, input: &[u8], apply: bool) -> Result<Outcome, Error> {
+    // Pictures inside a container stay unmarked (ADR-0050).
+    let engine = &engine.without_watermark(true);
     let mut archive = ZipArchive::new(Cursor::new(input))
         .map_err(|e| error(format!("not an Office file: {e}")))?;
     let mut entries: Vec<(String, Vec<u8>, CompressionMethod)> = Vec::new();

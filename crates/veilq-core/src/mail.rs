@@ -37,6 +37,8 @@ const STRUCTURAL: &[&str] = &[
 ];
 
 pub fn process(engine: &Engine, input: &[u8], apply: bool) -> Result<Outcome, Error> {
+    // Pictures inside a container stay unmarked (ADR-0050).
+    let engine = &engine.without_watermark(true);
     let mut out = Outcome {
         output: Vec::new(),
         findings: Vec::new(),

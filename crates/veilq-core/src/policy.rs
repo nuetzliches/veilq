@@ -111,7 +111,7 @@ pub struct Office {
 
 /// How pictures are read: images, GIF frames, PDF pages, and images inside
 /// Office files and mails.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Picture {
     /// Faces (ADR-0038): `redact` (the default) fills every face the face
@@ -135,6 +135,23 @@ pub struct Picture {
     /// first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub low_confidence: Option<LowConfidence>,
+    /// `true` (the default): a picture veilq writes (an image, each GIF
+    /// frame, each PDF page) carries `veilq <version>` at its bottom right
+    /// (ADR-0050), drawn after redaction. Images inside Office files and
+    /// mails stay unmarked. `false` writes no mark.
+    #[serde(default = "default_true")]
+    pub watermark: bool,
+}
+
+impl Default for Picture {
+    fn default() -> Self {
+        Self {
+            faces: FacePolicy::default(),
+            signatures: SignaturePolicy::default(),
+            low_confidence: None,
+            watermark: true,
+        }
+    }
 }
 
 /// What veilq does with the names it finds in a file (ADR-0047).

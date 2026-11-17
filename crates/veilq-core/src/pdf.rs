@@ -23,6 +23,10 @@ use crate::ocr::Ocr;
 use crate::office::Outcome;
 
 const DPI: f32 = 200.0;
+/// The mark on a page (ADR-0050): glyphs 14 px high at 200 dpi (about
+/// 1.8 mm), a quarter inch from the page's bottom and right edges.
+const MARK_SCALE: u32 = 2;
+const MARK_MARGIN: u32 = 50;
 
 /// Said in every report of a PDF.
 pub const IMAGE_ONLY: &str = "the PDF was rewritten as images of its pages: its text layer, links, \
@@ -104,6 +108,10 @@ pub fn redact(
         let mut img = render(&page, &config, i + 1)?;
         crate::visual::redact_picture(engine, ocr, &mut img, Some(i as u64 + 1), apply, &mut out)?;
         if let Some(doc) = &mut output {
+            // In the page's footer, after its verify rounds (ADR-0050).
+            if engine.watermarks() {
+                crate::watermark::stamp(&mut img, MARK_SCALE, MARK_MARGIN);
+            }
             let jpeg = crate::visual::encode(&img, image::ImageFormat::Jpeg)?;
             let (pw, ph) = (page.width(), page.height());
             let mut object =

@@ -152,6 +152,12 @@ says `review_required` and where. `[picture] low_confidence = "box"` fills
 such a line black instead (as `UNREAD_TEXT`; the purpose `legal` does so),
 `"error"` stops the run.
 
+Every picture veilq writes (an image, each GIF frame, each PDF page) carries
+a small `veilq <version>` mark at its bottom right, drawn after redaction.
+`[picture] watermark = false` in the policy, or `veilq redact
+--no-watermark` for one run, leaves it out. Images inside Office files and
+mails are never marked.
+
 ## Use
 
 - **`veilq scan <path>`** lists findings (type, place, detector,

@@ -304,7 +304,13 @@ export interface Api {
   folders(path: string): Promise<Folders>;
   setRoot(path: string): Promise<{ root: string }>;
   batch(): Promise<Batch | null>;
-  startBatch(request: { source: string; target: string; action?: string; unverified?: boolean }): Promise<Batch>;
+  startBatch(request: {
+    source: string;
+    target: string;
+    action?: string;
+    unverified?: boolean;
+    no_watermark?: boolean;
+  }): Promise<Batch>;
   cancelBatch(): Promise<void>;
   /** Asks GitHub for the newest release; nothing else is sent. */
   checkUpdate(): Promise<UpdateCheck>;

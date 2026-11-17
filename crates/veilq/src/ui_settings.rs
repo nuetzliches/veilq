@@ -425,6 +425,10 @@ pub struct BatchRequest {
     /// (ADR-0026), instead of being listed as errors.
     #[serde(default)]
     unverified: bool,
+    /// Pictures are written without the `veilq <version>` mark (ADR-0050),
+    /// as `--no-watermark` does.
+    #[serde(default)]
+    no_watermark: bool,
 }
 
 /// One file of a folder run, as its report lists it: no values.
@@ -597,7 +601,8 @@ pub async fn batch_start(
     }
     // The engine is taken in the run's thread: it waits there for the
     // models, not here (ADR-0032).
-    let (action, unverified) = (request.action, request.unverified);
+    let (action, unverified, no_watermark) =
+        (request.action, request.unverified, request.no_watermark);
     let cancel = Arc::new(AtomicBool::new(false));
     let initial = Batch {
         source: display_path(&source),
@@ -622,7 +627,9 @@ pub async fn batch_start(
             Some(a) => e.with_action(Some(a)).map_err(super::Failure::from),
         });
         let engine = match engine {
-            Ok(e) => e.with_unverified(unverified),
+            Ok(e) => e
+                .with_unverified(unverified)
+                .without_watermark(no_watermark),
             Err(super::Failure(_, e)) => {
                 if let Ok(mut job) = shared.batch.lock()
                     && let Some(j) = job.as_mut()

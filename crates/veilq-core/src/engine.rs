@@ -274,6 +274,9 @@ pub struct Engine {
     /// A picture whose last verify round still found something is written
     /// with that filled too, for a review, instead of failing.
     unverified: bool,
+    /// Switched off for this run (`--no-watermark`) or for the parts of a
+    /// container: a picture written carries no mark (ADR-0050).
+    no_watermark: bool,
     /// Where each reading and its decisions go, for `scan --explain` (#40).
     explain: Option<Explain>,
     /// The names of the file being read (ADR-0047), shared by the clones
@@ -318,6 +321,7 @@ impl Engine {
             action,
             markdown: false,
             unverified: false,
+            no_watermark: false,
             explain: None,
             names: None,
             #[cfg(feature = "ocr")]
@@ -865,6 +869,20 @@ impl Engine {
 
     pub(crate) fn unverified(&self) -> bool {
         self.unverified
+    }
+
+    /// This engine writing pictures without the `veilq <version>` mark
+    /// (`--no-watermark`, ADR-0050) when `off`; with `false` as it was. A
+    /// policy that switched the mark off is not overridden.
+    pub fn without_watermark(&self, off: bool) -> Self {
+        let mut engine = self.clone();
+        engine.no_watermark |= off;
+        engine
+    }
+
+    /// Whether a picture this engine writes carries the mark (ADR-0050).
+    pub fn watermarks(&self) -> bool {
+        !self.no_watermark && self.detector.policy().picture.watermark
     }
 
     /// Whether a pseudonym key is set: `pseudonymize` works.
@@ -2144,5 +2162,20 @@ mod tests {
         let p = r.report.findings[0].pseudonym.clone().unwrap();
         assert!(p.starts_with("[EMAIL_ADDRESS:"));
         assert_eq!(r.text, format!("mail an {p} und {p}"));
+    }
+
+    #[test]
+    fn the_watermark_is_on_unless_the_policy_or_the_run_switches_it_off() {
+        assert!(engine().watermarks());
+        assert!(!engine().without_watermark(true).watermarks());
+        assert!(engine().without_watermark(false).watermarks());
+        let off = Policy::parse("version = 1
+[picture]
+watermark = false
+").unwrap();
+        let off = Engine::new(&off, None, b"seed", None).unwrap();
+        assert!(!off.watermarks());
+        // `--no-watermark` absent does not turn the policy's `false` back on.
+        assert!(!off.without_watermark(false).watermarks());
     }
 }
