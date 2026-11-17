@@ -40,6 +40,11 @@ pub const OCR_CHECKSUM_PENALTY: f32 = 0.15;
 /// shorter one (`ip`, `tel`, `name`) would sit inside too many others.
 const COMPOUND_TAIL: usize = 5;
 
+/// The built-in rules that read text from a picture only (ADR-0051): what
+/// they look for is how a screen cuts a value, and written text rarely
+/// holds it.
+const OCR_ONLY: &[&str] = &["pattern:de.name-cut"];
+
 /// Where a text comes from: written, or read from a picture by OCR.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Source {
@@ -304,6 +309,9 @@ impl Detector {
             out.extend(ner.candidates(text)?);
         }
         for rule in &self.rules {
+            if source != Source::Ocr && OCR_ONLY.contains(&rule.detector.as_str()) {
+                continue;
+            }
             for caps in rule.regex.captures_iter(text) {
                 let m = match rule.group {
                     Some(g) => match caps.get(g) {
@@ -1201,6 +1209,84 @@ mod tests {
                 findings(text, "")
             );
         }
+    }
+
+    #[test]
+    fn a_file_number_is_known_by_the_word_before_it() {
+        // Whatever its shape (ADR-0051): a dunning court's without a slash,
+        // with hyphens, a firm's own with letters.
+        for (text, value) in [
+            (
+                "Mahnabteilung - vom 30.09.2026, Aktenzeichen: 26431907720 gegen",
+                "26431907720",
+            ),
+            ("Az. 12-345-6 bitte angeben.", "12-345-6"),
+            ("Geschäftszeichen KL-4471/B", "KL-4471/B"),
+            ("Unser Zeichen: 2026.0815", "2026.0815"),
+        ] {
+            assert!(
+                found(text, "COURT_FILE_NUMBER", value),
+                "{text}: {:?}",
+                findings(text, "")
+            );
+        }
+        // A word after it is no number, and a sentence's dot not part of it.
+        assert!(findings("Aktenzeichen unbekannt.", "").is_empty());
+        assert!(found(
+            "Bitte nennen Sie das Aktenzeichen 4471.",
+            "COURT_FILE_NUMBER",
+            "4471"
+        ));
+        // The slash form stays whole.
+        assert!(found(
+            "Aktenzeichen 3 O 128/26",
+            "COURT_FILE_NUMBER",
+            "3 O 128/26"
+        ));
+    }
+
+    #[test]
+    fn a_dunning_number_needs_the_court_or_the_file_before_it() {
+        assert!(found(
+            "Vollstreckungsbescheid des Mahngerichts 26-4319077-2-0 vom",
+            "COURT_FILE_NUMBER",
+            "26-4319077-2-0"
+        ));
+        // Eleven digits alone are an order's.
+        assert!(findings("Bestellung 26431907720 ist versandt.", "").is_empty());
+    }
+
+    #[test]
+    fn a_name_cut_short_is_read_from_a_picture_only() {
+        let legal = Policy::parse("version = 1\npurposes = [\"legal\"]\n").unwrap();
+        let d = Detector::new(&legal).unwrap();
+        let read = |text: &str, source| -> Vec<String> {
+            d.findings(text, "", source)
+                .unwrap()
+                .into_iter()
+                .filter(|c| c.entity.as_str() == "PERSON")
+                .map(|c| text[c.start..c.end].to_owned())
+                .collect()
+        };
+        // A tab cut short, as OCR reads it and as a table cuts it.
+        assert_eq!(read("Albers,...", Source::Ocr), ["Albers,"]);
+        assert_eq!(
+            read("Akte  Albers, M ...  Status", Source::Ocr),
+            ["Albers, M"]
+        );
+        assert_eq!(read("Lindqvist-Ober,…", Source::Ocr), ["Lindqvist-Ober,"]);
+        // Written text is not cut by a screen.
+        assert!(read("Albers,...", Source::Text).is_empty());
+        // A list of words goes on after its comma: no dots, no cut.
+        assert!(read("Albers, Brandt und Vogt", Source::Ocr).is_empty());
+        // Below the default threshold.
+        assert!(
+            Detector::new(&Policy::default())
+                .unwrap()
+                .findings("Albers,...", "", Source::Ocr)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

@@ -339,7 +339,14 @@ fn boxes(p: &Page, start: usize, end: usize, width: u32, height: u32) -> Vec<Rec
             }
         }
     }
-    out.into_iter().map(|r| r.pad(PAD, width, height)).collect()
+    out.into_iter().map(|r| grown(&r, width, height)).collect()
+}
+
+/// `r` with its margin (ADR-0051): a quarter of its height to the sides, an
+/// eighth up and down, never less than [`PAD`]. A margin of a few pixels
+/// leaves the edges of large or bold letters beside and under the box.
+fn grown(r: &Rect, width: u32, height: u32) -> Rect {
+    r.pad_xy((r.h / 4).max(PAD), (r.h / 8).max(PAD), width, height)
 }
 
 /// Whether `r` lies (nearly) inside one of `done`. Touching is not enough:
@@ -840,7 +847,7 @@ fn unread(
                     detector: UNREAD_DETECTOR.into(),
                     pseudonym: None,
                 });
-                boxes.push(l.rect.pad(PAD, w, h));
+                boxes.push(grown(&l.rect, w, h));
             }
         }
     }
@@ -1191,13 +1198,15 @@ mod tests {
         let p = page(&lines);
         assert_eq!(p.text, "Geburtsdatum  14.03.1987\nKfz HB-MA 412");
         let start = p.text.find("14.03").unwrap();
+        // Its margin: a quarter of the line's 20 pixels to the sides, 2 up
+        // and down.
         let b = boxes(&p, start, start + 10, 1000, 1000);
         assert_eq!(
             b,
             vec![Rect {
-                x: 198,
+                x: 195,
                 y: 0,
-                w: 104,
+                w: 110,
                 h: 24
             }]
         );
@@ -1450,14 +1459,15 @@ mod tests {
             .flat_map(|(_, rects)| rects)
             .collect();
         // `Mira Albers` on the first line; on the second, `Brandts` is
-        // characters 0 to 7 (x 0 to 70), `Kapuze` starts at x 80.
+        // characters 0 to 7 (x 0 to 70), `Kapuze` starts at x 80; the box's
+        // margin is a quarter of the line's 20 pixels.
         assert!(found.iter().any(|r| r.y < 20 && r.x == 0), "{found:?}");
         assert!(found.iter().any(|r| r.y >= 38), "{found:?}");
         assert!(
             found
                 .iter()
                 .filter(|r| r.y >= 38)
-                .all(|r| r.right() <= 72 + PAD),
+                .all(|r| r.right() <= 70 + 20 / 4),
             "{found:?}"
         );
     }
@@ -1494,6 +1504,46 @@ mod tests {
             found.iter().any(|r| r.y <= PAD && r.right() >= 750),
             "{found:?}"
         );
+    }
+
+    #[test]
+    fn a_tab_cut_to_its_surname_is_a_name_in_a_legal_file() {
+        // The surname stands nowhere else on the page (ADR-0051).
+        let lines = [
+            line("Übersicht", 0, 0),
+            line("Albers,...", 200, 0),
+            line("Termin am Montag", 0, 60),
+        ];
+        let people = |toml: &str| -> Vec<Rect> {
+            let policy = crate::Policy::parse(&format!("version = 1\n{toml}")).unwrap();
+            let engine = Engine::new(&policy, None, b"test", None).unwrap();
+            candidates(&engine, &lines, 1000, 200, false)
+                .unwrap()
+                .into_iter()
+                .filter(|(c, _)| c.entity.as_str() == "PERSON")
+                .flat_map(|(_, rects)| rects)
+                .collect()
+        };
+        let found = people("purposes = [\"legal\"]");
+        assert!(
+            found
+                .iter()
+                .any(|r| r.x <= 200 && r.right() >= 270 && r.y == 0),
+            "{found:?}"
+        );
+        // Below the default threshold.
+        assert!(people("").is_empty());
+    }
+
+    #[test]
+    fn a_box_grows_with_its_line() {
+        let r = |x, y, w, h| Rect { x, y, w, h };
+        // Large or bold text: 10 pixels to the sides, 5 up and down.
+        assert_eq!(grown(&r(100, 100, 300, 40), 1000, 1000), r(90, 95, 320, 50));
+        // Small text keeps the least margin.
+        assert_eq!(grown(&r(100, 100, 60, 8), 1000, 1000), r(98, 98, 64, 12));
+        // Never beyond the picture.
+        assert_eq!(grown(&r(2, 0, 60, 40), 70, 42), r(0, 0, 70, 42));
     }
 
     #[test]
@@ -1608,7 +1658,7 @@ mod tests {
         let mut done = line("Mira Albers", 10, 80);
         done.scores[1] = 0.4;
         let lines = [line("Termin am Montag", 10, 0), weak, done];
-        let filled = [lines[2].rect.pad(PAD, 400, 200)];
+        let filled = [grown(&lines[2].rect, 400, 200)];
         let run = |e: &Engine| {
             let mut out = outcome();
             let r = unread(e, &lines, &filled, &Band::WHOLE, None, (400, 200), &mut out);
@@ -1625,7 +1675,7 @@ mod tests {
             "purposes = [\"legal\"]",
         ] {
             let (r, out) = run(&engine(toml));
-            assert_eq!(r.unwrap(), [lines[1].rect.pad(PAD, 400, 200)], "{toml}");
+            assert_eq!(r.unwrap(), [grown(&lines[1].rect, 400, 200)], "{toml}");
             assert!(out.weak_lines.is_empty());
             assert_eq!(out.findings.len(), 1);
             assert_eq!(out.findings[0].entity.as_str(), UNREAD_TEXT);

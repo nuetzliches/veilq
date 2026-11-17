@@ -413,6 +413,69 @@ pub(super) fn list_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
     (png(&c.img), c.truth)
 }
 
+/// A dunning letter in an application's preview (ADR-0051): a tab bar with
+/// the debtor's record cut short to `Surname, ...`, a heading in large type
+/// with the dunning court's number after `Aktenzeichen:` (no slash), the
+/// debtor and the address, and an order number of the same shape without a
+/// word for a file before it.
+pub(super) fn dunning_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
+    let debtor = Person::de(r);
+    let mut c = Canvas::new(1000, 420, [255, 255, 255]);
+    c.rect(0, 0, 1000, 40, [229, 232, 240]);
+    let mut x = 12.0;
+    for tab in ["Übersicht", "Posteingang", "Fristen"] {
+        x = c.lit(x, 12.0, 13.0, tab, INK) + 36.0;
+    }
+    // The debtor's tab, as narrow as the surname, its comma and the dots;
+    // the surname is the personal data.
+    let name = format!("{}, {}", debtor.last, debtor.first);
+    let w = c.width(13.0, &format!("{}, ...", debtor.last));
+    let shown = c.fit(13.0, &name, w);
+    let rest = &shown[debtor.last.len()..];
+    let end = c.pii("PERSON", x, 12.0, 13.0, &debtor.last, INK);
+    c.lit(end, 12.0, 13.0, rest, INK);
+
+    let number = format!("2{}{}", r.below(10), r.digits(9));
+    c.lit(40.0, 70.0, 19.0, "Forderung der Nordwerk Finanz GmbH", INK);
+    let court = r.pick(super::COURTS);
+    c.lit(
+        40.0,
+        100.0,
+        19.0,
+        &format!("Vollstreckungsbescheid, {court} – Mahnabteilung –"),
+        INK,
+    );
+    let end = c.lit(40.0, 130.0, 19.0, "Aktenzeichen: ", INK);
+    c.pii("COURT_FILE_NUMBER", end, 130.0, 19.0, &number, INK);
+    let end = c.lit(40.0, 160.0, 19.0, "zu Händen ", INK);
+    c.pii("PERSON", end, 160.0, 19.0, &debtor.name(), INK);
+    c.pii(
+        "ADDRESS",
+        40.0,
+        190.0,
+        19.0,
+        &format!("{}, {}", debtor.street, debtor.city),
+        INK,
+    );
+    c.lit(40.0, 250.0, 15.0, "Sehr geehrte Damen und Herren,", INK);
+    c.lit(
+        40.0,
+        280.0,
+        15.0,
+        "in obiger Angelegenheit bestätigen wir den Eingang Ihres Schreibens.",
+        INK,
+    );
+    let order = format!("2{}{}", r.below(10), r.digits(9));
+    c.lit(
+        40.0,
+        310.0,
+        15.0,
+        &format!("Ihre Bestellung {order} ist davon nicht berührt."),
+        INK,
+    );
+    (png(&c.img), c.truth)
+}
+
 /// `jpeg` with an EXIF segment: a camera's make and model.
 fn with_exif(jpeg: &[u8]) -> Vec<u8> {
     // TIFF, little endian, one IFD with Make (0x010f) as an ASCII string.

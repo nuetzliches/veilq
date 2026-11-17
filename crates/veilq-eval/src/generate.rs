@@ -1045,6 +1045,14 @@ pub fn corpus(seed: u64) -> Vec<Doc> {
         content,
         truth,
     });
+    // A dunning letter on a screen (ADR-0051), from a stream of its own.
+    let mut r = Rng::new(seed ^ 0x0D07_7000_0000_0000);
+    let (content, truth) = visual::dunning_png(&mut r);
+    docs.push(Doc {
+        path: "de/png/dunning-1.png".to_owned(),
+        content,
+        truth,
+    });
     // Hard negatives for a learned decider (#95), from a stream of their
     // own: minutes whose numbers and dates look like personal data beside
     // the real thing.

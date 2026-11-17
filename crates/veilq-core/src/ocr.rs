@@ -83,12 +83,18 @@ impl Rect {
 
     /// Grown by `p` pixels on every side, within `width` x `height`.
     pub fn pad(&self, p: u32, width: u32, height: u32) -> Rect {
-        let (x, y) = (self.x.saturating_sub(p), self.y.saturating_sub(p));
+        self.pad_xy(p, p, width, height)
+    }
+
+    /// Grown by `px` pixels to the sides and `py` up and down, within
+    /// `width` x `height`.
+    pub fn pad_xy(&self, px: u32, py: u32, width: u32, height: u32) -> Rect {
+        let (x, y) = (self.x.saturating_sub(px), self.y.saturating_sub(py));
         Rect {
             x,
             y,
-            w: (self.right() + p).min(width) - x,
-            h: (self.bottom() + p).min(height) - y,
+            w: (self.right() + px).min(width) - x,
+            h: (self.bottom() + py).min(height) - y,
         }
     }
 }
