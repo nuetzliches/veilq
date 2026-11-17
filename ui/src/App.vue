@@ -8,6 +8,7 @@ import {
   type Mark,
   type Proposal,
   type Redaction,
+  type Rule,
   type Source,
 } from '@/api';
 import BrandMark from '@/components/BrandMark.vue';
@@ -398,42 +399,62 @@ async function addMark(mark: Mark) {
   }
 }
 
-/** The rule the last mark proposes (#34), tried on the document and the earlier cases. */
+/** The rules the last mark proposes (#34), each tried on the document and the earlier cases. */
 const proposal = ref<Proposal | null>(null);
+/** The marked value the rules were proposed from: the shape rules are said by it. */
+const proposedFrom = ref('');
+/** Which of the proposed rules is shown; the cheapest first. */
+const chosenRule = ref(0);
 /** What became of the proposal: saved, copied, or why not. */
 const ruleNote = ref<string | null>(null);
 
-/** A mark on text proposes its rule; an area names no value a rule could take. */
+/** A mark on text proposes its rules; an area names no value a rule could take. */
 async function offerRule(source: Source, mark: Mark) {
   proposal.value = null;
   ruleNote.value = null;
+  chosenRule.value = 0;
   if (mark.kind !== 'missed' && mark.kind !== 'extra') return;
   try {
-    proposal.value = await api.propose(source, mark, threshold.value ?? undefined);
+    const p = await api.propose(source, mark, threshold.value ?? undefined);
+    proposedFrom.value = mark.value.trim();
+    proposal.value = p.rules.length ? p : null;
   } catch {
     // No proposal is no fault of the mark: it acts all the same.
   }
 }
 
-const ruleText = computed(() => {
-  const r = proposal.value?.rule;
-  if (!r) return '';
-  return r.kind === 'deny'
-    ? t('rules.proposeDeny', { value: r.value, type: entityLabel(r.entity) })
-    : t('rules.proposeAllow', { value: r.value });
-});
+const proposed = computed(() => proposal.value?.rules[chosenRule.value] ?? null);
+
+function describeRule(r: Rule): string {
+  const value = proposedFrom.value;
+  switch (r.kind) {
+    case 'deny':
+      return t('rules.proposeDeny', { value: r.value, type: entityLabel(r.entity) });
+    case 'allow':
+      return t('rules.proposeAllow', { value: r.value });
+    case 'context':
+      return t('rules.proposeContext', { value, word: r.word, type: entityLabel(r.entity) });
+    case 'shape':
+      return t('rules.proposeShape', { value, type: entityLabel(r.entity) });
+    case 'allow_shape':
+      return t('rules.proposeAllowShape', { value });
+    case 'threshold':
+      return t('rules.proposeThreshold', { type: entityLabel(r.entity), threshold: r.min_confidence.toFixed(2) });
+  }
+}
 
 const ruleCounts = computed(() => {
-  const p = proposal.value;
-  if (!p) return '';
+  const p = proposed.value;
+  if (!p || !proposal.value) return '';
   const here = t('rules.proposeHere', { gained: p.document.gained, lost: p.document.lost });
-  return p.tried
-    ? `${here}; ${t('rules.proposeCases', { n: p.tried, gained: p.cases.gained, lost: p.cases.lost })}`
+  const tried = proposal.value.tried;
+  return tried
+    ? `${here}; ${t('rules.proposeCases', { n: tried, gained: p.cases.gained, lost: p.cases.lost })}`
     : here;
 });
 
 async function adoptRule() {
-  const p = proposal.value;
+  const p = proposed.value;
   if (!p) return;
   try {
     await api.adoptRule(p.rule);
@@ -445,7 +466,7 @@ async function adoptRule() {
 }
 
 async function copyRule() {
-  const p = proposal.value;
+  const p = proposed.value;
   if (!p) return;
   try {
     await navigator.clipboard.writeText(p.toml);
@@ -1011,9 +1032,12 @@ onBeforeUnmount(() => {
             <button class="small" :aria-label="t('common.close')" @click="drawnArea = null">×</button>
           </div>
           <p v-else-if="drawing" class="markbar hint">{{ t('marks.drawHint') }}</p>
-          <div v-else-if="proposal" class="markbar proposal" role="group" :aria-label="t('rules.proposeTitle')">
-            <span class="what" :title="`${ruleText} ${ruleCounts}`">
-              <strong>{{ ruleText }}</strong> {{ ruleCounts }}
+          <div v-else-if="proposal && proposed" class="markbar proposal" role="group" :aria-label="t('rules.proposeTitle')">
+            <select v-if="proposal.rules.length > 1" v-model="chosenRule" :aria-label="t('rules.choose')">
+              <option v-for="(p, i) in proposal.rules" :key="i" :value="i">{{ describeRule(p.rule) }}</option>
+            </select>
+            <span class="what" :title="`${describeRule(proposed.rule)} ${ruleCounts}`">
+              <strong v-if="proposal.rules.length === 1">{{ describeRule(proposed.rule) }}</strong> {{ ruleCounts }}
             </span>
             <button v-if="proposal.user_in_use" class="primary small" @click="adoptRule">{{ t('rules.adopt') }}</button>
             <button v-else class="small" :title="t('rules.copyTitle')" @click="copyRule">{{ t('rules.copy') }}</button>
@@ -1522,6 +1546,12 @@ button.icon {
 /* A rule proposed: its counts are what to decide on, so they wrap rather than hide. */
 .markbar.proposal .what {
   white-space: normal;
+}
+/* The rules to choose from: a long one is cut in the closed list, not the counts beside it. */
+.markbar.proposal select {
+  min-width: 0;
+  max-width: 55%;
+  text-overflow: ellipsis;
 }
 .markbar select {
   border: 1px solid var(--border-strong);

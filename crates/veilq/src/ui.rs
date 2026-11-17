@@ -1368,13 +1368,23 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK, "{body}");
-        assert_eq!(body["rule"]["kind"], "deny");
-        assert_eq!(body["rule"]["value"], "Falkenstein");
-        assert_eq!(body["document"]["gained"], 2, "{body}");
-        assert_eq!(body["document"]["lost"], 0);
+        let deny = &body["rules"][0];
+        assert_eq!(deny["rule"]["kind"], "deny");
+        assert_eq!(deny["rule"]["value"], "Falkenstein");
+        assert_eq!(deny["document"]["gained"], 2, "{body}");
+        assert_eq!(deny["document"]["lost"], 0);
         assert_eq!(body["tried"], 1);
-        assert_eq!(body["cases"]["gained"], 1, "{body}");
-        assert!(body["toml"].as_str().unwrap().contains("[[deny]]"));
+        assert_eq!(deny["cases"]["gained"], 1, "{body}");
+        assert!(deny["toml"].as_str().unwrap().contains("[[deny]]"));
+        // A name's shape would match nearly every word: not proposed.
+        let kinds: Vec<_> = body["rules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["rule"]["kind"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(kinds, ["deny", "context"], "{body}");
+        assert_eq!(body["rules"][1]["rule"]["word"], "Projekt");
         // An area names no value a rule could take.
         let area = serde_json::json!({
             "kind": "missed_area", "area": { "x": 0, "y": 0, "width": 1, "height": 1 }, "entity": "PERSON"
@@ -1388,6 +1398,91 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn a_number_marked_proposes_its_word_its_shape_and_a_released_one_a_threshold() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let app = || cases_app(dir.path(), store.path(), None);
+        let propose = |source: serde_json::Value, mark: serde_json::Value| {
+            json_post(
+                "/api/cases/propose",
+                serde_json::json!({ "source": source, "mark": mark }),
+            )
+        };
+        let source = serde_json::json!({
+            "kind": "text",
+            "text": "Kundennummer KD-48213, früher Kundennummer KD-77120.\nDie Unterlagen liegen bis Ende des Monats im Raum KG-30551."
+        });
+        let mark =
+            serde_json::json!({ "kind": "missed", "value": "KD-48213", "entity": "ACCOUNT_ID" });
+        let (status, body) = send(app(), propose(source, mark)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let rules = body["rules"].as_array().unwrap();
+        let kinds: Vec<_> = rules
+            .iter()
+            .map(|p| p["rule"]["kind"].as_str().unwrap())
+            .collect();
+        assert_eq!(kinds, ["deny", "context", "shape"], "{body}");
+        // The value alone; after its word both; its shape all three.
+        let gained: Vec<_> = rules
+            .iter()
+            .map(|p| p["document"]["gained"].as_u64().unwrap())
+            .collect();
+        assert_eq!(gained, [1, 2, 3], "{body}");
+        assert_eq!(rules[1]["rule"]["word"], "Kundennummer");
+        assert_eq!(rules[2]["rule"]["regex"], r"\b\p{Lu}{2}\-\d{5}\b");
+
+        // A box released: never this value, or a threshold above its
+        // finding's confidence, which drops it.
+        let source =
+            serde_json::json!({ "kind": "text", "text": "Mail an info@beispiel.de bitte." });
+        let mark = serde_json::json!({
+            "kind": "extra", "value": "info@beispiel.de", "entity": "EMAIL_ADDRESS"
+        });
+        let (status, body) = send(app(), propose(source, mark)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let rules = body["rules"].as_array().unwrap();
+        assert_eq!(rules[0]["rule"]["kind"], "allow");
+        let threshold = rules.last().unwrap();
+        assert_eq!(threshold["rule"]["kind"], "threshold", "{body}");
+        assert_eq!(threshold["document"]["lost"], 1, "{body}");
+        assert!(
+            threshold["toml"]
+                .as_str()
+                .unwrap()
+                .starts_with("[entities.EMAIL_ADDRESS]")
+        );
+    }
+
+    #[test]
+    fn every_rule_goes_into_a_policy_veilq_reads() {
+        let rules: Vec<cases::Rule> = serde_json::from_value(serde_json::json!([
+            { "kind": "context", "entity": "ACCOUNT_ID", "word": "Kundennummer", "regex": r"\b\p{Lu}{2}\-\d{5}\b" },
+            { "kind": "shape", "entity": "ACCOUNT_ID", "regex": r"\b\p{Lu}{2}\-\d{5}\b" },
+            { "kind": "allow_shape", "regex": r"\d{4}\-\d{2}" },
+            { "kind": "threshold", "entity": "PHONE_NUMBER", "min_confidence": 0.81 }
+        ]))
+        .unwrap();
+        let mut policy = Policy::default();
+        for rule in &rules {
+            rule.add_to(&mut policy);
+            // Saved twice, kept once.
+            rule.add_to(&mut policy);
+        }
+        assert_eq!(policy.patterns.len(), 2);
+        assert_ne!(policy.patterns[0].name, policy.patterns[1].name);
+        assert_eq!(policy.allow.patterns.len(), 1);
+        veilq_core::Engine::new(&policy, None, b"test", None).unwrap();
+        let toml = format!(
+            "version = 1\n{}",
+            rules.iter().map(|r| r.toml()).collect::<String>()
+        );
+        let read = Policy::parse(&toml).unwrap();
+        assert_eq!(read.patterns, policy.patterns);
+        assert_eq!(read.allow.patterns, policy.allow.patterns);
+        assert_eq!(read.entities, policy.entities);
     }
 
     #[test]
