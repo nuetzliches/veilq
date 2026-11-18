@@ -338,7 +338,8 @@ impl Store {
         Ok(out)
     }
 
-    /// Every case, oldest first. A case that cannot be read is an error:
+    /// Every case, oldest first by the second it was made in (cases of the
+    /// same second in no promised order). A case that cannot be read is an error:
     /// the store is not guessed at; a case whose writing broke is skipped
     /// (and removed by [`purge`](Self::purge)).
     pub fn list(&self) -> Result<Vec<Case>, Error> {
