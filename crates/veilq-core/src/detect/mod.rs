@@ -40,6 +40,24 @@ pub const OCR_CHECKSUM_PENALTY: f32 = 0.15;
 /// shorter one (`ip`, `tel`, `name`) would sit inside too many others.
 const COMPOUND_TAIL: usize = 5;
 
+/// Starts of words that begin like a context word and name nothing of it:
+/// `Personalisieren`, a web page's button, is no `person`; `Namespace` is
+/// no `name`, `Steuerung` no `steuer`, `Bytes` no `by`. A context word at
+/// the start of one of them is no context.
+const NOT_CONTEXT: &[&str] = &[
+    "personalis",
+    "personaliz",
+    "namespace",
+    "authori",
+    "authent",
+    "byte",
+    "bypass",
+    "steuerung",
+    "telekom",
+    "televis",
+    "taxi",
+];
+
 /// The built-in rules that read text from a picture only (ADR-0051): what
 /// they look for is how a screen cuts a value, and written text rarely
 /// holds it.
@@ -1180,7 +1198,8 @@ fn has_context(c: &Context, context: &str, before: &str) -> bool {
                 .chars()
                 .next()
                 .is_none_or(|n| !n.is_alphanumeric());
-            !starts_word || at_start || (tail && at_end)
+            let other_word = NOT_CONTEXT.iter().any(|n| window[i..].starts_with(n));
+            !other_word && (!starts_word || at_start || (tail && at_end))
         })
     })
 }
@@ -1759,6 +1778,32 @@ mod tests {
         // Inside a word, or a short word at a compound's end, is no context.
         assert!(!has_context(&c, "", "Bankkontonummern "));
         assert!(!has_context(&c, "", "Dateiname: "));
+    }
+
+    #[test]
+    fn a_word_that_only_starts_like_a_context_word_is_none() {
+        let c = Context {
+            words: vec!["person".into(), "name".into()],
+            boost: 0.5,
+            window: 32,
+        };
+        // A web page's button beside a game's title: no person named.
+        assert!(!has_context(&c, "", "Personalisieren INTELLECT "));
+        assert!(!has_context(&c, "", "personalized feed "));
+        assert!(!has_context(&c, "", "Namespace: "));
+        let tax = Context {
+            words: vec!["steuer".into(), "by".into()],
+            boost: 0.5,
+            window: 32,
+        };
+        assert!(!has_context(&tax, "", "Steuerung der Heizung "));
+        assert!(!has_context(&tax, "", "1024 bytes "));
+        assert!(has_context(&tax, "", "Steuernummer "));
+        assert!(has_context(&tax, "", "written by "));
+        // A compound of the word still is, and so are a person's details.
+        assert!(has_context(&c, "", "Personenname: "));
+        assert!(has_context(&c, "", "Personalien: "));
+        assert!(has_context(&c, "", "Namensfeld "));
     }
 
     #[test]
