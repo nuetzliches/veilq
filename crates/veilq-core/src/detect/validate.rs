@@ -59,6 +59,33 @@ fn digits(value: &str) -> Vec<u32> {
     value.chars().filter_map(|c| c.to_digit(10)).collect()
 }
 
+/// The length of an IBAN of `country` (its two letters, upper case), as
+/// the IBAN registry (SWIFT, ISO 13616) has it; `None` for a code it does
+/// not hold.
+pub(crate) fn iban_length(country: &str) -> Option<usize> {
+    Some(match country {
+        "NO" => 15,
+        "BE" => 16,
+        "DK" | "FI" | "FK" | "FO" | "GL" | "NL" | "SD" => 18,
+        "MK" | "SI" => 19,
+        "AT" | "BA" | "EE" | "KZ" | "LT" | "LU" | "MN" | "XK" => 20,
+        "CH" | "HR" | "LI" | "LV" => 21,
+        "BG" | "BH" | "CR" | "DE" | "GB" | "GE" | "IE" | "ME" | "RS" | "VA" => 22,
+        "AE" | "GI" | "IL" | "IQ" | "OM" | "SO" | "TL" => 23,
+        "AD" | "CZ" | "ES" | "MD" | "PK" | "RO" | "SA" | "SE" | "SK" | "TN" | "VG" => 24,
+        "LY" | "PT" | "ST" => 25,
+        "IS" | "TR" => 26,
+        "BI" | "DJ" | "FR" | "GR" | "IT" | "MC" | "MR" | "SM" => 27,
+        "AL" | "AZ" | "BY" | "CY" | "DO" | "GT" | "HU" | "LB" | "NI" | "PL" | "SV" => 28,
+        "BR" | "EG" | "PS" | "QA" | "UA" => 29,
+        "JO" | "KW" | "MU" | "YE" => 30,
+        "MT" | "SC" => 31,
+        "LC" => 32,
+        "RU" => 33,
+        _ => return None,
+    })
+}
+
 /// ISO 13616: the country's length is not checked, the mod-97 sum is.
 pub fn iban(value: &str) -> bool {
     let s = compact(value);
@@ -430,6 +457,27 @@ mod tests {
         assert!(!ssn_de(&wrong), "{wrong}");
         assert!(ssn_us("123-45-6789"));
         assert!(!ssn_us("666-45-6789"));
+    }
+
+    #[test]
+    fn an_ibans_length_is_its_countrys() {
+        // The registry's own examples (#89): each holds its checksum and is
+        // as long as its country's IBAN.
+        for example in [
+            "NO9386011117947",
+            "BE68539007547034",
+            "DE89370400440532013000",
+            "SE4550000000058398257466",
+            "PT50000201231234567890154",
+            "GR1601101250000000012300695",
+            "HU42117730161111101800000000",
+            "MT84MALT011000012345MTLCAST001S",
+        ] {
+            assert!(iban(example), "{example}");
+            assert_eq!(iban_length(&example[..2]), Some(example.len()), "{example}");
+        }
+        assert_eq!(iban_length("XX"), None);
+        assert_eq!(iban_length("de"), None, "upper case only");
     }
 
     #[test]
