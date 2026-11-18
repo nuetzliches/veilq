@@ -38,7 +38,7 @@
         },
         "values": {
           "default": [],
-          "description": "Exact values, compared after the same normalisation as pseudonyms.",
+          "description": "Exact values, compared after the same normalisation as pseudonyms. A\nvalue that is an IBAN matches that IBAN however it is grouped or\ncased (`DE89 3704 …`, `DE893704…`): a known public account, such as\none's own in a letterhead.",
           "items": {
             "type": "string"
           },
@@ -94,6 +94,18 @@
         "miss",
         "false_positive"
       ],
+      "type": "object"
+    },
+    "DeciderPolicy": {
+      "additionalProperties": false,
+      "description": "The learned decider (#35).",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "`true` (the default): where a learned decider is installed, it may\nlift a candidate below its threshold into the findings, and the\nreport says how many it lifted. It never drops what a rule keeps.\n`false` leaves every decision to the thresholds and rules, as\n`--no-decider` does for one run.",
+          "type": "boolean"
+        }
+      },
       "type": "object"
     },
     "Defaults": {
@@ -332,6 +344,11 @@
           "$ref": "#/$defs/SignaturePolicy",
           "default": "redact",
           "description": "Handwritten signatures (ADR-0048): `redact` (the default) fills\nevery signature the signature detector finds black, as `SIGNATURE`\nfindings; a picture is then an error while the detector is not\ninstalled (`veilq models fetch signature`). `keep` leaves them, for\npictures whose signatures may be seen."
+        },
+        "watermark": {
+          "default": true,
+          "description": "`true` (the default): a picture veilq writes (an image, each GIF\nframe, each PDF page) carries `veilq <version>` at its bottom right\n(ADR-0050), drawn after redaction. Images inside Office files and\nmails stay unmarked. `false` writes no mark.",
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -376,6 +393,13 @@
         }
       },
       "type": "object"
+    },
+    "decider": {
+      "$ref": "#/$defs/DeciderPolicy",
+      "default": {
+        "enabled": true
+      },
+      "description": "The learned decider (#35)."
     },
     "defaults": {
       "$ref": "#/$defs/Defaults",
@@ -463,7 +487,8 @@
       "$ref": "#/$defs/Picture",
       "default": {
         "faces": "redact",
-        "signatures": "redact"
+        "signatures": "redact",
+        "watermark": true
       },
       "description": "Pictures (ADR-0023, ADR-0038)."
     },

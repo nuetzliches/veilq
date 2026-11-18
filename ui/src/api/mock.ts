@@ -7,6 +7,7 @@ import {
   type Api,
   type Entry,
   type Finding,
+  type Mark,
   type PurposeInfo,
   type Reading,
   type Redaction,
@@ -64,14 +65,14 @@ const bytes = (s: string) => encoder.encode(s).length;
 
 /** The toy pipeline: find, drop overlaps (the first and longest wins), mask. */
 /** The mock's run on a source: text only. */
-function mockSource(source: Source): Redaction {
+function mockSource(source: Source, marks: Mark[] = []): Redaction {
   switch (source.kind) {
     case 'text':
-      return mockRedact(source.text);
+      return mockRedact(source.text, undefined, marks);
     case 'file': {
       const text = FILES[source.path];
       if (text === undefined) throw new ApiError(404, `${source.path}: not found`);
-      return mockRedact(text, source.path);
+      return mockRedact(text, source.path, marks);
     }
     case 'upload': {
       let text: string;
@@ -80,9 +81,14 @@ function mockSource(source: Source): Redaction {
       } catch {
         throw new ApiError(422, `${source.name} is not UTF-8 text; the mock reads text only`);
       }
-      return mockRedact(text, source.name);
+      return mockRedact(text, source.name, marks);
     }
   }
+}
+
+/** A mark's value as a regex: found as itself, a run of white space as any. */
+function markRegex(value: string): RegExp {
+  return new RegExp(value.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+'), 'g');
 }
 
 /** The mock's explanation: one reading of the whole input, each finding kept. */
@@ -106,11 +112,19 @@ export function mockExplain(result: Redaction): Reading[] {
   ];
 }
 
-export function mockRedact(input: string, name?: string): Redaction {
-  const hits: { start: number; end: number; entity: string; detector: string; confidence: number }[] = [];
+export function mockRedact(input: string, name?: string, marks: Mark[] = []): Redaction {
+  let hits: { start: number; end: number; entity: string; detector: string; confidence: number }[] = [];
   for (const d of DETECTORS) {
     for (const m of input.matchAll(d.regex)) {
       hits.push({ start: m.index, end: m.index + m[0].length, entity: d.entity, detector: d.detector, confidence: d.confidence });
+    }
+  }
+  // As veilq: a released value is left, a missed one found (and found if both).
+  const released = marks.filter((m) => m.kind === 'extra').map((m) => m.value.trim());
+  hits = hits.filter((h) => !released.includes(input.slice(h.start, h.end).trim()));
+  for (const mark of marks.filter((m) => m.kind === 'missed')) {
+    for (const m of input.matchAll(markRegex(mark.value))) {
+      hits.unshift({ start: m.index, end: m.index + m[0].length, entity: mark.entity, detector: 'policy:deny', confidence: 1 });
     }
   }
   hits.sort((a, b) => a.start - b.start || b.end - a.end);
@@ -167,6 +181,7 @@ function decodeBase64(data: string): Uint8Array {
 }
 
 export function mockApi(): Api {
+  let cases = 0;
   return {
     mock: true,
     async info() {
@@ -290,8 +305,39 @@ export function mockApi(): Api {
     },
     async quit() {},
     async ping() {},
+    async addCase() {
+      cases += 1;
+      return { id: `mock${cases}`, excerpt: false };
+    },
+    async cases() {
+      return { count: cases, key_store: false };
+    },
+    async propose(_source: Source, mark: Mark) {
+      if (mark.kind !== 'missed' && mark.kind !== 'extra') throw new ApiError(422, 'an area holds no value a rule could name yet');
+      const rule = mark.kind === 'missed' ? { kind: 'deny' as const, entity: mark.entity, value: mark.value } : { kind: 'allow' as const, value: mark.value };
+      return {
+        rules: [
+          {
+            rule,
+            document: { gained: mark.kind === 'missed' ? 1 : 0, lost: mark.kind === 'extra' ? 1 : 0 },
+            cases: { gained: 0, lost: 0 },
+            toml: '',
+          },
+        ],
+        tried: cases,
+        user_in_use: true,
+      };
+    },
+    async adoptRule() {
+      throw new ApiError(422, 'the mock saves nothing');
+    },
+    async deleteCases() {
+      const deleted = cases;
+      cases = 0;
+      return { deleted };
+    },
     async redact(source: Source, options: RedactOptions = {}) {
-      const result = mockSource(source);
+      const result = mockSource(source, options.marks ?? []);
       if (options.explain) result.explain = mockExplain(result);
       // The toy detector keeps its findings; a raised threshold still asks for a review, as veilq's does.
       const t = options.minConfidence;

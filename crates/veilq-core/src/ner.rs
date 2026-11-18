@@ -276,7 +276,7 @@ fn can_be_name(span: &str) -> bool {
         && words.iter().any(|w| {
             capital(w)
                 && w.chars().skip(1).any(char::is_lowercase)
-                && !crate::detect::NOT_NAMES.contains(&w.to_lowercase().as_str())
+                && !crate::detect::role_word(w)
                 && !crate::detect::person_noun(w)
         })
 }

@@ -15,6 +15,10 @@ base64 = { version = "0.23.1", optional = true }
 clap.workspace = true
 getrandom = "0.4.3"
 include_dir = { version = "0.7.4", optional = true }
+# The key of the case store (#34) in the OS key store: Credential Manager,
+# Keychain, Secret Service (zbus, pure Rust).
+keyring = { version = "4.2.0", optional = true }
+age = { version = "0.12", optional = true }
 rmcp = { version = "3.9", features = ["server", "macros", "transport-io", "transport-streamable-http-server"], optional = true }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
@@ -47,7 +51,7 @@ pdf = ["ocr", "veilq-core/pdf"]
 # `veilq mcp`: the MCP server over stdio and HTTP (ADR-0016).
 mcp = ["dep:rmcp", "dep:axum", "dep:tokio", "dep:base64"]
 # `veilq ui`: the local web UI (ADR-0008). Embeds `ui/dist` when it was built.
-ui = ["dep:axum", "dep:tokio", "dep:include_dir", "dep:base64"]
+ui = ["dep:axum", "dep:tokio", "dep:include_dir", "dep:base64", "dep:keyring", "dep:age"]
 
 [dev-dependencies]
 age = "0.12"

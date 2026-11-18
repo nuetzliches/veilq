@@ -84,6 +84,11 @@ enum Command {
         /// an error.
         #[arg(long)]
         unverified: bool,
+        /// Writes pictures (images, GIF frames, PDF pages) without the
+        /// `veilq <version>` mark at their bottom right (ADR-0050), as
+        /// `[picture] watermark = false` in the policy does.
+        #[arg(long)]
+        no_watermark: bool,
     },
     /// Decide on a ticket's body (Markdown) for a gateway: hand it on as it
     /// is when its first line is a matching `veilq: cleaned|pass <hash>` or
@@ -218,6 +223,12 @@ struct InputArgs {
     /// for a review and says by how much. Saves nothing.
     #[arg(long, value_name = "0..0.95")]
     min_confidence: Option<f32>,
+    /// No learned decider for this run (#35), as `[decider] enabled =
+    /// false` in the policy: every decision is the thresholds' and the
+    /// rules'. Where one is installed, it may lift a candidate below its
+    /// threshold into the findings and never drops one.
+    #[arg(long)]
+    no_decider: bool,
 }
 
 impl InputArgs {
@@ -328,6 +339,7 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
             report,
             mapping,
             unverified,
+            no_watermark,
         } => redact(
             &path,
             &output,
@@ -335,7 +347,10 @@ fn run(cli: Cli) -> anyhow::Result<Outcome> {
             action.map(Action::from),
             report.as_deref(),
             mapping.as_deref(),
-            unverified,
+            PictureRun {
+                unverified,
+                no_watermark,
+            },
         ),
         Command::Reveal {
             path,
@@ -708,7 +723,9 @@ fn scan(
 ) -> anyhow::Result<Outcome> {
     let policy = input.policy()?;
     let explanation = veilq_core::Explain::new();
-    let mut engine = engine(&policy, None)?.with_min_confidence(input.min_confidence)?;
+    let mut engine = engine(&policy, None)?
+        .with_min_confidence(input.min_confidence)?
+        .without_decider(input.no_decider);
     if explain {
         engine = engine.with_explain(explanation.clone());
     }
@@ -843,6 +860,13 @@ fn write_atomically<T>(
     }
 }
 
+/// How `redact` writes pictures this run: `--unverified` (ADR-0026) and
+/// `--no-watermark` (ADR-0050).
+struct PictureRun {
+    unverified: bool,
+    no_watermark: bool,
+}
+
 fn redact(
     path: &Path,
     output: &Path,
@@ -850,7 +874,7 @@ fn redact(
     action: Option<Action>,
     report_path: Option<&Path>,
     mapping_path: Option<&Path>,
-    unverified: bool,
+    pictures: PictureRun,
 ) -> anyhow::Result<Outcome> {
     if !is_stdin(path) && path.is_dir() {
         anyhow::bail!("{}: redact takes one file", path.display());
@@ -873,7 +897,9 @@ fn redact(
     };
     let engine = engine(&policy, action)?
         .with_min_confidence(input.min_confidence)?
-        .with_unverified(unverified);
+        .without_decider(input.no_decider)
+        .with_unverified(pictures.unverified)
+        .without_watermark(pictures.no_watermark);
     let format = format_of(path, input.format.as_deref())?;
     let reader = open(path)?;
     let run = if is_stdin(output) {

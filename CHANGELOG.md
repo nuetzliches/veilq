@@ -6,6 +6,131 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `veilq-eval check --redact` measures what a redaction finds, not a scan
+  (#108): a picture's faces and signatures are filled as a redaction fills
+  them, and it is read again. It sees what a filled region costs a text
+  detector, which a scan cannot: on the corpus and every held-out seed,
+  a signature found on a field label hides the tax ID or licence plate
+  beside it. CI gates on it as on the scan.
+- Every picture veilq writes (an image, each GIF frame, each PDF page)
+  carries a small `veilq <version>` mark at its bottom right (ADR-0050),
+  drawn after redaction and verification, so it never hides or causes a
+  finding. Images inside Office files and mails stay unmarked. Switch it off
+  with `[picture] watermark = false` in the policy, `veilq redact
+  --no-watermark` or the folder run's checkbox in the UI.
+- `veilq-eval candidates <corpus> --out <file>` writes every candidate the
+  detectors proposed, kept or not, as one JSON line with its context and a
+  label from the corpus truth (text, CSV, JSON, NDJSON), for measuring the
+  models of a learned decider (#95).
+- The corpus holds meeting minutes in German and English with hard
+  negatives: a ticket number written like a phone number, an order number
+  that starts like an international one, a build version, a meeting date
+  beside a name. veilq redacts the first two today; they count as false
+  positives (precision on the corpus 0.972 with NER, gate 0.97).
+- `scan --explain` names the hand rules that hold for each candidate,
+  whatever its verdict: `role_words`, `account`, `brand_word`,
+  `can_be_birth_date`, `beside_name`, `allowed` (#35). What veilq finds does
+  not change; a learned decider will weigh them. `check_failed` names a
+  candidate whose pattern's check (a checksum, a date) fails on it.
+- The engine can run a learned decider (#35): it may lift a candidate below
+  its threshold into the findings, never one whose check failed or that the
+  allow lists name, and never drops what a rule keeps; the report then asks
+  for a review and says how many it lifted. `--no-decider` (`scan`,
+  `redact`) and `[decider] enabled = false` in the policy switch it off.
+  None ships yet: until one does, nothing changes.
+- The case store in the engine (#34): what a user marks as veilq's
+  mistake becomes a case under the user's local data (`veilq\cases`), in
+  the format of `schema/case.schema.json`, which holds no value. The line,
+  cell or picture crop around the mark is kept only encrypted with age, for
+  30 days; without a key nothing of it is written.
+- **Marks in the UI** (#34): select text in the output to mark it as
+  personal data veilq left, with its type; a finding's "No personal data:
+  release here" leaves its box out. A mark acts on this document at once
+  and changes no other file; a value both marked and released is found.
+  Each mark is kept as a case, the line around it encrypted to a key in the
+  OS key store (Credential Manager, Keychain, Secret Service), without that
+  line where there is none. Settings → Detection shows the cases and
+  deletes them all. Text, CSV and JSON for now; pictures follow.
+- **Marks on images and PDF pages** (#34): "Mark an area" in the output
+  draws a frame around personal data veilq left; it is filled black and
+  reported as its type (detector `mark`). A box on a picture is released from the findings panel: what
+  OCR, the face or the signature detector finds inside is left, in every
+  round of the check. A case keeps the picture around the area, encrypted.
+  Not on a GIF's frames yet: an area marked there is an error, not a mark
+  left out.
+- **A case's synthetic twin** (#34): a miss marked on text gets a twin, the
+  line it was read in with every value veilq replaced and the marked one
+  as made-up stand-ins (`fake`). It is kept in the clear beside the case
+  only if veilq, without the mark, leaves the stand-in as it left the value,
+  and if none of the original values is in it; twins are what every later
+  rule is tried on. A box released gets none: its twin would have to keep
+  the released value.
+- **A mark proposes a rule** (#34): a value marked on text as always found
+  as its type (a deny value), a value released as never found (an allow
+  value). The proposal says what it changes in the document and in the
+  earlier cases (their excerpts where the key reads them, else their
+  twins); "Add to my rules" saves it into the user's policy, checked as the
+  settings save it. Where a project's `veilq.toml` is in effect, the rule
+  is offered as TOML to copy instead.
+- **More rules from a mark** (#34, ADR-0054): besides the value, a miss
+  proposes values of its shape after the word before it (in its line, or
+  its column's name), values of its shape anywhere (only when it holds a
+  digit) and its type's threshold lowered to where veilq had it; a box
+  released proposes values of its shape never found and its type's
+  threshold raised above the finding. The proposal bar lists them, the
+  cheapest first, each with what it changes here and in the earlier cases.
+
+### Changed
+
+- Every detector reads a picture before anything in it is filled
+  (ADR-0053, #108): marked areas, faces and signatures are found on the
+  picture as it came, OCR reads the same picture, and all of it is filled
+  once with the first reading's boxes, then verified as before. A field
+  label taken for a signature no longer costs the tax ID or licence plate
+  beside it: in a redaction, both are found on the corpus and every
+  held-out seed. A line read badly inside a face or signature is no longer
+  a review reason.
+
+### Fixed
+
+- A field label beside a redacted value no longer becomes a name for the
+  whole file (ADR-0055, #112): `Kundennummer KD-48213` with the number
+  redacted came out as `<PERSON> <ACCOUNT_ID>`, since the verify round's
+  model took `Kundennummer` before the placeholder for a name and the
+  file's names learned it. A verify round now learns no names, and a word
+  ending in `nummer`, `zeichen` or `number` is no name.
+- `Ihre Nachricht`, `Ihr Anliegen` and other pairs of a possessive and one
+  word in a sentence are no longer taken for a name (ADR-0052). NER found
+  them in subjects such as `Wir haben Ihre Nachricht erhalten`, and the
+  names of the file then filled every `Ihre` and `Nachricht` on the page. A
+  possessive is never a word of a name: `Ihr Jonas Brandt` under a letter
+  is filled as `Jonas Brandt`, and `Ihr` stays readable elsewhere.
+- A file number after `Aktenzeichen`, `Az.`, `Geschäftszeichen`,
+  `Geschäftsnummer` or `Unser/Ihr Zeichen` is found whatever its shape, as
+  long as it holds a digit (ADR-0051): a dunning court's `26431907720` or
+  `26-4319077-2-0`, a firm's `KL-4471`. Before, only numbers with a slash
+  (`3 O 128/26`) were. A dunning court's number is also found after `Mahn…`
+  or `Vollstreckungsbescheid` without the word.
+- Under the purpose `legal`, a name a screen cut short in a tab or a cell
+  (`Albers,…`, `Albers, M ...`) is filled in a picture even where it stands
+  nowhere else on the page (ADR-0051). Written text and the default
+  threshold are not affected.
+- A black box in a picture grows with the line it covers (ADR-0051): a
+  quarter of the line's height to the sides, an eighth up and down, at least
+  2 pixels as before. The edges of large or bold letters no longer show
+  beside and under it; boxes on lines of 12 pixels and more are wider than
+  before.
+- An IBAN in `[allow] values` is allowed however it is grouped or cased:
+  `DE89370400440532013000` in the policy now also leaves `DE89 3704 0044
+  0532 0130 00` (as a letterhead or OCR writes it), and the other way round.
+  Every other IBAN is still found.
+- The UI's two panes keep equal widths, and the findings panel keeps its
+  column while a run replaces the result: letting go of the threshold slider
+  no longer moves the slider away from the pointer, and a wide picture no
+  longer takes more than its half.
+
 ## [0.4.1] - 2026-11-16
 
 **Before you update:** the signature detector is a new model; fetch it

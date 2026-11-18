@@ -5,13 +5,15 @@
 //! - `check <dir>` measures veilq against it, and against corpora of
 //!   held-out seeds generated on the fly; exit 1 when the gate
 //!   (`eval/gate.toml`) fails.
+//! - `candidates <dir> --out <file>` writes every candidate with its label,
+//!   one JSON line each, for measuring a decider's models (#95).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
-use veilq_eval::{check, generate};
+use veilq_eval::{candidates, check, generate};
 
 #[derive(Parser)]
 #[command(name = "veilq-eval")]
@@ -62,6 +64,11 @@ enum Command {
         /// it they are skipped.
         #[arg(long)]
         ocr: bool,
+        /// Measure what a redaction finds, not a scan (#108): a picture's
+        /// faces and signatures are filled as a redaction fills them, and
+        /// it is read again until a round finds nothing new.
+        #[arg(long)]
+        redact: bool,
         /// How many misses and false positives to list.
         #[arg(long, default_value_t = 40)]
         list: usize,
@@ -71,6 +78,21 @@ enum Command {
         /// 1).
         #[arg(long, default_value_t = 1)]
         jobs: usize,
+    },
+    /// Write every candidate the detectors proposed, kept or not, with its
+    /// label from the truth: one JSON line each (text, CSV, JSON, NDJSON).
+    Candidates {
+        /// The corpus: `eval/`, or one written by `generate`.
+        dir: PathBuf,
+        /// Only documents under this path in the corpus (`de/csv`).
+        #[arg(long)]
+        only: Option<String>,
+        /// Run the installed NER model too (`veilq models fetch ner`).
+        #[arg(long)]
+        ner: bool,
+        /// The JSONL file to write.
+        #[arg(long)]
+        out: PathBuf,
     },
 }
 
@@ -97,6 +119,25 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             println!("a recording written to {}", out.display());
             Ok(true)
         }
+        Command::Candidates {
+            dir,
+            only,
+            ner,
+            out,
+        } => {
+            let mut file = std::io::BufWriter::new(std::fs::File::create(&out)?);
+            let w = candidates::write(&dir, only.as_deref(), ner, &mut file)?;
+            std::io::Write::flush(&mut file)?;
+            println!(
+                "{} candidates ({} personal) from {} documents written to {}; {} skipped (pictures, containers, unreadable truth)",
+                w.candidates,
+                w.personal,
+                w.documents,
+                out.display(),
+                w.skipped
+            );
+            Ok(true)
+        }
         Command::Check {
             dir,
             only,
@@ -106,6 +147,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             list,
             ner,
             ocr,
+            redact,
             jobs,
         } => {
             let gate_path = gate.unwrap_or_else(|| dir.join("gate.toml"));
@@ -128,7 +170,9 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 let done: Vec<_> = std::thread::scope(|s| {
                     let handles: Vec<_> = chunk
                         .iter()
-                        .map(|(_, d)| s.spawn(|| check::evaluate(d, only.as_deref(), ner, ocr)))
+                        .map(|(_, d)| {
+                            s.spawn(|| check::evaluate(d, only.as_deref(), ner, ocr, redact))
+                        })
                         .collect();
                     handles
                         .into_iter()

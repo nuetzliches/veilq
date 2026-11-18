@@ -25,7 +25,9 @@ pub const POLICY_VERSION: u32 = 1;
 pub(crate) const DEFAULT_MIN_CONFIDENCE: f32 = 0.7;
 const DEFAULT_PATTERN_CONFIDENCE: f32 = 0.9;
 const DEFAULT_CONTEXT_BOOST: f32 = 0.3;
-const DEFAULT_CONTEXT_WINDOW: usize = 48;
+/// How many characters before a match its context words are looked for in,
+/// unless a pattern says otherwise.
+pub const DEFAULT_CONTEXT_WINDOW: usize = 48;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -76,6 +78,9 @@ pub struct Policy {
     /// Bodies that carry their verdict (`veilq mark`, ADR-0024).
     #[serde(default)]
     pub markers: Markers,
+    /// The learned decider (#35).
+    #[serde(default)]
+    pub decider: DeciderPolicy,
     /// Per entity type: what a miss and a false positive cost (ADR-0040),
     /// before the purposes' costs. Data for a learned decider; no
     /// threshold follows from them yet.
@@ -85,6 +90,25 @@ pub struct Policy {
 
 fn default_purposes() -> Vec<String> {
     vec![crate::purpose::GENERAL.to_owned()]
+}
+
+/// The learned decider (#35).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DeciderPolicy {
+    /// `true` (the default): where a learned decider is installed, it may
+    /// lift a candidate below its threshold into the findings, and the
+    /// report says how many it lifted. It never drops what a rule keeps.
+    /// `false` leaves every decision to the thresholds and rules, as
+    /// `--no-decider` does for one run.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+impl Default for DeciderPolicy {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
 }
 
 /// How `veilq mark` reads a body's first line.
@@ -111,7 +135,7 @@ pub struct Office {
 
 /// How pictures are read: images, GIF frames, PDF pages, and images inside
 /// Office files and mails.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Picture {
     /// Faces (ADR-0038): `redact` (the default) fills every face the face
@@ -135,6 +159,23 @@ pub struct Picture {
     /// first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub low_confidence: Option<LowConfidence>,
+    /// `true` (the default): a picture veilq writes (an image, each GIF
+    /// frame, each PDF page) carries `veilq <version>` at its bottom right
+    /// (ADR-0050), drawn after redaction. Images inside Office files and
+    /// mails stay unmarked. `false` writes no mark.
+    #[serde(default = "default_true")]
+    pub watermark: bool,
+}
+
+impl Default for Picture {
+    fn default() -> Self {
+        Self {
+            faces: FacePolicy::default(),
+            signatures: SignaturePolicy::default(),
+            low_confidence: None,
+            watermark: true,
+        }
+    }
 }
 
 /// What veilq does with the names it finds in a file (ADR-0047).
@@ -321,7 +362,10 @@ fn default_context_window() -> usize {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Allow {
-    /// Exact values, compared after the same normalisation as pseudonyms.
+    /// Exact values, compared after the same normalisation as pseudonyms. A
+    /// value that is an IBAN matches that IBAN however it is grouped or
+    /// cased (`DE89 3704 …`, `DE893704…`): a known public account, such as
+    /// one's own in a letterhead.
     #[serde(default)]
     pub values: Vec<String>,
     /// Rust `regex` patterns a whole finding must match.
@@ -417,6 +461,7 @@ impl Default for Policy {
             picture: Picture::default(),
             names: Names::default(),
             markers: Markers::default(),
+            decider: DeciderPolicy::default(),
             purposes: default_purposes(),
             costs: BTreeMap::new(),
         }

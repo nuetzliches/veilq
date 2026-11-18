@@ -445,6 +445,11 @@ pub fn set_local_data(dir: PathBuf) {
     let _ = LOCAL_DATA.set(dir);
 }
 
+/// The folder set with [`set_local_data`], if one was.
+pub(crate) fn local_data() -> Option<PathBuf> {
+    LOCAL_DATA.get().cloned()
+}
+
 /// Where models live: `VEILQ_MODEL_DIR`, else the user's cache directory.
 pub fn model_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("VEILQ_MODEL_DIR") {

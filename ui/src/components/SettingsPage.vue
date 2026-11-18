@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import type { Api, Info } from '@/api';
+import CasesCard from '@/components/CasesCard.vue';
 import FolderPicker from '@/components/FolderPicker.vue';
 import InstallCard from '@/components/InstallCard.vue';
 import ModelsCard from '@/components/ModelsCard.vue';
@@ -93,6 +94,7 @@ async function quit() {
 
         <template v-else-if="section === 'detection'">
           <RulesCard :api="api" @saved="emit('changed')" />
+          <CasesCard :api="api" />
           <ModelsCard :api="api" @changed="emit('changed')" />
         </template>
 

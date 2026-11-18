@@ -12,10 +12,10 @@
 //! into pixels faithfully. **verify** reads the filled image again; what it
 //! still finds is filled too, for up to three rounds (ADR-0022).
 //!
-//! Faces are found first (ADR-0038), when the policy has them filled: each
-//! is a `FACE` finding and filled black before OCR reads the picture. A
-//! face in a GIF is looked for in every frame that changed, in the whole
-//! frame.
+//! Faces (ADR-0038) and signatures (ADR-0048), when the policy has them
+//! filled, are `FACE` and `SIGNATURE` findings, found on the picture OCR
+//! reads too and filled with the first reading's boxes (ADR-0053). A face
+//! in a GIF is looked for in every frame that changed, in the whole frame.
 //!
 //! A GIF is read frame by frame. A box stays filled in the following frames
 //! as long as its pixels do not change there, so a value that stands still
@@ -339,7 +339,14 @@ fn boxes(p: &Page, start: usize, end: usize, width: u32, height: u32) -> Vec<Rec
             }
         }
     }
-    out.into_iter().map(|r| r.pad(PAD, width, height)).collect()
+    out.into_iter().map(|r| grown(&r, width, height)).collect()
+}
+
+/// `r` with its margin (ADR-0051): a quarter of its height to the sides, an
+/// eighth up and down, never less than [`PAD`]. A margin of a few pixels
+/// leaves the edges of large or bold letters beside and under the box.
+fn grown(r: &Rect, width: u32, height: u32) -> Rect {
+    r.pad_xy((r.h / 4).max(PAD), (r.h / 8).max(PAD), width, height)
 }
 
 /// Whether `r` lies (nearly) inside one of `done`. Touching is not enough:
@@ -374,13 +381,84 @@ pub fn redact_picture(
     apply: bool,
     out: &mut Outcome,
 ) -> Result<Vec<Rect>, Error> {
-    let mut boxes = faces(engine, img, frame, apply, out, &[])?;
-    boxes.extend(signatures(engine, img, frame, apply, out, &[])?);
-    boxes.extend(read_whole(engine, ocr, img, frame, apply, out)?);
-    Ok(boxes)
+    // Every detector reads the same unfilled picture (#108): a region filled
+    // first took the context word a pattern beside it needs. The regions
+    // are found and reported here and filled with the first reading's boxes.
+    let mut regions = marked(engine, img, frame, out);
+    regions.extend(faces(engine, img, frame, out, &[])?);
+    regions.extend(signatures(engine, img, frame, out, &[])?);
+    let read = read_whole(engine, ocr, img, frame, apply, out, &regions)?;
+    regions.extend(read);
+    Ok(regions)
 }
 
-/// The text of a whole picture, redacted: [`settle`] without a band.
+fn rect(a: &crate::Area) -> Rect {
+    Rect {
+        x: a.x,
+        y: a.y,
+        w: a.width,
+        h: a.height,
+    }
+}
+
+/// The areas of `frame` a user marked as personal data (#34): reported as
+/// their type (detector `mark`), clipped to the picture. The boxes to fill
+/// are returned; they are filled with the first reading's (#108).
+fn marked(engine: &Engine, img: &RgbaImage, frame: Option<u64>, out: &mut Outcome) -> Vec<Rect> {
+    let (w, h) = img.dimensions();
+    let mut filled = Vec::new();
+    for (area, entity) in engine
+        .picture_marks()
+        .missed
+        .iter()
+        .filter(|(a, _)| a.frame == frame)
+    {
+        let r = Rect {
+            x: area.x.min(w),
+            y: area.y.min(h),
+            w: area.width.min(w.saturating_sub(area.x)),
+            h: area.height.min(h.saturating_sub(area.y)),
+        };
+        if r.w == 0 || r.h == 0 {
+            continue;
+        }
+        out.findings.push(Finding {
+            entity: entity.clone(),
+            location: Location::Region {
+                part: None,
+                frame,
+                x: r.x,
+                y: r.y,
+                width: r.w,
+                height: r.h,
+            },
+            confidence: 1.0,
+            detector: MARK_DETECTOR.into(),
+            pseudonym: None,
+        });
+        filled.push(r);
+    }
+    filled
+}
+
+/// The detector of an area a user marked (#34).
+pub const MARK_DETECTOR: &str = "mark";
+
+/// Whether `r` (in the picture's pixels, at `frame`) lies in an area a user
+/// released (#34): what a detector finds there is left.
+fn released(engine: &Engine, frame: Option<u64>, r: &Rect) -> bool {
+    let areas: Vec<Rect> = engine
+        .picture_marks()
+        .released
+        .iter()
+        .filter(|a| a.frame == frame)
+        .map(rect)
+        .collect();
+    !areas.is_empty() && covered(r, areas.iter())
+}
+
+/// The text of a whole picture, redacted: [`settle`] without a band, with
+/// `regions` filled with its first reading's boxes.
 fn read_whole(
     engine: &Engine,
     ocr: &Ocr,
@@ -388,20 +466,20 @@ fn read_whole(
     frame: Option<u64>,
     apply: bool,
     out: &mut Outcome,
+    regions: &[Rect],
 ) -> Result<Vec<Rect>, Error> {
-    settle(engine, ocr, img, frame, apply, out, Band::WHOLE)?
+    settle(engine, ocr, img, frame, apply, out, Band::WHOLE, regions)?
         .ok_or_else(|| error("a whole picture has no edge a line could be cut at"))
 }
 
-/// The faces in `img`, reported as `FACE` and filled (with `apply`), at
-/// `frame`; nothing when the policy keeps faces. A face inside a box of
-/// `kept` (a box of the frame before, whose pixels stood still) is that
-/// box's and not reported again. The boxes filled are returned.
+/// The faces in `img`, reported as `FACE`, at `frame`; nothing when the
+/// policy keeps faces. A face inside a box of `kept` (a box of the frame
+/// before, whose pixels stood still) is that box's and not reported again.
+/// The boxes to fill are returned.
 fn faces(
     engine: &Engine,
-    img: &mut RgbaImage,
+    img: &RgbaImage,
     frame: Option<u64>,
-    apply: bool,
     out: &mut Outcome,
     kept: &[Rect],
 ) -> Result<Vec<Rect>, Error> {
@@ -419,19 +497,16 @@ fn faces(
         detector: "face",
         reason: FACES_FOUND,
     };
-    Ok(regions(
-        engine, &region, found, img, frame, apply, out, kept,
-    ))
+    Ok(regions(engine, &region, found, frame, out, kept))
 }
 
 /// The handwritten signatures in `img` (ADR-0048), as [`faces`] does with
-/// faces: reported as `SIGNATURE` and filled; nothing when the policy keeps
+/// faces: reported as `SIGNATURE`; nothing when the policy keeps
 /// signatures.
 fn signatures(
     engine: &Engine,
-    img: &mut RgbaImage,
+    img: &RgbaImage,
     frame: Option<u64>,
-    apply: bool,
     out: &mut Outcome,
     kept: &[Rect],
 ) -> Result<Vec<Rect>, Error> {
@@ -449,9 +524,7 @@ fn signatures(
         detector: "signature",
         reason: SIGNATURES_FOUND,
     };
-    Ok(regions(
-        engine, &region, found, img, frame, apply, out, kept,
-    ))
+    Ok(regions(engine, &region, found, frame, out, kept))
 }
 
 /// What a detector of regions (faces, signatures) reports.
@@ -462,18 +535,15 @@ struct Region {
     reason: &'static str,
 }
 
-/// `found` (boxes and confidences) reported as findings of `region` and
-/// filled (with `apply`), at `frame`. One below its threshold, or inside a
-/// box of `kept` (a box of the frame before, whose pixels stood still), is
-/// left out. The boxes filled are returned.
-#[allow(clippy::too_many_arguments)]
+/// `found` (boxes and confidences) reported as findings of `region`, at
+/// `frame`. One below its threshold, or inside a box of `kept` (a box of
+/// the frame before, whose pixels stood still), is left out. The boxes to
+/// fill are returned.
 fn regions(
     engine: &Engine,
     region: &Region,
     found: Vec<(Rect, f32)>,
-    img: &mut RgbaImage,
     frame: Option<u64>,
-    apply: bool,
     out: &mut Outcome,
     kept: &[Rect],
 ) -> Vec<Rect> {
@@ -481,7 +551,7 @@ fn regions(
     let threshold = engine.threshold(&entity);
     let mut filled = Vec::new();
     for (rect, confidence) in found {
-        if confidence < threshold || covered(&rect, kept.iter()) {
+        if confidence < threshold || covered(&rect, kept.iter()) || released(engine, frame, &rect) {
             continue;
         }
         out.findings.push(Finding {
@@ -498,9 +568,6 @@ fn regions(
             detector: region.detector.into(),
             pseudonym: None,
         });
-        if apply {
-            fill(img, &rect);
-        }
         filled.push(rect);
     }
     if !filled.is_empty() {
@@ -709,6 +776,12 @@ fn candidates(
 /// reported where they are in the picture, the boxes returned are in the
 /// band. `None` when OCR reads a line at an edge of the band that was left
 /// out: the line may be cut there, and the band must be read larger.
+///
+/// `regions` (in the band) are what the other detectors found in the same
+/// unfilled picture (#108): a candidate inside one is theirs, a line read
+/// badly inside one is no reason for review, and they are filled with the
+/// first reading's boxes. The boxes returned are the reading's own.
+#[allow(clippy::too_many_arguments)]
 fn settle(
     engine: &Engine,
     ocr: &Ocr,
@@ -717,6 +790,7 @@ fn settle(
     apply: bool,
     out: &mut Outcome,
     band: Band,
+    regions: &[Rect],
 ) -> Result<Option<Vec<Rect>>, Error> {
     let (w, h) = img.dimensions();
     let mut filled: Vec<Rect> = Vec::new();
@@ -733,8 +807,27 @@ fn settle(
         let candidates = candidates(engine, &lines, w, h, round > 1)?;
         let mut new: Vec<Rect> = Vec::new();
         for (c, rects) in candidates {
-            // Found twice (page and line), or inside a box already filled.
-            if rects.is_empty() || rects.iter().all(|r| covered(r, filled.iter().chain(&new))) {
+            // Found twice (page and line), inside a box already filled, or
+            // inside a region.
+            if rects.is_empty()
+                || rects
+                    .iter()
+                    .all(|r| covered(r, filled.iter().chain(regions).chain(&new)))
+            {
+                continue;
+            }
+            // In an area the user released (#34), in every round: a check
+            // must not find it again.
+            if rects.iter().all(|r| {
+                released(
+                    engine,
+                    frame,
+                    &Rect {
+                        y: r.y + band.top,
+                        ..*r
+                    },
+                )
+            }) {
                 continue;
             }
             let bound = rects.iter().skip(1).fold(rects[0], |a, r| a.union(r));
@@ -764,10 +857,14 @@ fn settle(
         // Read badly where nothing is filled: on the first reading only, as
         // a later one reads the boxes' edges.
         if round == 1 {
-            let unread = unread(engine, &lines, &new, &band, frame, (w, h), out)?;
+            let quiet: Vec<Rect> = new.iter().chain(regions).copied().collect();
+            let unread = unread(engine, &lines, &quiet, &band, frame, (w, h), out)?;
             new.extend(unread);
         }
-        if new.is_empty() || !apply {
+        // The regions are filled with the first reading's boxes, and the
+        // picture is read again to verify it.
+        let regions_open = round == 1 && !regions.is_empty();
+        if (new.is_empty() && !regions_open) || !apply {
             return Ok(Some(filled));
         }
         let last = round == ROUNDS;
@@ -779,7 +876,7 @@ fn settle(
                 rounds: ROUNDS,
             });
         }
-        for r in &new {
+        for r in new.iter().chain(if round == 1 { regions } else { &[] }) {
             fill(img, r);
         }
         filled.extend(new);
@@ -822,6 +919,10 @@ fn unread(
             y: l.rect.y + band.top,
             ..l.rect
         };
+        // A line in an area the user released (#34) is read as it is.
+        if released(engine, frame, &r) {
+            continue;
+        }
         match low {
             LowConfidence::Review => out.weak_lines.push(at(&r, frame)),
             LowConfidence::Error => return Err(Error::Unread { at: at(&r, frame) }),
@@ -840,11 +941,30 @@ fn unread(
                     detector: UNREAD_DETECTOR.into(),
                     pseudonym: None,
                 });
-                boxes.push(l.rect.pad(PAD, w, h));
+                boxes.push(grown(&l.rect, w, h));
             }
         }
     }
     Ok(boxes)
+}
+
+/// The part of a picture (`bytes`, any format veilq reads, or a PDF page
+/// rendered as PNG) around `area`, `margin` pixels on each side within the
+/// picture, as PNG: the excerpt of a case (#34).
+pub fn crop(bytes: &[u8], area: &crate::Area, margin: u32) -> Result<Vec<u8>, Error> {
+    let img = image::load_from_memory_with_format(bytes, format_of(bytes)?)
+        .map_err(error)?
+        .to_rgba8();
+    let (w, h) = img.dimensions();
+    let x = area.x.saturating_sub(margin).min(w);
+    let y = area.y.saturating_sub(margin).min(h);
+    let right = (area.x + area.width + margin).min(w);
+    let bottom = (area.y + area.height + margin).min(h);
+    if right <= x || bottom <= y {
+        return Err(error("the area lies outside the picture"));
+    }
+    let part = image::imageops::crop_imm(&img, x, y, right - x, bottom - y).to_image();
+    encode(&part, ImageFormat::Png)
 }
 
 /// The format of an image file, from its bytes.
@@ -900,6 +1020,23 @@ fn joined(mut bands: Vec<(u32, u32)>) -> Vec<(u32, u32)> {
     out
 }
 
+/// The parts of `regions` (in a picture) between rows `top` and `bottom`, in
+/// the band those rows make.
+fn in_band(regions: &[Rect], top: u32, bottom: u32) -> Vec<Rect> {
+    regions
+        .iter()
+        .filter_map(|r| {
+            let y = r.y.max(top);
+            let end = r.bottom().min(bottom);
+            (end > y).then(|| Rect {
+                y: y - top,
+                h: end - y,
+                ..*r
+            })
+        })
+        .collect()
+}
+
 /// Whether bands of this many rows are worth reading on their own: above
 /// half the picture (a scroll, a new page), reading it whole costs no more.
 fn too_much(bands: &[(u32, u32)], height: u32) -> bool {
@@ -926,15 +1063,16 @@ fn redact_changed(
     kept: &[Rect],
 ) -> Result<Vec<Rect>, Error> {
     let (w, h) = img.dimensions();
-    let mut boxes = faces(engine, img, frame, apply, out, kept)?;
-    boxes.extend(signatures(engine, img, frame, apply, out, kept)?);
+    let mut boxes = faces(engine, img, frame, out, kept)?;
+    boxes.extend(signatures(engine, img, frame, out, kept)?);
     let margin = MARGIN.max(h / 20);
     let mut bands = changed_bands(before, after, margin);
     // Read each band on a copy; a band cut short starts the reading over, so
     // nothing of a reading given up reaches the frame or the report.
     let read = 'read: loop {
         if too_much(&bands, h) {
-            boxes.extend(read_whole(engine, ocr, img, frame, apply, out)?);
+            let read = read_whole(engine, ocr, img, frame, apply, out, &boxes)?;
+            boxes.extend(read);
             return Ok(boxes);
         }
         let mut read = Vec::new();
@@ -946,7 +1084,10 @@ fn redact_changed(
                 open_above: top > 0,
                 open_below: bottom < h,
             };
-            match settle(engine, ocr, &mut part, frame, apply, &mut found, band)? {
+            let regions = in_band(&boxes, top, bottom);
+            match settle(
+                engine, ocr, &mut part, frame, apply, &mut found, band, &regions,
+            )? {
                 Some(rects) => read.push((top, part, found, rects)),
                 None => {
                     // Larger on the open sides; each time by `margin` at
@@ -959,6 +1100,12 @@ fn redact_changed(
         }
         break read;
     };
+    // The faces and signatures whole, where a band holds a part of one only.
+    if apply {
+        for r in &boxes {
+            fill(img, r);
+        }
+    }
     for (top, part, found, rects) in read {
         if apply {
             image::imageops::replace(img, &part, 0, i64::from(top));
@@ -1025,7 +1172,15 @@ fn gif(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Outcome,
             }
         };
         if let Some(e) = encoder.as_mut() {
-            e.encode_frame(Frame::from_parts(img.clone(), 0, 0, delay))
+            // The mark goes onto the written frame only: the next frame is
+            // compared with this one as redacted, unmarked.
+            let mut written = img.clone();
+            if engine.watermarks() {
+                let (w, h) = written.dimensions();
+                let scale = crate::watermark::scale_for(w, h);
+                crate::watermark::stamp(&mut written, scale, scale * 2);
+            }
+            e.encode_frame(Frame::from_parts(written, 0, 0, delay))
                 .map_err(error)?;
         }
         prev = Some((original, img));
@@ -1073,6 +1228,11 @@ pub fn image(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Ou
     }
     redact_picture(engine, ocr, &mut rgba, None, apply, &mut out)?;
     if apply {
+        // After the verify rounds: OCR never reads the mark (ADR-0050).
+        if engine.watermarks() {
+            let scale = crate::watermark::scale_for(rgba.width(), rgba.height());
+            crate::watermark::stamp(&mut rgba, scale, scale * 2);
+        }
         out.output = encode(&rgba, format)?;
     }
     weak_reason(&mut out);
@@ -1135,6 +1295,124 @@ mod tests {
         }
     }
 
+    fn area(frame: Option<u64>, x: u32, y: u32, width: u32, height: u32) -> crate::Area {
+        crate::Area {
+            frame,
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    #[test]
+    fn a_marked_area_is_reported_on_its_page_only_and_left_to_fill() {
+        let engine = Engine::new(&crate::Policy::default(), None, b"test", None)
+            .unwrap()
+            .with_picture_marks(
+                vec![
+                    (
+                        area(Some(2), 10, 10, 20, 10),
+                        EntityType::new("PERSON").unwrap(),
+                    ),
+                    // Beyond the picture's edge: clipped to it.
+                    (
+                        area(Some(2), 90, 90, 50, 50),
+                        EntityType::new("ADDRESS").unwrap(),
+                    ),
+                ],
+                Vec::new(),
+            );
+        let white = RgbaImage::from_pixel(100, 100, Rgba([255, 255, 255, 255]));
+        let mut out = outcome();
+        assert!(
+            marked(&engine, &white, Some(1), &mut out).is_empty(),
+            "another page"
+        );
+        assert!(out.findings.is_empty());
+        // Filled with the first reading's boxes, not before it (#108).
+        let boxes = marked(&engine, &white, Some(2), &mut out);
+        assert_eq!(boxes.len(), 2);
+        assert_eq!(boxes[1].w, 10, "clipped at the edge");
+        assert_eq!(out.findings.len(), 2);
+        assert_eq!(out.findings[0].detector, MARK_DETECTOR);
+        assert_eq!(out.findings[0].confidence, 1.0);
+    }
+
+    #[test]
+    fn a_region_is_cut_to_the_band_it_reaches_into() {
+        let face = Rect {
+            x: 5,
+            y: 40,
+            w: 20,
+            h: 30,
+        };
+        assert_eq!(
+            in_band(&[face], 50, 100),
+            vec![Rect {
+                x: 5,
+                y: 0,
+                w: 20,
+                h: 20
+            }]
+        );
+        assert_eq!(in_band(&[face], 0, 50)[0].h, 10);
+        assert!(in_band(&[face], 70, 90).is_empty(), "below it");
+    }
+
+    #[test]
+    fn what_lies_in_a_released_area_is_left() {
+        let engine = Engine::new(&crate::Policy::default(), None, b"test", None)
+            .unwrap()
+            .with_picture_marks(Vec::new(), vec![area(None, 0, 0, 50, 50)]);
+        let inside = Rect {
+            x: 10,
+            y: 10,
+            w: 20,
+            h: 10,
+        };
+        let across = Rect {
+            x: 40,
+            y: 40,
+            w: 30,
+            h: 10,
+        };
+        assert!(released(&engine, None, &inside));
+        assert!(!released(&engine, None, &across), "most of it outside");
+        assert!(!released(&engine, Some(1), &inside), "another page");
+        // A face found there is not reported or filled.
+        let region = Region {
+            entity: "FACE",
+            detector: "face",
+            reason: FACES_FOUND,
+        };
+        let mut out = outcome();
+        let filled = regions(
+            &engine,
+            &region,
+            vec![(inside, 0.99), (across, 0.99)],
+            None,
+            &mut out,
+            &[],
+        );
+        assert_eq!(filled, vec![across]);
+        assert_eq!(out.findings.len(), 1);
+    }
+
+    #[test]
+    fn a_case_excerpt_is_the_picture_around_the_area() {
+        let img = RgbaImage::from_pixel(100, 80, Rgba([255, 255, 255, 255]));
+        let png = encode(&img, ImageFormat::Png).unwrap();
+        let part = crop(&png, &area(None, 10, 10, 20, 10), 5).unwrap();
+        let part = image::load_from_memory(&part).unwrap();
+        assert_eq!((part.width(), part.height()), (30, 20));
+        // At the edge, the margin ends with the picture.
+        let edge =
+            image::load_from_memory(&crop(&png, &area(None, 95, 75, 20, 20), 5).unwrap()).unwrap();
+        assert_eq!((edge.width(), edge.height()), (10, 10));
+        assert!(crop(&png, &area(None, 200, 200, 5, 5), 0).is_err());
+    }
+
     #[test]
     fn a_line_read_badly_is_one_review_reason_per_file() {
         let mut l = line("Lena Albrecht", 0, 0);
@@ -1168,6 +1446,45 @@ mod tests {
     }
 
     #[test]
+    fn a_line_read_badly_inside_a_region_is_no_reason() {
+        let engine = Engine::new(&crate::Policy::default(), None, b"test", None).unwrap();
+        let mut l = line("Lena Albrecht", 0, 0);
+        l.scores[5] = 0.6;
+        // A signature's box over the line (#108): filled whole, so nothing
+        // read badly there can leave.
+        let signature = Rect {
+            x: 0,
+            y: 0,
+            w: 400,
+            h: 40,
+        };
+        let mut out = outcome();
+        let lines = [l];
+        let boxes = unread(
+            &engine,
+            &lines,
+            &[signature],
+            &Band::WHOLE,
+            None,
+            (1000, 1000),
+            &mut out,
+        );
+        assert!(boxes.unwrap().is_empty());
+        assert!(out.weak_lines.is_empty());
+        unread(
+            &engine,
+            &lines,
+            &[],
+            &Band::WHOLE,
+            None,
+            (1000, 1000),
+            &mut out,
+        )
+        .unwrap();
+        assert_eq!(out.weak_lines.len(), 1, "outside every region");
+    }
+
+    #[test]
     fn lines_become_rows_and_findings_become_boxes() {
         // A label and its value on one row, another row below.
         let lines = [
@@ -1178,13 +1495,15 @@ mod tests {
         let p = page(&lines);
         assert_eq!(p.text, "Geburtsdatum  14.03.1987\nKfz HB-MA 412");
         let start = p.text.find("14.03").unwrap();
+        // Its margin: a quarter of the line's 20 pixels to the sides, 2 up
+        // and down.
         let b = boxes(&p, start, start + 10, 1000, 1000);
         assert_eq!(
             b,
             vec![Rect {
-                x: 198,
+                x: 195,
                 y: 0,
-                w: 104,
+                w: 110,
                 h: 24
             }]
         );
@@ -1437,14 +1756,15 @@ mod tests {
             .flat_map(|(_, rects)| rects)
             .collect();
         // `Mira Albers` on the first line; on the second, `Brandts` is
-        // characters 0 to 7 (x 0 to 70), `Kapuze` starts at x 80.
+        // characters 0 to 7 (x 0 to 70), `Kapuze` starts at x 80; the box's
+        // margin is a quarter of the line's 20 pixels.
         assert!(found.iter().any(|r| r.y < 20 && r.x == 0), "{found:?}");
         assert!(found.iter().any(|r| r.y >= 38), "{found:?}");
         assert!(
             found
                 .iter()
                 .filter(|r| r.y >= 38)
-                .all(|r| r.right() <= 72 + PAD),
+                .all(|r| r.right() <= 70 + 20 / 4),
             "{found:?}"
         );
     }
@@ -1481,6 +1801,46 @@ mod tests {
             found.iter().any(|r| r.y <= PAD && r.right() >= 750),
             "{found:?}"
         );
+    }
+
+    #[test]
+    fn a_tab_cut_to_its_surname_is_a_name_in_a_legal_file() {
+        // The surname stands nowhere else on the page (ADR-0051).
+        let lines = [
+            line("Übersicht", 0, 0),
+            line("Albers,...", 200, 0),
+            line("Termin am Montag", 0, 60),
+        ];
+        let people = |toml: &str| -> Vec<Rect> {
+            let policy = crate::Policy::parse(&format!("version = 1\n{toml}")).unwrap();
+            let engine = Engine::new(&policy, None, b"test", None).unwrap();
+            candidates(&engine, &lines, 1000, 200, false)
+                .unwrap()
+                .into_iter()
+                .filter(|(c, _)| c.entity.as_str() == "PERSON")
+                .flat_map(|(_, rects)| rects)
+                .collect()
+        };
+        let found = people("purposes = [\"legal\"]");
+        assert!(
+            found
+                .iter()
+                .any(|r| r.x <= 200 && r.right() >= 270 && r.y == 0),
+            "{found:?}"
+        );
+        // Below the default threshold.
+        assert!(people("").is_empty());
+    }
+
+    #[test]
+    fn a_box_grows_with_its_line() {
+        let r = |x, y, w, h| Rect { x, y, w, h };
+        // Large or bold text: 10 pixels to the sides, 5 up and down.
+        assert_eq!(grown(&r(100, 100, 300, 40), 1000, 1000), r(90, 95, 320, 50));
+        // Small text keeps the least margin.
+        assert_eq!(grown(&r(100, 100, 60, 8), 1000, 1000), r(98, 98, 64, 12));
+        // Never beyond the picture.
+        assert_eq!(grown(&r(2, 0, 60, 40), 70, 42), r(0, 0, 70, 42));
     }
 
     #[test]
@@ -1595,7 +1955,7 @@ mod tests {
         let mut done = line("Mira Albers", 10, 80);
         done.scores[1] = 0.4;
         let lines = [line("Termin am Montag", 10, 0), weak, done];
-        let filled = [lines[2].rect.pad(PAD, 400, 200)];
+        let filled = [grown(&lines[2].rect, 400, 200)];
         let run = |e: &Engine| {
             let mut out = outcome();
             let r = unread(e, &lines, &filled, &Band::WHOLE, None, (400, 200), &mut out);
@@ -1612,7 +1972,7 @@ mod tests {
             "purposes = [\"legal\"]",
         ] {
             let (r, out) = run(&engine(toml));
-            assert_eq!(r.unwrap(), [lines[1].rect.pad(PAD, 400, 200)], "{toml}");
+            assert_eq!(r.unwrap(), [grown(&lines[1].rect, 400, 200)], "{toml}");
             assert!(out.weak_lines.is_empty());
             assert_eq!(out.findings.len(), 1);
             assert_eq!(out.findings[0].entity.as_str(), UNREAD_TEXT);

@@ -7,6 +7,8 @@
 //! root a caller's paths must stay under.
 
 pub mod action;
+pub mod cases;
+pub mod decider;
 pub mod detect;
 pub mod engine;
 pub mod error;
@@ -37,10 +39,12 @@ pub mod runtime;
 pub mod signature;
 #[cfg(feature = "ocr")]
 pub mod visual;
+#[cfg(feature = "ocr")]
+pub mod watermark;
 pub mod xml;
 
 pub use action::Action;
-pub use engine::{Engine, Explain, Explained, Format, Reading, Redacted};
+pub use engine::{Area, Engine, Explain, Explained, Format, Reading, Redacted};
 pub use error::Error;
 pub use finding::{EntityType, Finding, Location, Report};
 pub use outcome::Outcome;

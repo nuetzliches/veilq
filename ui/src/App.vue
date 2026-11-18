@@ -1,6 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { ApiError, createApi, type Info, type Redaction, type Source } from '@/api';
+import {
+  ApiError,
+  createApi,
+  type Area,
+  type Info,
+  type Mark,
+  type Proposal,
+  type Redaction,
+  type Rule,
+  type Source,
+} from '@/api';
 import BrandMark from '@/components/BrandMark.vue';
 import ComparePane from '@/components/ComparePane.vue';
 import FileBrowser from '@/components/FileBrowser.vue';
@@ -14,7 +24,8 @@ import SettingsPage from '@/components/SettingsPage.vue';
 import WelcomeDialog from '@/components/WelcomeDialog.vue';
 import { copyablePicture, copyIsOurs, pngBlob } from '@/lib/clipboard';
 import { locale, plural, t } from '@/lib/i18n';
-import { actionLabel, missingModels } from '@/lib/labels';
+import { actionLabel, entityLabel, missingModels } from '@/lib/labels';
+import { byteSlice, MARK_TYPES, markable } from '@/lib/marks';
 import { pastedName } from '@/lib/paste';
 import { change, percent } from '@/lib/threshold';
 import {
@@ -75,6 +86,16 @@ const threshold = ref<number | null>(null);
 const dragged = ref<number | null>(null);
 /** The findings panel shows what veilq read and why: asked for with its switch (ADR-0034). */
 const explained = ref(false);
+/**
+ * The marks made on this source (#34): each run of it applies them, and each was kept as a case.
+ * Another source starts without.
+ */
+const marks = ref<Mark[]>([]);
+/** A selection in the text output that can be marked as missed. */
+const selection = ref<string | null>(null);
+const markType = ref<string>('PERSON');
+/** What became of the last mark's case. */
+const markNote = ref<string | null>(null);
 
 /** What is open over the surface. */
 const settings = ref(false);
@@ -83,6 +104,8 @@ const folderRun = ref(false);
 const browsing = ref(false);
 const menu = ref(false);
 const panel = ref(false);
+/** The findings panel keeps its column while a run replaces the result: the panes do not jump under the slider. */
+const panelOpen = computed(() => panel.value && (!!result.value || busy.value));
 
 const findings = computed(() => result.value?.report.findings ?? []);
 /** Where the threshold slider stands: dragged, set for this run, or the policy's default. */
@@ -278,7 +301,14 @@ async function run(source: Source, name: string | null, unverified = false, expl
     zoom.value = 'fit';
     threshold.value = null;
     explained.value = false;
+    marks.value = [];
+    markNote.value = null;
+    drawing.value = false;
+    proposal.value = null;
+    ruleNote.value = null;
   }
+  selection.value = null;
+  drawnArea.value = null;
   if (explain) explained.value = true;
   sourceName.value = name;
   lastRun.value = { source, name };
@@ -289,6 +319,7 @@ async function run(source: Source, name: string | null, unverified = false, expl
       unverified,
       explain: true,
       minConfidence: threshold.value ?? undefined,
+      marks: marks.value,
     });
   } catch (e) {
     // Fail closed: no output at all when veilq could not redact.
@@ -328,6 +359,188 @@ function onThresholdChange(event: Event) {
 /** The last source again: the action changed, or a model it needed arrived. */
 function runAgain() {
   if (lastRun.value && !busy.value && !editing.value) void run(lastRun.value.source, lastRun.value.name);
+}
+
+/** Text in the output, not a picture or an Office file: where a selection can be marked. */
+const markableOutput = computed(() => !!result.value && !result.value.output_base64 && !image.value && !pdf.value);
+
+/** A selection in the text output offers to mark it as missed. */
+function onOutputSelect() {
+  const sel = window.getSelection();
+  if (!markableOutput.value || !sel || sel.isCollapsed || !outputBody.value?.contains(sel.anchorNode)) {
+    selection.value = null;
+    return;
+  }
+  selection.value = markable(sel.toString());
+}
+
+/**
+ * A mark (#34): it acts on this document at once (the source runs again with it), and is kept as
+ * a case; that it could not be kept is said, the mark acts all the same.
+ */
+async function addMark(mark: Mark) {
+  if (!lastRun.value) return;
+  const source = lastRun.value.source;
+  marks.value = [...marks.value, mark];
+  selection.value = null;
+  drawnArea.value = null;
+  window.getSelection()?.removeAllRanges();
+  markNote.value = null;
+  const kept = api.addCase(source, mark, threshold.value ?? undefined);
+  runAgain();
+  void offerRule(source, mark);
+  try {
+    const added = await kept;
+    markNote.value = [added.excerpt ? t('marks.kept') : t('marks.keptNoExcerpt'), added.twin ? t('marks.twin') : '']
+      .filter(Boolean)
+      .join(' ');
+  } catch (e) {
+    markNote.value = t('marks.notKept', { error: e instanceof Error ? e.message : String(e) });
+  }
+}
+
+/** The rules the last mark proposes (#34), each tried on the document and the earlier cases. */
+const proposal = ref<Proposal | null>(null);
+/** The marked value the rules were proposed from: the shape rules are said by it. */
+const proposedFrom = ref('');
+/** Which of the proposed rules is shown; the cheapest first. */
+const chosenRule = ref(0);
+/** What became of the proposal: saved, copied, or why not. */
+const ruleNote = ref<string | null>(null);
+
+/** A mark on text proposes its rules; an area names no value a rule could take. */
+async function offerRule(source: Source, mark: Mark) {
+  proposal.value = null;
+  ruleNote.value = null;
+  chosenRule.value = 0;
+  if (mark.kind !== 'missed' && mark.kind !== 'extra') return;
+  try {
+    const p = await api.propose(source, mark, threshold.value ?? undefined);
+    proposedFrom.value = mark.value.trim();
+    proposal.value = p.rules.length ? p : null;
+  } catch {
+    // No proposal is no fault of the mark: it acts all the same.
+  }
+}
+
+const proposed = computed(() => proposal.value?.rules[chosenRule.value] ?? null);
+
+function describeRule(r: Rule): string {
+  const value = proposedFrom.value;
+  switch (r.kind) {
+    case 'deny':
+      return t('rules.proposeDeny', { value: r.value, type: entityLabel(r.entity) });
+    case 'allow':
+      return t('rules.proposeAllow', { value: r.value });
+    case 'context':
+      return t('rules.proposeContext', { value, word: r.word, type: entityLabel(r.entity) });
+    case 'shape':
+      return t('rules.proposeShape', { value, type: entityLabel(r.entity) });
+    case 'allow_shape':
+      return t('rules.proposeAllowShape', { value });
+    case 'threshold':
+      return t('rules.proposeThreshold', { type: entityLabel(r.entity), threshold: r.min_confidence.toFixed(2) });
+  }
+}
+
+const ruleCounts = computed(() => {
+  const p = proposed.value;
+  if (!p || !proposal.value) return '';
+  const here = t('rules.proposeHere', { gained: p.document.gained, lost: p.document.lost });
+  const tried = proposal.value.tried;
+  return tried
+    ? `${here}; ${t('rules.proposeCases', { n: tried, gained: p.cases.gained, lost: p.cases.lost })}`
+    : here;
+});
+
+async function adoptRule() {
+  const p = proposed.value;
+  if (!p) return;
+  try {
+    await api.adoptRule(p.rule);
+    proposal.value = null;
+    ruleNote.value = t('rules.adopted');
+  } catch (e) {
+    ruleNote.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+async function copyRule() {
+  const p = proposed.value;
+  if (!p) return;
+  try {
+    await navigator.clipboard.writeText(p.toml);
+    ruleNote.value = t('rules.copied');
+  } catch (e) {
+    ruleNote.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+function markMissed() {
+  if (selection.value) void addMark({ kind: 'missed', value: selection.value, entity: markType.value });
+}
+
+/** A still image or a PDF's pages in the output: where an area can be marked (not a GIF's frames). */
+const areaOutput = computed(() => (!!image.value && image.value.media_type !== 'image/gif') || !!pdf.value);
+/** A drag on the output picture draws an area to mark. */
+const drawing = ref(false);
+/** The area drawn, while it is offered as a mark; `frame` names a PDF's page. */
+const drawnArea = ref<Area | null>(null);
+
+function onDraw(area: Omit<Area, 'frame'>, page?: number) {
+  drawnArea.value = page === undefined ? area : { ...area, frame: page };
+}
+
+function markArea() {
+  const area = drawnArea.value;
+  if (!area) return;
+  drawnArea.value = null;
+  drawing.value = false;
+  void addMark({ kind: 'missed_area', area, entity: markType.value });
+}
+
+/**
+ * Per finding, whether a mark can release it: a box in text with its place in the input, or a box
+ * on a still image or a PDF page.
+ */
+const releasable = computed(() =>
+  findings.value.map((f, i) =>
+    markableOutput.value
+      ? !!result.value?.input_spans[i]
+      : areaOutput.value && f.location.kind === 'region' && f.location.part === undefined,
+  ),
+);
+
+/** Room around a released box: OCR reads it a pixel or two off the next time. */
+const RELEASE_MARGIN = 3;
+
+function release(i: number) {
+  const r = result.value;
+  const f = findings.value[i];
+  if (!r || !f) return;
+  const l = f.location;
+  if (l.kind === 'region') {
+    const x = Math.max(0, l.x - RELEASE_MARGIN);
+    const y = Math.max(0, l.y - RELEASE_MARGIN);
+    const area: Area = {
+      x,
+      y,
+      width: l.width + (l.x - x) + RELEASE_MARGIN,
+      height: l.height + (l.y - y) + RELEASE_MARGIN,
+    };
+    if (l.frame !== undefined) area.frame = l.frame;
+    void addMark({ kind: 'extra_area', area, entity: f.entity });
+    return;
+  }
+  const span = r.input_spans[i];
+  if (span) void addMark({ kind: 'extra', value: byteSlice(r.input, span).trim(), entity: f.entity });
+}
+
+/** The marks of this document taken back: it runs as the policy alone has it; the cases stay. */
+function clearMarks() {
+  marks.value = [];
+  markNote.value = null;
+  runAgain();
 }
 
 function redactText() {
@@ -541,7 +754,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app" :class="{ 'with-panel': panel && result }" @dragover="onDragOver" @drop="onDrop">
+  <div class="app" :class="{ 'with-panel': panelOpen }" @dragover="onDragOver" @drop="onDrop">
     <header class="topbar">
       <div class="brand">
         <BrandMark />
@@ -760,6 +973,19 @@ onBeforeUnmount(() => {
             </span>
           </label>
           <span class="spacer" />
+          <button
+            v-if="areaOutput && !busy"
+            class="small"
+            :class="{ on: drawing }"
+            :aria-pressed="drawing"
+            :title="t('marks.drawTitle')"
+            @click="
+              drawing = !drawing;
+              drawnArea = null;
+            "
+          >
+            {{ t('marks.draw') }}
+          </button>
           <button v-if="outputPictures" class="small" :title="t('pane.zoomTitle')" @click="openViewer('output')">
             {{ t('pane.zoom') }}
           </button>
@@ -784,7 +1010,40 @@ onBeforeUnmount(() => {
           @pointermove="pan.move"
           @pointerup="pan.up"
           @pointercancel="pan.up"
+          @mouseup="onOutputSelect"
+          @keyup="onOutputSelect"
         >
+          <div v-if="selection" class="markbar" role="group" :aria-label="t('marks.missedTitle')">
+            <span class="what">{{ t('marks.missed', { value: selection }) }}</span>
+            <select v-model="markType" :aria-label="t('marks.missedTitle')">
+              <option v-for="e in MARK_TYPES" :key="e" :value="e">{{ entityLabel(e) }}</option>
+            </select>
+            <button class="primary small" :disabled="busy" @mousedown.prevent @click="markMissed">
+              {{ t('marks.mark') }}
+            </button>
+            <button class="small" :aria-label="t('common.close')" @click="selection = null">×</button>
+          </div>
+          <div v-else-if="drawnArea" class="markbar" role="group" :aria-label="t('marks.missedTitle')">
+            <span class="what">{{ t('marks.areaMissed') }}</span>
+            <select v-model="markType" :aria-label="t('marks.missedTitle')">
+              <option v-for="e in MARK_TYPES" :key="e" :value="e">{{ entityLabel(e) }}</option>
+            </select>
+            <button class="primary small" :disabled="busy" @click="markArea">{{ t('marks.mark') }}</button>
+            <button class="small" :aria-label="t('common.close')" @click="drawnArea = null">×</button>
+          </div>
+          <p v-else-if="drawing" class="markbar hint">{{ t('marks.drawHint') }}</p>
+          <div v-else-if="proposal && proposed" class="markbar proposal" role="group" :aria-label="t('rules.proposeTitle')">
+            <select v-if="proposal.rules.length > 1" v-model="chosenRule" :aria-label="t('rules.choose')">
+              <option v-for="(p, i) in proposal.rules" :key="i" :value="i">{{ describeRule(p.rule) }}</option>
+            </select>
+            <span class="what" :title="`${describeRule(proposed.rule)} ${ruleCounts}`">
+              <strong v-if="proposal.rules.length === 1">{{ describeRule(proposed.rule) }}</strong> {{ ruleCounts }}
+            </span>
+            <button v-if="proposal.user_in_use" class="primary small" @click="adoptRule">{{ t('rules.adopt') }}</button>
+            <button v-else class="small" :title="t('rules.copyTitle')" @click="copyRule">{{ t('rules.copy') }}</button>
+            <button class="small" :aria-label="t('common.close')" @click="proposal = null">×</button>
+          </div>
+          <p v-else-if="ruleNote" class="markbar hint">{{ ruleNote }}</p>
           <div v-if="result?.report.review_required" class="review" role="status">
             <strong>{{ t('output.review') }}</strong>
             <span v-for="(r, i) in result.report.review_reasons ?? []" :key="i">{{ r }}</span>
@@ -808,8 +1067,11 @@ onBeforeUnmount(() => {
               :findings="findings"
               :hovered="hovered"
               :selected="selected"
+              :drawing="drawing && areaOutput"
+              :drawn="drawnArea && drawnArea.frame === undefined ? drawnArea : null"
               @hover="hovered = $event"
               @select="selectIn('output', $event)"
+              @draw="onDraw($event)"
               :zoom="paneZoom"
               @open="openViewer('output')"
             />
@@ -825,8 +1087,11 @@ onBeforeUnmount(() => {
                 :findings="findings"
                 :hovered="hovered"
                 :selected="selected"
+                :drawing="drawing"
+                :drawn="drawnArea?.frame === i + 1 ? drawnArea : null"
                 @hover="hovered = $event"
                 @select="selectIn('output', $event)"
+                @draw="onDraw($event, i + 1)"
                 :zoom="paneZoom"
                 @open="openViewer('output')"
               />
@@ -856,6 +1121,16 @@ onBeforeUnmount(() => {
         </div>
         <footer v-if="result && !error" class="pane-foot">
           <span v-if="!findings.length" class="faint">{{ t('output.nothingFound') }}</span>
+          <button
+            v-if="marks.length"
+            class="small"
+            :disabled="busy"
+            :title="[t('marks.resetTitle'), markNote].filter(Boolean).join(' ')"
+            @click="clearMarks"
+          >
+            {{ plural(marks.length, 'marks.undoOne', 'marks.undoOther') }}
+          </button>
+          <span v-if="markNote" class="faint mark-note">{{ markNote }}</span>
           <span class="spacer" />
           <button v-if="copyable" class="primary" :title="t('output.copyTitle')" @click="copyOutput">
             {{ copied ? t('output.copied') : t('output.copy') }}
@@ -866,17 +1141,19 @@ onBeforeUnmount(() => {
     </main>
 
     <FindingsPanel
-      v-if="panel && result"
+      v-if="panelOpen"
       :findings="findings"
       :hovered="hovered"
       :selected="selected"
       :shown="shown"
-      :readings="explained ? (result.explain ?? null) : null"
+      :readings="explained ? (result?.explain ?? null) : null"
       :busy="busy"
+      :releasable="releasable"
       @hover="hovered = $event"
       @select="select"
       @close="panel = false"
       @explain="runExplained"
+      @release="release"
     />
 
     <div v-if="dragging" class="drop" @dragleave.self="dragging = false">
@@ -1007,7 +1284,8 @@ button.icon {
 .compare {
   grid-area: main;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* Two equal columns whatever they hold: a wide picture or a run in progress does not move the divider. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   min-height: 0;
 }
 .pane {
@@ -1242,6 +1520,57 @@ button.icon {
   background: var(--warn-soft);
   color: var(--warn-text);
   font-size: 12.5px;
+}
+/* A selection in the output, offered as a mark (#34): above the review note, while it stands. */
+.markbar {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.markbar .what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A rule proposed: its counts are what to decide on, so they wrap rather than hide. */
+.markbar.proposal .what {
+  white-space: normal;
+}
+/* The rules to choose from: a long one is cut in the closed list, not the counts beside it. */
+.markbar.proposal select {
+  min-width: 0;
+  max-width: 55%;
+  text-overflow: ellipsis;
+}
+.markbar select {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-1);
+  font-size: 12.5px;
+}
+.pane-foot button {
+  flex: none;
+  white-space: nowrap;
+}
+.pane-foot .mark-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
 }
 .drop {
   position: fixed;

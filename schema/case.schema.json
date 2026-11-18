@@ -1,0 +1,363 @@
+{
+  "$defs": {
+    "CaseCandidate": {
+      "additionalProperties": false,
+      "description": "A candidate at the mark, from [`crate::Explained`], without its value.",
+      "properties": {
+        "confidence": {
+          "format": "float",
+          "type": "number"
+        },
+        "detector": {
+          "type": "string"
+        },
+        "end": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "entity": {
+          "type": "string"
+        },
+        "features": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "lifted": {
+          "type": "boolean"
+        },
+        "start": {
+          "description": "Byte offsets into the excerpt's text (for a text excerpt).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "threshold": {
+          "format": "float",
+          "type": "number"
+        },
+        "verdict": {
+          "description": "The verdict as `--explain` names it (`kept`, `below_threshold`, ...).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "entity",
+        "detector",
+        "confidence",
+        "threshold",
+        "verdict"
+      ],
+      "type": "object"
+    },
+    "EntityType": {
+      "pattern": "^[A-Z][A-Z0-9_]*$",
+      "type": "string"
+    },
+    "Excerpt": {
+      "additionalProperties": false,
+      "description": "The excerpt of a case, in `excerpt.age`.",
+      "properties": {
+        "expires": {
+          "description": "When it is deleted, in seconds since 1970 (UTC).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "media_type": {
+          "description": "`text/plain` or `image/png`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "media_type",
+        "expires"
+      ],
+      "type": "object"
+    },
+    "Kind": {
+      "description": "What the user marked.",
+      "oneOf": [
+        {
+          "const": "missed",
+          "description": "Personal data veilq left.",
+          "type": "string"
+        },
+        {
+          "const": "extra",
+          "description": "A box veilq drew where there is no personal data.",
+          "type": "string"
+        }
+      ]
+    },
+    "Location": {
+      "description": "Where a finding is. Offsets are byte offsets into the segment's UTF-8\ntext; lines and columns count from 1, columns in characters.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "A span of text: a plain file, a stream, a text node of a document.",
+          "properties": {
+            "column": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "end": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "span",
+              "type": "string"
+            },
+            "line": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "part": {
+              "description": "The part of a container (`word/document.xml`, an attachment's\nname); absent for plain text.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "start": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "start",
+            "end",
+            "line",
+            "column"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A cell of a table (CSV, a spreadsheet), with the span inside it.",
+          "properties": {
+            "column": {
+              "description": "Column from 1.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "end": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "cell",
+              "type": "string"
+            },
+            "row": {
+              "description": "Row from 1, the header row included.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sheet": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "start": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "row",
+            "column",
+            "start",
+            "end"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A region of an image, a page or a frame, in pixels from the top left.",
+          "properties": {
+            "frame": {
+              "description": "Page or frame, from 1; absent for a single image.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "height": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "region",
+              "type": "string"
+            },
+            "part": {
+              "description": "The part of a container the image is (`word/media/image1.png`,\nan attachment's name); absent for an image file.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "width": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "x": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "y": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "x",
+            "y",
+            "width",
+            "height"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Twin": {
+      "additionalProperties": false,
+      "description": "A case's synthetic twin (#34, card point 6): the excerpt with its values\nreplaced by stand-ins, on which veilq makes the same mistake, holding none\nof the original values veilq or the user named. Kept in the clear: it is\nthe regression set every later rule is tried on.",
+      "properties": {
+        "end": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start": {
+          "description": "Byte offsets of the marked value's stand-in in `twin.txt`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One mistake a user marked, without its value.",
+  "properties": {
+    "candidates": {
+      "description": "What the detectors proposed there and what was decided, as\n`--explain` records it, without values.",
+      "items": {
+        "$ref": "#/$defs/CaseCandidate"
+      },
+      "type": "array"
+    },
+    "created": {
+      "description": "When it was marked, in seconds since 1970 (UTC).",
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityType",
+      "description": "The type the user gave a miss, or the type of the box released."
+    },
+    "excerpt": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Excerpt"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The encrypted excerpt, while it is kept."
+    },
+    "format": {
+      "description": "The input's format (`text`, `csv`, `png`, ...).",
+      "type": "string"
+    },
+    "id": {
+      "description": "Hex, unique in the store.",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/$defs/Kind"
+    },
+    "label": {
+      "description": "The user's own word for it, where the type is not enough.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "location": {
+      "$ref": "#/$defs/Location",
+      "description": "Where the mark is in the input."
+    },
+    "policy_sha256": {
+      "description": "SHA-256 of the policy in effect, as TOML: which rules made it.",
+      "type": "string"
+    },
+    "twin": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Twin"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The synthetic twin, in `twin.txt`, when one reproduces the mistake."
+    },
+    "veilq": {
+      "description": "The veilq that made the mistake.",
+      "type": "string"
+    },
+    "version": {
+      "description": "The format's version; `1`.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version",
+    "id",
+    "created",
+    "veilq",
+    "policy_sha256",
+    "format",
+    "kind",
+    "entity",
+    "location"
+  ],
+  "title": "Case",
+  "type": "object"
+}

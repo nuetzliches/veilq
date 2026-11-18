@@ -213,6 +213,8 @@ impl Explain {
                     threshold: d.threshold,
                     verdict: d.verdict,
                     raised: d.raised,
+                    features: d.features.clone(),
+                    lifted: d.lifted,
                 })
                 .collect(),
         };
@@ -256,6 +258,34 @@ pub struct Explained {
     /// A birth date beside a name lifted its confidence.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub raised: bool,
+    /// The hand rules that hold for it ([`crate::detect::FEATURES`]).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub features: Vec<&'static str>,
+    /// Below its threshold, lifted into the findings by the learned
+    /// decider (#35).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub lifted: bool,
+}
+
+/// An area of a picture in its pixels: of a still image (`frame` `None`) or
+/// of a PDF's page `frame` (from 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Area {
+    #[serde(default)]
+    pub frame: Option<u64>,
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// The areas a user marked on a picture for one run (#34).
+#[derive(Debug, Clone, Default)]
+pub struct PictureMarks {
+    /// Personal data left: filled and reported as the type.
+    pub missed: Vec<(Area, EntityType)>,
+    /// No personal data: what is found inside is left.
+    pub released: Vec<Area>,
 }
 
 /// The highest threshold a run may set (ADR-0046): a finding at 1.0 (a
@@ -274,11 +304,19 @@ pub struct Engine {
     /// A picture whose last verify round still found something is written
     /// with that filled too, for a review, instead of failing.
     unverified: bool,
+    /// Switched off for this run (`--no-watermark`) or for the parts of a
+    /// container: a picture written carries no mark (ADR-0050).
+    no_watermark: bool,
     /// Where each reading and its decisions go, for `scan --explain` (#40).
     explain: Option<Explain>,
     /// The names of the file being read (ADR-0047), shared by the clones
     /// that read its parts; `None` outside a run.
     names: Option<std::sync::Arc<crate::names::Names>>,
+    /// The areas a user marked on a picture's pages for this run (#34).
+    picture_marks: std::sync::Arc<PictureMarks>,
+    /// How many candidates the learned decider lifted in this run (#35),
+    /// shared by the clones that read its parts; `None` outside a run.
+    lifted: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
     #[cfg(feature = "ocr")]
     ocr: Option<std::sync::Arc<crate::ocr::Ocr>>,
     #[cfg(feature = "ocr")]
@@ -318,8 +356,11 @@ impl Engine {
             action,
             markdown: false,
             unverified: false,
+            no_watermark: false,
             explain: None,
             names: None,
+            picture_marks: std::sync::Arc::default(),
+            lifted: None,
             #[cfg(feature = "ocr")]
             ocr: None,
             #[cfg(feature = "ocr")]
@@ -387,6 +428,27 @@ impl Engine {
         once: impl Fn(&Engine) -> Result<T, Error>,
         report: impl Fn(&mut T) -> &mut Report,
     ) -> Result<T, Error> {
+        // A run inside another counts its lifted candidates into the outer's.
+        if self.lifted.is_some() {
+            return self.whole_names(once, report);
+        }
+        let lifted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut engine = self.clone();
+        engine.lifted = Some(lifted.clone());
+        let mut out = engine.whole_names(once, &report)?;
+        let n = lifted.load(std::sync::atomic::Ordering::Relaxed);
+        if n > 0 {
+            review(report(&mut out), &crate::decider::lifted_reason(n));
+        }
+        Ok(out)
+    }
+
+    /// [`whole`](Self::whole)'s reading with one list of names for the file.
+    fn whole_names<T>(
+        &self,
+        once: impl Fn(&Engine) -> Result<T, Error>,
+        report: impl Fn(&mut T) -> &mut Report,
+    ) -> Result<T, Error> {
         if self.names.is_some() || !self.policy().names.everywhere {
             return once(self);
         }
@@ -394,6 +456,10 @@ impl Engine {
         for pass in 1..=NAME_PASSES {
             let mut engine = self.clone();
             engine.names = Some(names.clone());
+            // A second reading counts again from nothing.
+            if let Some(lifted) = &self.lifted {
+                lifted.store(0, std::sync::atomic::Ordering::Relaxed);
+            }
             let mut out = once(&engine)?;
             if !names.late() {
                 return Ok(out);
@@ -474,6 +540,19 @@ impl Engine {
             let mut engine = self.clone();
             engine.markdown = true;
             return engine.run(input, output, format);
+        }
+        // The candidates the learned decider lifted (#35), counted for the
+        // report.
+        if self.lifted.is_none() {
+            let lifted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let mut engine = self.clone();
+            engine.lifted = Some(lifted.clone());
+            let mut run = engine.run(input, output, format)?;
+            let n = lifted.load(std::sync::atomic::Ordering::Relaxed);
+            if n > 0 {
+                review(&mut run.report, &crate::decider::lifted_reason(n));
+            }
+            return Ok(run);
         }
         // Streamed, the list of names learns forward only (ADR-0047): what
         // was written is not read again.
@@ -631,7 +710,7 @@ impl Engine {
         let mut at = 0;
         for seg in segments {
             let mut found: Vec<Candidate> = self
-                .decided(&seg.text, &seg.context, false, Source::Text, false, &[])?
+                .decided(&seg.text, &seg.context, false, Source::Text, false)?
                 .into_iter()
                 .filter(|c| seg.raw_of(c.start) < upto)
                 .collect();
@@ -867,6 +946,106 @@ impl Engine {
         self.unverified
     }
 
+    /// This engine with the marks a user made on one document (#34): each
+    /// `missed` value is found as its type wherever the document holds it
+    /// (a deny value, ADR-0044, which wins over `allow`), each `released`
+    /// value is left (an allow value). For this run only: the policy is not
+    /// changed. Fail closed: a value both missed and released is found.
+    pub fn with_marks(
+        &self,
+        missed: &[(EntityType, String)],
+        released: &[String],
+    ) -> Result<Self, Error> {
+        if missed.is_empty() && released.is_empty() {
+            return Ok(self.clone());
+        }
+        let mut policy = self.detector.policy().clone();
+        for (entity, value) in missed {
+            policy.deny.push(crate::policy::Deny {
+                entity: entity.clone(),
+                values: vec![value.clone()],
+                files: Vec::new(),
+                parts: false,
+                read: None,
+            });
+        }
+        for value in released {
+            if !policy.allow.values.contains(value) {
+                policy.allow.values.push(value.clone());
+            }
+        }
+        self.with_policy(&policy)
+    }
+
+    /// This engine with `policy` in place of its own, its models and the
+    /// run's threshold kept: a rule tried before it is saved (#34).
+    pub fn with_policy(&self, policy: &Policy) -> Result<Self, Error> {
+        let mut engine = self.clone();
+        engine.detector = self.detector.with_policy(policy)?;
+        Ok(engine)
+    }
+
+    /// This engine with a learned decider (#35), unless the policy switched
+    /// it off (`[decider] enabled = false`): it may lift a candidate below
+    /// its threshold into the findings, and never drops one.
+    pub fn with_decider(&self, decider: std::sync::Arc<crate::decider::Decider>) -> Self {
+        let mut engine = self.clone();
+        if engine.detector.policy().decider.enabled {
+            engine.detector.set_decider(Some(decider));
+        }
+        engine
+    }
+
+    /// This engine without its learned decider when `off` (`--no-decider`);
+    /// with `false` as it was.
+    pub fn without_decider(&self, off: bool) -> Self {
+        let mut engine = self.clone();
+        if off {
+            engine.detector.set_decider(None);
+        }
+        engine
+    }
+
+    /// Whether a learned decider runs (#35).
+    pub fn has_decider(&self) -> bool {
+        self.detector.has_decider()
+    }
+
+    /// This engine writing pictures without the `veilq <version>` mark
+    /// (`--no-watermark`, ADR-0050) when `off`; with `false` as it was. A
+    /// policy that switched the mark off is not overridden.
+    /// This engine with the areas a user marked on a picture (#34), for this
+    /// run: each `missed` area is filled and reported as its type before
+    /// the picture is read; what a detector finds inside a `released` area
+    /// is left, in every round of the check. A still image's area has no
+    /// frame, a PDF page's names its page.
+    pub fn with_picture_marks(&self, missed: Vec<(Area, EntityType)>, released: Vec<Area>) -> Self {
+        let mut engine = self.clone();
+        engine.picture_marks = std::sync::Arc::new(PictureMarks { missed, released });
+        engine
+    }
+
+    #[cfg_attr(not(feature = "ocr"), allow(dead_code))]
+    pub(crate) fn picture_marks(&self) -> &PictureMarks {
+        &self.picture_marks
+    }
+
+    /// Whether this run has areas marked on a picture (#34).
+    pub fn has_picture_marks(&self) -> bool {
+        !self.picture_marks.missed.is_empty() || !self.picture_marks.released.is_empty()
+    }
+
+    pub fn without_watermark(&self, off: bool) -> Self {
+        let mut engine = self.clone();
+        engine.no_watermark |= off;
+        engine
+    }
+
+    /// Whether a picture this engine writes carries the mark (ADR-0050).
+    pub fn watermarks(&self) -> bool {
+        !self.no_watermark && self.detector.policy().picture.watermark
+    }
+
     /// Whether a pseudonym key is set: `pseudonymize` works.
     pub fn has_key(&self) -> bool {
         self.key.is_some()
@@ -950,13 +1129,13 @@ impl Engine {
 
     /// The findings in `text`, decided (for formats beside this module).
     pub(crate) fn findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
-        self.decided(text, context, true, Source::Text, false, &[])
+        self.decided(text, context, true, Source::Text, false)
     }
 
     /// [`findings`](Self::findings) in text OCR read off a picture: a
     /// failed checksum costs less (ADR-0037).
     pub(crate) fn ocr_findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
-        self.decided(text, context, true, Source::Ocr, false, &[])
+        self.decided(text, context, true, Source::Ocr, false)
     }
 
     /// [`ocr_findings`](Self::ocr_findings) in a picture read again after
@@ -966,15 +1145,15 @@ impl Engine {
         text: &str,
         context: &str,
     ) -> Result<Vec<Candidate>, Error> {
-        self.decided(text, context, true, Source::Ocr, true, &[])
+        self.decided(text, context, true, Source::Ocr, true)
     }
 
     /// The detector's findings in `text`, written to the explanation when
     /// there is one; with `placeholders`, what lies inside one of veilq's
     /// own placeholders (`<PERSON>`, `[PERSON:0a1b2c3d]`, ADR-0001) is
     /// dropped, so a model that reads `<PERSON>` as a name changes nothing.
-    /// A person inside `replaced` (a verify round's stand-ins, a `fake`
-    /// name among them) does not go on the file's list of names.
+    /// A `verify` reading finds the file's names but learns none: it reads
+    /// veilq's own output, its stand-ins and placeholders (#112).
     fn decided(
         &self,
         text: &str,
@@ -982,7 +1161,6 @@ impl Engine {
         placeholders: bool,
         source: Source,
         verify: bool,
-        replaced: &[Range<usize>],
     ) -> Result<Vec<Candidate>, Error> {
         static PLACEHOLDER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
             regex::Regex::new(r"\\?<[A-Z][A-Z0-9_]*\\?>|\[[A-Z][A-Z0-9_]*:[0-9a-f]{8}\]")
@@ -1010,9 +1188,9 @@ impl Engine {
             Ok::<_, Error>(decisions)
         };
         let mut decisions = decide(self.names.as_deref())?;
-        // The file's names (ADR-0047): a person found here goes on the list,
-        // and a name new to it is looked for in this text too.
-        if let Some(names) = &self.names {
+        // The file's names (ADR-0047): a person found in the input goes on
+        // the list, and a name new to it is looked for in this text too.
+        if let Some(names) = self.names.as_ref().filter(|_| !verify) {
             let kept = |d: &&crate::detect::Decision| d.verdict == Verdict::Kept;
             let persons: Vec<(usize, usize, f32)> = decisions
                 .iter()
@@ -1020,9 +1198,6 @@ impl Engine {
                 .filter(|d| {
                     d.candidate.entity.as_str() == "PERSON"
                         && d.candidate.detector != crate::names::DETECTOR
-                        && !replaced
-                            .iter()
-                            .any(|r| r.start < d.candidate.end && d.candidate.start < r.end)
                 })
                 .map(|d| (d.candidate.start, d.candidate.end, d.candidate.confidence))
                 .collect();
@@ -1038,6 +1213,16 @@ impl Engine {
         }
         if let Some(explain) = &self.explain {
             explain.record(text, context, &decisions, verify);
+        }
+        // A check's reading finds again what a reading before it lifted.
+        if let Some(lifted) = &self.lifted
+            && !verify
+        {
+            let n = decisions
+                .iter()
+                .filter(|d| d.lifted && d.verdict == Verdict::Kept)
+                .count();
+            lifted.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
         }
         Ok(decisions
             .into_iter()
@@ -1130,13 +1315,11 @@ impl Engine {
         // Each kept piece: its range in the new text and where it starts in
         // the old one.
         let mut kept: Vec<(Range<usize>, usize)> = Vec::new();
-        let mut stand_ins: Vec<Range<usize>> = Vec::new();
         let (mut new_at, mut old_at, mut k) = (0, 0, 0);
         for (p, replaced) in pieces {
             if *replaced {
                 old_at = found[k].end;
                 k += 1;
-                stand_ins.push(new_at..new_at + p.len());
             } else {
                 kept.push((new_at..new_at + p.len(), old_at));
                 old_at += p.len();
@@ -1144,7 +1327,7 @@ impl Engine {
             new_at += p.len();
         }
         let mut out = Vec::new();
-        for f in self.decided(&new, context, false, Source::Text, true, &stand_ins)? {
+        for f in self.decided(&new, context, false, Source::Text, true)? {
             let Some((range, old)) = kept
                 .iter()
                 .find(|(r, _)| r.start <= f.start && f.end <= r.end)
@@ -1731,29 +1914,27 @@ mod tests {
     }
 
     #[test]
-    fn a_stand_in_a_verify_round_reads_is_not_learned() {
-        // `fake` writes a stand-in name; the verify round finds it as a
-        // person. Learned, every `Brandt` of the file would be filled.
+    fn a_verify_round_learns_no_names() {
+        // A verify round reads veilq's own output: a stand-in name (`fake`),
+        // or a label a model takes for a name beside a placeholder
+        // (`Kundennummer <ACCOUNT_ID>`, #112). What it finds is filled there;
+        // learned, every such word of the file would be filled too.
         let text = "Herr Jonas Brandt";
         let later = "Brandt kommt";
-        let found = |e: &Engine, t: &str, replaced: &[Range<usize>]| -> Vec<String> {
-            e.decided(t, "", false, Source::Text, true, replaced)
+        let found = |e: &Engine, t: &str, verify: bool| -> Vec<String> {
+            e.decided(t, "", false, Source::Text, verify)
                 .unwrap()
                 .into_iter()
                 .map(|c| t[c.start..c.end].to_owned())
                 .collect()
         };
         let e = engine().with_names();
-        let stand_in = vec![Range {
-            start: 0,
-            end: text.len(),
-        }];
-        assert!(!found(&e, text, &stand_in).is_empty());
-        assert!(found(&e, later, &[]).is_empty());
-        // Outside a stand-in the name is learned as before.
+        assert!(!found(&e, text, true).is_empty(), "found in the round");
+        assert!(found(&e, later, false).is_empty(), "not learned");
+        // Read from the input, the name is learned as before.
         let e = engine().with_names();
-        found(&e, text, &[]);
-        assert_eq!(found(&e, later, &[]), ["Brandt"]);
+        found(&e, text, false);
+        assert_eq!(found(&e, later, false), ["Brandt"]);
     }
 
     #[test]
@@ -2144,5 +2325,148 @@ mod tests {
         let p = r.report.findings[0].pseudonym.clone().unwrap();
         assert!(p.starts_with("[EMAIL_ADDRESS:"));
         assert_eq!(r.text, format!("mail an {p} und {p}"));
+    }
+
+    #[test]
+    fn a_mark_acts_on_this_run_and_a_value_both_missed_and_released_is_found() {
+        let text = "Projekt Falkenstein, Kontakt Lena Brandt.\n";
+        let entities = |e: &Engine| -> Vec<String> {
+            e.scan_str(text, Format::Text)
+                .unwrap()
+                .report
+                .findings
+                .iter()
+                .map(|f| f.entity.as_str().to_owned())
+                .collect()
+        };
+        let plain = engine();
+        assert!(!entities(&plain).contains(&"LOCATION".to_owned()));
+        let location = EntityType::new("LOCATION").unwrap();
+        let marked = plain
+            .with_marks(&[(location.clone(), "Falkenstein".into())], &[])
+            .unwrap();
+        assert!(entities(&marked).contains(&"LOCATION".to_owned()));
+        // The engine it came from is as it was.
+        assert!(!entities(&plain).contains(&"LOCATION".to_owned()));
+        // A name released is left; released and missed at once, it is found.
+        let released = plain.with_marks(&[], &["Lena Brandt".into()]).unwrap();
+        assert!(
+            !entities(&released).contains(&"PERSON".to_owned()),
+            "{:?}",
+            entities(&released)
+        );
+        let both = plain
+            .with_marks(
+                &[(EntityType::new("PERSON").unwrap(), "Lena Brandt".into())],
+                &["Lena Brandt".into()],
+            )
+            .unwrap();
+        assert!(entities(&both).contains(&"PERSON".to_owned()));
+    }
+
+    fn decider(json: &str) -> std::sync::Arc<crate::decider::Decider> {
+        std::sync::Arc::new(crate::decider::Decider::from_json(json).unwrap())
+    }
+
+    /// A head that lifts every candidate it is asked about.
+    const LIFTS_ALL: &str = r#"{"version": 1, "manifest": {"name": "all", "trained_on": "a test"},
+        "features": [], "base": 8.0, "lift_at": 0.5, "trees": [{"nodes": [{"value": 0.0}]}]}"#;
+
+    #[test]
+    fn the_decider_lifts_below_the_threshold_and_says_so() {
+        let text = "Termin mit Frau Lena Brandt am 03.12.2026 bestätigt.\n";
+        let values = |e: &Engine| -> Vec<String> {
+            e.scan_str(text, Format::Text)
+                .unwrap()
+                .report
+                .findings
+                .iter()
+                .map(|f| f.entity.as_str().to_owned())
+                .collect()
+        };
+        let plain = engine();
+        assert!(!values(&plain).contains(&"DATE_OF_BIRTH".to_owned()));
+        let lifting = engine().with_decider(decider(crate::decider::tests::BESIDE_NAME));
+        assert!(lifting.has_decider());
+        let run = lifting.scan_str(text, Format::Text).unwrap();
+        assert!(values(&lifting).contains(&"DATE_OF_BIRTH".to_owned()));
+        // What the rules found is still found: the decider only adds.
+        for e in values(&plain) {
+            assert!(values(&lifting).contains(&e), "{e} dropped");
+        }
+        assert!(
+            run.report
+                .review_reasons
+                .contains(&crate::decider::lifted_reason(1)),
+            "{:?}",
+            run.report.review_reasons
+        );
+        assert!(run.report.review_required);
+        // Switched off for the run, or by the policy.
+        assert_eq!(values(&lifting.without_decider(true)), values(&plain));
+        assert!(lifting.without_decider(false).has_decider());
+        let off = Policy::parse("version = 1\n[decider]\nenabled = false\n").unwrap();
+        let off = Engine::new(&off, None, b"seed", None)
+            .unwrap()
+            .with_decider(decider(crate::decider::tests::BESIDE_NAME));
+        assert!(!off.has_decider());
+        assert_eq!(values(&off), values(&plain));
+    }
+
+    #[test]
+    fn the_decider_never_lifts_a_failed_check_or_an_allowed_value() {
+        // An IBAN whose checksum fails, below its threshold without a word
+        // like `Konto`, and a date the allow lists name.
+        let text = "Referenz DE89370400440532013001, Termin mit Frau Lena Brandt am 03.12.2026.\n";
+        let policy = Policy::parse("version = 1\n[allow]\nvalues = [\"03.12.2026\"]\n").unwrap();
+        let engine = Engine::new(&policy, None, b"seed", None)
+            .unwrap()
+            .with_decider(decider(LIFTS_ALL));
+        let found: Vec<String> = engine
+            .scan_str(text, Format::Text)
+            .unwrap()
+            .report
+            .findings
+            .iter()
+            .map(|f| f.entity.as_str().to_owned())
+            .collect();
+        assert!(!found.contains(&"IBAN_CODE".to_owned()), "{found:?}");
+        assert!(!found.contains(&"DATE_OF_BIRTH".to_owned()), "{found:?}");
+        // Both were candidates below their threshold, and the head lifts
+        // whatever it may: without the allow list the date is lifted, the
+        // IBAN still is not.
+        let explain = Explain::new();
+        Engine::new(&Policy::default(), None, b"seed", None)
+            .unwrap()
+            .with_decider(decider(LIFTS_ALL))
+            .with_explain(explain.clone())
+            .scan_str(text, Format::Text)
+            .unwrap();
+        let candidates: Vec<Explained> = explain
+            .take()
+            .into_iter()
+            .flat_map(|r| r.candidates)
+            .collect();
+        let of = |v: &str| candidates.iter().find(|c| c.value == v).unwrap();
+        let iban = of("DE89370400440532013001");
+        assert!(
+            iban.features.contains(&"check_failed") && !iban.lifted,
+            "{iban:?}"
+        );
+        assert_eq!(iban.verdict, Verdict::BelowThreshold);
+        let date = of("03.12.2026");
+        assert!(date.lifted && date.verdict == Verdict::Kept, "{date:?}");
+    }
+
+    #[test]
+    fn the_watermark_is_on_unless_the_policy_or_the_run_switches_it_off() {
+        assert!(engine().watermarks());
+        assert!(!engine().without_watermark(true).watermarks());
+        assert!(engine().without_watermark(false).watermarks());
+        let off = Policy::parse("version = 1\n[picture]\nwatermark = false\n").unwrap();
+        let off = Engine::new(&off, None, b"seed", None).unwrap();
+        assert!(!off.watermarks());
+        // `--no-watermark` absent does not turn the policy's `false` back on.
+        assert!(!off.without_watermark(false).watermarks());
     }
 }

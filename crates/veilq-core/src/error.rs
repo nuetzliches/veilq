@@ -58,6 +58,10 @@ pub enum Error {
     #[error("mapping: {0}")]
     Mapping(String),
 
+    /// Writing or reading the case store (#34).
+    #[error("case store: {0}")]
+    Case(String),
+
     #[error("reading or writing: {0}")]
     Stream(#[source] std::io::Error),
 

@@ -115,6 +115,11 @@ jobs:
         run: |
           target/release/veilq models list
           target/release/veilq-eval check eval --ner --ocr --gate eval/gate-ner.toml --held-out ${{ matrix.seeds }} --list 20
+      # What a redaction finds, pictures filled and read again (#108): it
+      # sees what a filled region costs a text detector, which a scan cannot
+      # (ADR-0053).
+      - name: gate (redaction)
+        run: target/release/veilq-eval check eval --ner --ocr --redact --gate eval/gate-ner.toml --held-out ${{ matrix.seeds }} --list 20
 
   eval-models:
     # The check the branch protection names: all parts passed.
