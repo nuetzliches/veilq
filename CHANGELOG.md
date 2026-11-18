@@ -6,6 +6,8 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-18
+
 ### Added
 
 - An area drawn on a picture in the UI can be marked as a face or a
