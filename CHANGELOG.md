@@ -6,6 +6,13 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A word that only starts like a context word no longer lifts a
+  candidate: `Personalisieren`, a web page's button beside a game's title
+  `Los Angeles`, made it a `PERSON`; `Steuerung`, `Bytes` and `Namespace`
+  counted as `steuer`, `by` and `name` the same way.
+
 ## [0.6.0] - 2026-11-18
 
 ### Added
