@@ -1,6 +1,6 @@
 # ADR-0056: An area takes a face or a signature, and the policy sets how long excerpts stay
 
-- **Status:** Accepted ([card](https://github.com/nuetzliches/veilq/issues/114), points 1, 5 and 6, approved by the owner 2026-11-18); amends [ADR-0054](0054-a-mark-acts-on-its-document-is-kept-as-a-case-and-proposes-rules.md) (the fixed 30 days)
+- **Status:** Accepted ([card](https://github.com/nuetzliches/veilq/pull/122), points 1, 5 and 6, approved by the owner 2026-11-18); amends [ADR-0054](0054-a-mark-acts-on-its-document-is-kept-as-a-case-and-proposes-rules.md) (the fixed 30 days)
 - **Date:** 2026-11-18
 - **Deciders:** project owner
 - **Related:** #114, #34, #35, [ADR-0038](0038-faces-in-pictures-are-found-and-filled-black.md), [ADR-0048](0048-handwritten-signatures-in-pictures-are-found-and-filled-black.md)
