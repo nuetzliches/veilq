@@ -118,7 +118,7 @@ fn about(component: &str) -> &'static str {
             "Faces in images, GIFs and PDF pages, filled black; found, never recognised. Without it pictures are refused unless the policy keeps faces. YuNet (MIT), with ONNX Runtime (MIT). Under 1 MB."
         }
         "signature" => {
-            "Handwritten signatures in images, GIFs and PDF pages, filled black; found, never compared. Without it pictures are refused unless the policy keeps signatures. veilq-signature-v2, YOLOS-tiny fine-tuned by nuetzliches (Apache-2.0), with ONNX Runtime (MIT). About 26 MB."
+            "Handwritten signatures in images, GIFs and PDF pages, filled black; found, never compared. Without it pictures are refused unless the policy keeps signatures. veilq-signature-v3, YOLOS-tiny fine-tuned by nuetzliches (Apache-2.0), with ONNX Runtime (MIT). About 26 MB."
         }
         "pdf" => "PDF files, page by page (needs OCR too). PDFium (BSD-3-Clause). About 7 MB.",
         _ => "",

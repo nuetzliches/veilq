@@ -26,7 +26,7 @@
 //! stood unfound ([`Names::late`]); a caller with the whole input reads it
 //! again with the list known from the start ([`Names::seeded`]).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use regex::Regex;
@@ -56,6 +56,52 @@ const LEGAL_FORMS: &[&str] = &[
     "partg",
     "mbb",
     "haftungsbeschränkt",
+];
+/// The ends of the words a firm's name shares with every firm of its trade
+/// (`Kessler Hausverwaltung GmbH`, `Albers Malerbetrieb`), and such words
+/// whole: learned from a firm, they would make every `Hausverwaltung` of
+/// the file a person. Only a firm's own word goes on the list.
+const TRADE_ENDINGS: &[&str] = &[
+    "verwaltung",
+    "betrieb",
+    "betriebe",
+    "bau",
+    "handel",
+    "service",
+    "services",
+    "technik",
+    "immobilien",
+    "beratung",
+    "dienst",
+    "dienste",
+    "dienstleistungen",
+    "gesellschaft",
+    "gruppe",
+    "holding",
+    "consulting",
+    "versicherung",
+    "logistik",
+    "kanzlei",
+    "praxis",
+    "apotheke",
+    "bäckerei",
+    "metzgerei",
+    "werkstatt",
+    "transporte",
+    "systeme",
+    "solutions",
+    "partner",
+];
+const TRADE_WORDS: &[&str] = &[
+    "söhne",
+    "sohn",
+    "gebrüder",
+    "gebr",
+    "erben",
+    "nachf",
+    "co",
+    "und",
+    "group",
 ];
 /// Characters a value needs to go on the list, its spaces left out.
 const MIN_VALUE: usize = 5;
@@ -112,8 +158,10 @@ struct Inner {
     /// In OCR text, built only there: a word's start with dots after it, a
     /// word's end at the start of a line; `None` inside when there is none.
     cut: Option<(usize, Option<Regex>)>,
-    /// The values, built for the length of `value_order`.
-    value_matcher: Option<(usize, Regex)>,
+    /// Every start of a value's key, the key itself too: a value is found
+    /// by walking a text along them, in time linear in the text however
+    /// many values a file holds (a regex of them all grew with each one).
+    value_prefixes: HashSet<String>,
 }
 
 /// The size a matcher of the list may compile to.
@@ -157,6 +205,7 @@ impl Names {
                 order: inner.order.clone(),
                 values: inner.values.clone(),
                 value_order: inner.value_order.clone(),
+                value_prefixes: inner.value_prefixes.clone(),
                 ..Inner::default()
             }),
             values: self.values,
@@ -237,30 +286,59 @@ impl Names {
     }
 
     /// The candidates of the list's values in `text`: each held whole, not
-    /// inside a longer run of letters or digits.
+    /// inside a longer run of letters or digits, in any case, with a space
+    /// or none between any two of its characters; the longest at a start.
     fn value_candidates(&self, text: &str) -> Result<Vec<Candidate>, Error> {
-        let (matcher, values) = {
-            let mut inner = self.lock();
-            if inner.value_order.is_empty() {
-                return Ok(Vec::new());
-            }
-            (inner.value_matcher()?, inner.values.clone())
-        };
+        let inner = self.lock();
+        if inner.value_order.is_empty() {
+            return Ok(Vec::new());
+        }
         let alnum = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+        let space = |c: char| matches!(c, ' ' | '\t' | '\u{a0}');
+        let chars: Vec<(usize, char)> = text.char_indices().collect();
         let mut out = Vec::new();
-        for m in matcher.find_iter(text) {
-            if alnum(text[..m.start()].chars().next_back()) || alnum(text[m.end()..].chars().next())
-            {
+        let mut i = 0;
+        while i < chars.len() {
+            let (start, first) = chars[i];
+            if space(first) || (alnum(Some(first)) && alnum(text[..start].chars().next_back())) {
+                i += 1;
                 continue;
             }
-            if let Some(v) = values.get(&value_key(m.as_str())) {
-                out.push(Candidate {
-                    start: m.start(),
-                    end: m.end(),
-                    entity: v.entity.clone(),
-                    confidence: v.confidence,
-                    detector: VALUES_DETECTOR.to_owned(),
-                });
+            let mut walked = String::new();
+            let mut longest = None;
+            let mut j = i;
+            while j < chars.len() {
+                let (at, c) = chars[j];
+                if space(c) {
+                    // One space between two characters of the value.
+                    if walked.is_empty() || chars.get(j + 1).is_none_or(|&(_, n)| space(n)) {
+                        break;
+                    }
+                    j += 1;
+                    continue;
+                }
+                walked.push_str(&key(c.encode_utf8(&mut [0; 4])));
+                if !inner.value_prefixes.contains(&walked) {
+                    break;
+                }
+                if inner.values.contains_key(&walked) {
+                    longest = Some((at + c.len_utf8(), j, walked.clone()));
+                }
+                j += 1;
+            }
+            match longest {
+                Some((end, last, k)) if !alnum(text[end..].chars().next()) => {
+                    let v = &inner.values[&k];
+                    out.push(Candidate {
+                        start,
+                        end,
+                        entity: v.entity.clone(),
+                        confidence: v.confidence,
+                        detector: VALUES_DETECTOR.to_owned(),
+                    });
+                    i = last + 1;
+                }
+                _ => i += 1,
             }
         }
         Ok(out)
@@ -288,15 +366,21 @@ impl Names {
             match inner.values.get_mut(&k) {
                 Some(v) => v.confidence = v.confidence.max(confidence),
                 None => {
-                    // Late when its longest run stood unfound before.
-                    let longest = tokens_at(&text[start..end])
+                    // Late when it, glued, or any run of it stood unfound
+                    // before; a value of short runs only (`12 34 56 78`)
+                    // leaves no run to compare, so any earlier text counts.
+                    let runs: Vec<String> = tokens_at(&text[start..end])
                         .map(|(_, t)| key(t))
-                        .max_by_key(|t| t.chars().count());
-                    if longest
-                        .and_then(|t| inner.seen_tokens.get(&t).copied())
-                        .is_some_and(|first| first < now)
-                    {
+                        .filter(|t| t.chars().count() >= MIN_WORD)
+                        .collect();
+                    let before = |t: &String| inner.seen_tokens.get(t).is_some_and(|&f| f < now);
+                    if before(&k) || runs.iter().any(before) || (runs.is_empty() && now > 0) {
                         inner.late = true;
+                    }
+                    let mut prefix = String::new();
+                    for c in k.chars() {
+                        prefix.push(c);
+                        inner.value_prefixes.insert(prefix.clone());
                     }
                     inner.values.insert(
                         k.clone(),
@@ -313,8 +397,9 @@ impl Names {
         for &(start, end, confidence) in found {
             let span = &text[start..end];
             let capitalised = detect::name_words(span).any(starts_upper);
+            let firm = is_firm(span);
             for w in detect::name_words(span) {
-                if !learnable(w, capitalised) {
+                if !learnable(w, capitalised) || (firm && trade_word(w)) {
                     continue;
                 }
                 let k = key(w);
@@ -426,29 +511,6 @@ impl Inner {
         self.cut = Some((self.order.len(), r.clone()));
         Ok(r)
     }
-
-    /// The values, any case, a space or none between any two characters.
-    fn value_matcher(&mut self) -> Result<Regex, Error> {
-        if let Some((n, r)) = &self.value_matcher
-            && *n == self.value_order.len()
-        {
-            return Ok(r.clone());
-        }
-        let mut values = self.value_order.clone();
-        values.sort_by(|a, b| b.chars().count().cmp(&a.chars().count()).then(a.cmp(b)));
-        let forms: Vec<String> = values
-            .iter()
-            .map(|v| {
-                v.chars()
-                    .map(|c| regex::escape(&c.to_string()))
-                    .collect::<Vec<_>>()
-                    .join(r"[ \t\u{a0}]?")
-            })
-            .collect();
-        let r = compile(&format!("(?i)(?:{})", forms.join("|")))?;
-        self.value_matcher = Some((self.value_order.len(), r.clone()));
-        Ok(r)
-    }
 }
 
 /// A value as the list keys it: as [`key`], its spaces left out.
@@ -467,7 +529,10 @@ fn value_learnable(k: &str) -> bool {
 /// a word of the list itself (found whole) and for any other.
 fn similar_confidence(words: &HashMap<String, f32>, w: &str) -> Option<f32> {
     let k = key(w);
-    if k.chars().count() + 1 < MIN_SIMILAR || confidence_of(words, w).is_some() {
+    // A name is written with a capital, and OCR keeps it: a lowercase word
+    // one letter off (`richtet`, `Richter`) is a word of the text.
+    if k.chars().count() + 1 < MIN_SIMILAR || !starts_upper(w) || confidence_of(words, w).is_some()
+    {
         return None;
     }
     words
@@ -530,6 +595,23 @@ fn learnable(w: &str, capitalised: bool) -> bool {
         && !detect::only_role_words(w)
         && !detect::brand_word(w)
         && !detect::ACCOUNTS.contains(&w.to_lowercase().as_str())
+}
+
+/// Whether a person's span is a firm: it ends in a legal form.
+fn is_firm(span: &str) -> bool {
+    let last = span
+        .trim_end_matches(|c: char| !c.is_alphanumeric())
+        .rsplit(|c: char| !c.is_alphanumeric())
+        .next()
+        .unwrap_or("");
+    let k = key(last);
+    LEGAL_FORMS.contains(&k.as_str()) || ["ag", "kg", "ug", "ek", "k"].contains(&k.as_str())
+}
+
+/// Whether a word of a firm's name is its trade's ([`TRADE_ENDINGS`]).
+fn trade_word(w: &str) -> bool {
+    let k = key(w);
+    TRADE_WORDS.contains(&k.as_str()) || TRADE_ENDINGS.iter().any(|e| k.ends_with(e))
 }
 
 fn starts_upper(w: &str) -> bool {
@@ -643,6 +725,30 @@ mod tests {
             found(&names, "Wendrich GmbH, haftungsbeschränkt", Source::Text),
             ["Wendrich"]
         );
+        // Nor the words it shares with every firm of its trade.
+        let names = Names::default();
+        learn(
+            &names,
+            "Kessler Hausverwaltung GmbH",
+            "Kessler Hausverwaltung GmbH",
+        );
+        learn(
+            &names,
+            "Albers & Söhne Malerbetrieb KG",
+            "Albers & Söhne Malerbetrieb KG",
+        );
+        assert_eq!(
+            found(
+                &names,
+                "die Hausverwaltung, Kessler, der Malerbetrieb und Söhne von Albers",
+                Source::Text
+            ),
+            ["Kessler", "Albers"]
+        );
+        // A person's name keeps such a word: `Bau` is a surname too.
+        let person = Names::default();
+        learn(&person, "Herr Jonas Bau", "Jonas Bau");
+        assert_eq!(found(&person, "Grüße an Bau", Source::Text), ["Bau"]);
     }
 
     #[test]
@@ -759,6 +865,33 @@ mod tests {
     }
 
     #[test]
+    fn many_values_are_found_in_time_linear_in_the_text() {
+        // A list of 20,000 rows, each with its own number, read row by row:
+        // a regex of every value rebuilt per row took minutes for 1,000.
+        let names = Names::default();
+        let t = std::time::Instant::now();
+        for i in 0..20_000 {
+            let row = format!("Kunde KD-{i:06}");
+            learn_value(&names, &row, &row[6..], "ID");
+            names.candidates(&row, Source::Text).unwrap();
+        }
+        assert!(
+            t.elapsed() < std::time::Duration::from_secs(10),
+            "{:?}",
+            t.elapsed()
+        );
+        // The longest at a start, with or without spaces, whole only.
+        learn_value(&names, "Kunde KD-0000123", "KD-0000123", "ID");
+        assert_eq!(
+            typed(&names, "kd-000012 3, KD-0000123 und XKD-000001"),
+            [
+                ("kd-000012 3".to_owned(), "ID".to_owned()),
+                ("KD-0000123".to_owned(), "ID".to_owned())
+            ]
+        );
+    }
+
+    #[test]
     fn a_value_learned_after_it_stood_unfound_is_late() {
         let names = Names::default();
         names.read("Journal B07311 offen", &[], &[], &[]);
@@ -772,6 +905,20 @@ mod tests {
         assert!(names.late());
         let again = names.seeded();
         assert_eq!(typed(&again, "Journal B07311 offen").len(), 1);
+        // Written another way before: glued, or spaced into short runs.
+        let glued = Names::default();
+        glued.read("Notiz KD48213", &[], &[], &[]);
+        learn_value(&glued, "Kundennummer: KD 48213", "KD 48213", "ID");
+        assert!(glued.late());
+        let spaced = Names::default();
+        spaced.read("Notiz 12 34 56 78", &[], &[], &[]);
+        learn_value(
+            &spaced,
+            "Telefon: 12 34 56 78",
+            "12 34 56 78",
+            "PHONE_NUMBER",
+        );
+        assert!(spaced.late());
     }
 
     #[test]
@@ -795,6 +942,12 @@ mod tests {
         for text in ["Heverin", "Sevelim", "Wendlrch x"] {
             assert!(found(&names, text, Source::Ocr).is_empty(), "{text}");
         }
+        // A lowercase word one letter off a name is a word of the text
+        // (`richtet` beside `Richter`), not the name read badly.
+        let lower = Names::default();
+        learn(&lower, "Kundin: Ute Richter", "Ute Richter");
+        assert!(found(&lower, "es richtet sich", Source::Ocr).is_empty());
+        assert_eq!(found(&lower, "Frau Rlchter", Source::Ocr), ["Rlchter"]);
         let short = Names::default();
         learn(&short, "Herr Ole Kranz", "Ole Kranz");
         assert!(found(&short, "Krenz", Source::Ocr).is_empty());

@@ -972,12 +972,28 @@ pub fn crop(bytes: &[u8], area: &crate::Area, margin: u32) -> Result<Vec<u8>, Er
     encode(&part, ImageFormat::Png)
 }
 
+/// A GIF's decoder with the limits a still picture has ([`image::Limits`]'
+/// default, 512 MiB per allocation): every frame is decoded on the whole
+/// screen a GIF declares, and a 35-byte file can declare 65535 x 65535,
+/// some 17 GB.
+fn gif_decoder(bytes: &[u8]) -> Result<GifDecoder<Cursor<&[u8]>>, Error> {
+    let mut decoder = GifDecoder::new(Cursor::new(bytes)).map_err(error)?;
+    decoder
+        .set_limits(image::Limits::default())
+        .map_err(error)?;
+    let (w, h) = decoder.dimensions();
+    if u64::from(w) * u64::from(h) * 4 > image::Limits::default().max_alloc.unwrap_or(u64::MAX) {
+        return Err(error(format!(
+            "a GIF of {w} x {h} pixels is too large to read"
+        )));
+    }
+    Ok(decoder)
+}
+
 /// Frame `n` (from 1) of a GIF as PNG, as decoded, and how many frames it
 /// has: what an area is drawn on and cropped from (#114).
 pub fn gif_frame(bytes: &[u8], n: u64) -> Result<(Vec<u8>, u64), Error> {
-    let frames = GifDecoder::new(Cursor::new(bytes))
-        .map_err(error)?
-        .into_frames();
+    let frames = gif_decoder(bytes)?.into_frames();
     let mut picked = None;
     let mut count = 0;
     for frame in frames {
@@ -1216,9 +1232,7 @@ fn redact_changed(
 fn gif(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Outcome, Error> {
     // Frame by frame, decoded and encoded as they come: a screen recording
     // of a few hundred frames at 4K is tens of GB decoded at once.
-    let frames = GifDecoder::new(Cursor::new(bytes))
-        .map_err(error)?
-        .into_frames();
+    let frames = gif_decoder(bytes)?.into_frames();
     let mut out = outcome();
     let mut buf = Vec::new();
     let mut encoder = if apply {
@@ -2060,6 +2074,16 @@ mod tests {
             let e = gif_frame(&gif, n).unwrap_err().to_string();
             assert!(e.contains("3 frames"), "{e}");
         }
+    }
+
+    #[test]
+    fn a_gif_that_declares_a_huge_screen_is_an_error_not_17_gb() {
+        // A one-frame GIF of 8 x 8 whose screen says 65535 x 65535: every
+        // frame would be decoded on that screen.
+        let mut gif = gif_of(&[[0, 0, 0]]);
+        gif[6..10].copy_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+        let e = gif_frame(&gif, 1).unwrap_err().to_string();
+        assert!(e.contains("too large") || e.contains("limit"), "{e}");
     }
 
     #[test]
