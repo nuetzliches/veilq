@@ -44,6 +44,66 @@ const REC_HEIGHT: u32 = 48;
 /// tell: misread lines averaged 0.95. Punctuation is left out, as printed
 /// separators (`·`) scored down to 0.53 and hold no personal data.
 pub const WEAK: f32 = 0.7;
+/// The rows at a picture's top and bottom edge read again for a line the
+/// edge cuts (ADR-0059).
+const EDGE_STRIP: u32 = 48;
+/// The rows of background added beyond the edge for that reading: with
+/// them, the detector sees a line cut in half that it misses at the edge.
+const EDGE_MARGIN: u32 = 48;
+/// How close to the edge a line's box comes to reach it.
+const EDGE_TOUCH: u32 = 2;
+
+/// `r` widened to the left and right over what is not `background` in its
+/// rows, across gaps as wide as it is high: the detector boxes the rest of
+/// a cut line short, and the tops of its last letters stood beside the box.
+fn over_ink(img: &RgbImage, r: Rect, background: image::Rgb<u8>) -> Rect {
+    let w = img.width();
+    let gap = r.h.max(8);
+    let rows = r.y..r.bottom().min(img.height());
+    let ink = |x: u32| rows.clone().any(|y| *img.get_pixel(x, y) != background);
+    let mut right = r.right().min(w);
+    let mut x = right;
+    while x < w && x < right + gap {
+        if ink(x) {
+            right = x + 1;
+        }
+        x += 1;
+    }
+    let mut left = r.x;
+    let mut x = left;
+    while x > 0 && x + gap > left {
+        x -= 1;
+        if ink(x) {
+            left = x;
+        }
+    }
+    Rect {
+        x: left,
+        w: right - left,
+        ..r
+    }
+}
+
+/// Whether `a` holds `b`: they meet across, and at least half of `b`'s rows
+/// are `a`'s.
+fn holds(a: &Rect, b: &Rect) -> bool {
+    let rows = a.bottom().min(b.bottom()).saturating_sub(a.y.max(b.y));
+    a.intersects(b) && rows * 2 >= b.h
+}
+
+/// The colour most pixels of row `y` of `img` have: the background beside
+/// a line the edge cuts.
+fn background(img: &RgbImage, y: u32) -> image::Rgb<u8> {
+    let mut counts: std::collections::HashMap<[u8; 3], usize> = std::collections::HashMap::new();
+    for x in 0..img.width() {
+        *counts.entry(img.get_pixel(x, y).0).or_default() += 1;
+    }
+    let best = counts
+        .into_iter()
+        .max_by_key(|(c, n)| (*n, *c))
+        .map_or([255, 255, 255], |(c, _)| c);
+    image::Rgb(best)
+}
 
 fn error(message: impl std::fmt::Display) -> Error {
     Error::Format(format!("OCR: {message}"))
@@ -109,6 +169,9 @@ pub struct Line {
     pub score: f32,
     /// Per character, as `chars`, its score.
     pub scores: Vec<f32>,
+    /// Cut by the picture's top or bottom edge, found only with a margin
+    /// added there (ADR-0059); its text may be empty: none could be read.
+    pub cut: bool,
 }
 
 impl Line {
@@ -162,7 +225,8 @@ impl Ocr {
         })
     }
 
-    /// The lines of text in `img`, top to bottom, left to right.
+    /// The lines of text in `img`, top to bottom, left to right; with them
+    /// the lines its top and bottom edge cut ([`Line::cut`]).
     pub fn read(&self, img: &RgbImage) -> Result<Vec<Line>, Error> {
         let mut lines = Vec::new();
         for rect in self.detect(img)? {
@@ -172,8 +236,115 @@ impl Ocr {
                 lines.push(line);
             }
         }
+        // A line read already is not read again: one that holds half of a
+        // cut line's height. The line above may touch it, and the boxes of
+        // one cut line each other.
+        let mut cut = Vec::new();
+        let read: Vec<Rect> = lines.iter().map(|l| l.rect).collect();
+        for bottom in [false, true] {
+            for l in self.cut_lines(img, bottom, &read)? {
+                if !lines.iter().any(|o| holds(&o.rect, &l.rect)) {
+                    cut.push(l);
+                }
+            }
+        }
+        lines.extend(cut);
         lines.sort_by_key(|l| (l.rect.y + l.rect.h / 2, l.rect.x));
         Ok(lines)
+    }
+
+    /// The lines the top (or `bottom`) edge of `img` cuts. The detector does
+    /// not see a line cut in half there (ADR-0059): the rows at the edge are
+    /// read again with [`EDGE_MARGIN`] rows of the edge's background beyond
+    /// them and the lines `read` already painted over with it (the rest of
+    /// a cut line otherwise joins the box of the line above), and a line
+    /// that reaches the edge is kept, read or not.
+    fn cut_lines(&self, img: &RgbImage, bottom: bool, read: &[Rect]) -> Result<Vec<Line>, Error> {
+        let (w, h) = img.dimensions();
+        let strip = h.min(EDGE_STRIP);
+        let edge_row = if bottom { h - 1 } else { 0 };
+        let background = background(img, edge_row);
+        let mut padded = RgbImage::from_pixel(w, strip + EDGE_MARGIN, background);
+        let (from, to) = if bottom {
+            (h - strip, 0)
+        } else {
+            (0, EDGE_MARGIN)
+        };
+        imageops::replace(
+            &mut padded,
+            &imageops::crop_imm(img, 0, from, w, strip).to_image(),
+            0,
+            i64::from(to),
+        );
+        for r in read {
+            // In the strip's rows, without the edge's own: a line read there
+            // is not cut.
+            let (top, end) = (r.y.max(from), r.bottom().min(from + strip));
+            if top >= end || (if bottom { end >= h } else { top == 0 }) {
+                continue;
+            }
+            for y in top..end {
+                for x in r.x..r.right().min(w) {
+                    padded.put_pixel(x, y - from + to, background);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        for rect in self.detect(&padded)? {
+            let reaches = if bottom {
+                rect.bottom() + EDGE_TOUCH >= strip
+            } else {
+                rect.y <= EDGE_MARGIN + EDGE_TOUCH
+            };
+            // Wholly in the margin, or not at the edge.
+            let inside = if bottom {
+                rect.y < strip
+            } else {
+                rect.bottom() > EDGE_MARGIN
+            };
+            if !reaches || !inside {
+                continue;
+            }
+            let rect = over_ink(&padded, rect, background);
+            let line = self.recognise(&padded, rect)?;
+            // Back to the picture: rows of the margin are none of its.
+            let place = |r: Rect| {
+                let (top, end) = if bottom {
+                    (from + r.y, (from + r.bottom()).min(h))
+                } else {
+                    (
+                        r.y.saturating_sub(EDGE_MARGIN),
+                        r.bottom().saturating_sub(EDGE_MARGIN).min(h),
+                    )
+                };
+                Rect {
+                    y: top,
+                    h: end.saturating_sub(top).max(1),
+                    ..r
+                }
+            };
+            out.push(match line {
+                Some(l) if !l.text.trim().is_empty() => Line {
+                    rect: place(l.rect),
+                    chars: l
+                        .chars
+                        .into_iter()
+                        .map(|(s, e, r)| (s, e, place(r)))
+                        .collect(),
+                    cut: true,
+                    ..l
+                },
+                _ => Line {
+                    text: String::new(),
+                    rect: place(rect),
+                    chars: Vec::new(),
+                    score: 0.0,
+                    scores: Vec::new(),
+                    cut: true,
+                },
+            });
+        }
+        Ok(out)
     }
 
     fn detect(&self, img: &RgbImage) -> Result<Vec<Rect>, Error> {
@@ -297,6 +468,7 @@ impl Ocr {
             chars,
             score,
             scores: runs.iter().map(|r| r.3).collect(),
+            cut: false,
         }))
     }
 }
@@ -471,5 +643,41 @@ mod tests {
         for e in expect.split('|') {
             assert!(all.contains(e), "{e:?} not in {all:?}");
         }
+    }
+
+    #[test]
+    fn a_line_holds_a_cut_line_by_half_its_height() {
+        let r = |y, h| Rect { x: 0, y, w: 100, h };
+        assert!(holds(&r(1022, 18), &r(1030, 10)));
+        // The line above touches the cut line by two rows.
+        assert!(!holds(&r(1022, 18), &r(1038, 9)));
+        assert!(!holds(
+            &Rect {
+                x: 200,
+                ..r(1022, 18)
+            },
+            &r(1030, 10)
+        ));
+    }
+
+    #[test]
+    fn a_cut_lines_box_grows_over_its_ink() {
+        let white = image::Rgb([255, 255, 255]);
+        let mut img = RgbImage::from_pixel(100, 10, white);
+        // Letters at 10..20, 24..30 and 60..62; the box holds 12..18.
+        for x in (10..20).chain(24..30).chain(60..62) {
+            img.put_pixel(x, 5, image::Rgb([0, 0, 0]));
+        }
+        let r = over_ink(
+            &img,
+            Rect {
+                x: 12,
+                y: 2,
+                w: 6,
+                h: 8,
+            },
+            white,
+        );
+        assert_eq!((r.x, r.right()), (10, 30), "not across a wide gap");
     }
 }

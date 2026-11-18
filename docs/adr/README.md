@@ -98,3 +98,4 @@ keep it to about a page.
 | [0056](0056-an-area-takes-a-face-or-a-signature-and-the-policy-sets-how-long-excerpts-stay.md) | An area takes a face or a signature, and the policy sets how long excerpts stay | Accepted |
 | [0057](0057-an-area-is-marked-on-a-gifs-frame-and-stays-while-its-pixels-do.md) | An area is marked on a GIF's frame and stays while its pixels do | Accepted |
 | [0058](0058-a-rule-from-an-area-names-the-words-ocr-read-inside-it.md) | A rule from an area names the words OCR read inside it | Accepted |
+| [0059](0059-a-files-values-firms-as-parties-and-lines-cut-by-the-edge.md) | A file's values, firms as parties, and lines cut by the edge | Accepted |

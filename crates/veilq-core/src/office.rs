@@ -898,15 +898,21 @@ impl Workbook {
             contexts.dedup();
             // Of overlapping findings of the readings the longest, then the
             // most confident: a full name under its column, not the words a
-            // file's names (ADR-0047) find in it without one.
+            // file's names (ADR-0047) find in it without one. Of two alike,
+            // the one a detector found itself, not the file's list
+            // repeating it (ADR-0059).
             let mut every: Vec<Candidate> = Vec::new();
             for ctx in &contexts {
                 every.extend(engine.findings(&text, ctx)?);
             }
+            let listed = |c: &Candidate| {
+                c.detector == crate::names::DETECTOR || c.detector == crate::names::VALUES_DETECTOR
+            };
             every.sort_by(|a, b| {
                 (b.end - b.start)
                     .cmp(&(a.end - a.start))
                     .then(b.confidence.total_cmp(&a.confidence))
+                    .then(listed(a).cmp(&listed(b)))
                     .then(a.start.cmp(&b.start))
             });
             let mut all: Vec<Candidate> = Vec::new();

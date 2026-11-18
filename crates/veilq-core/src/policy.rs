@@ -224,11 +224,27 @@ pub struct Names {
     /// detectors.
     #[serde(default = "default_true")]
     pub everywhere: bool,
+    /// `true` (the default): with `everywhere`, every other finding whose
+    /// value has five characters or more, one a digit or an `@` (a file
+    /// number, an IBAN, a phone number), is found wherever the file holds it
+    /// again, as its type (detector `values:file`, ADR-0059).
+    #[serde(default = "default_true")]
+    pub values: bool,
+    /// `true` (the default): with `everywhere`, in text read by OCR a word
+    /// one letter off a name's word of six letters or more, with its first
+    /// letter, is that word read wrong (`Severln`), at nine tenths of its
+    /// confidence (ADR-0059).
+    #[serde(default = "default_true")]
+    pub similar: bool,
 }
 
 impl Default for Names {
     fn default() -> Self {
-        Self { everywhere: true }
+        Self {
+            everywhere: true,
+            values: true,
+            similar: true,
+        }
     }
 }
 

@@ -116,6 +116,16 @@
       "entity": "PERSON",
       "location": {
         "kind": "region",
+        "x": 210,
+        "y": 106,
+        "width": 70,
+        "height": 8
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
         "x": 360,
         "y": 106,
         "width": 22,

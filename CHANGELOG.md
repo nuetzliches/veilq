@@ -19,9 +19,27 @@ Notable changes per release. The format follows
 - An area marked on a picture proposes rules from the words OCR read inside
   it, as a value marked on text does, tried on the picture and the earlier
   cases; when OCR read nothing there, none is proposed (#114, ADR-0058).
+- A file's values (ADR-0059): a file number, an IBAN, a phone number, an
+  e-mail address or another value with a digit or an `@` found once is
+  found wherever the file holds it again, its spaces as they come, as its
+  type (detector `values:file`, `[names] values`). IPv4 addresses stay
+  off the list.
+- In text read by OCR a word one letter off a name's word of six letters
+  or more is that name read wrong (`Severln` for `Severin`), at nine
+  tenths of its confidence (`[names] similar`, ADR-0059).
+- A firm under the label of a party (`Gläubiger`, `Schuldner`, `Gegner`,
+  `Mandant`, `Absender`, `Empfänger`) is found whole with its legal form
+  (`Kessler Hausverwaltung GmbH`, `… & Co. KG`, `e.K.`) as `PERSON`,
+  and its name, not its legal form, is found wherever the file names it
+  (pattern `de.party-firm`, ADR-0059).
 
 ### Fixed
 
+- A line a picture's top or bottom edge cuts in half is read: the
+  detector saw nothing there, and a sender's name under a letter's
+  greeting stood unfilled. Read badly or not at all, it is filled whole as
+  `UNREAD_TEXT` (detector `ocr:cut-edge`), whatever `[picture]
+  low_confidence` says (ADR-0059).
 - A streamed run longer than a chunk counts each candidate the learned
   decider lifted once (#117): the reading that only places a chunk's cut
   counted it too, and the review reason said "lifted 2" for one.

@@ -1929,6 +1929,44 @@ values = ["Mira Albers"]
     }
 
     #[test]
+    fn a_firm_under_a_partys_label_is_found_whole() {
+        // ADR-0059: a creditor or debtor named after its owner.
+        for text in [
+            "Kessler Hausverwaltung GmbH",
+            "Hausverwaltung Kessler & Söhne GmbH & Co. KG",
+            "Malerbetrieb Albers e.K.",
+            "Wendrich UG (haftungsbeschränkt)",
+        ] {
+            for label in ["GLÄUBIGER", "Schuldnerin", "Absender"] {
+                assert!(
+                    findings(text, label)
+                        .iter()
+                        .any(|(e, v)| e == "PERSON" && v == text),
+                    "{text} under {label}: {:?}",
+                    findings(text, label)
+                );
+            }
+        }
+        // A picture's label above the value, not a column's head.
+        assert_eq!(
+            read("Kessler Hausverwaltung GmbH", "GLÄUBIGER\n", Source::Ocr),
+            [(
+                "PERSON".to_owned(),
+                "Kessler Hausverwaltung GmbH".to_owned()
+            )]
+        );
+        // Without a party's label a firm is no finding.
+        for label in ["", "Status", "Bank"] {
+            assert!(
+                findings("Kessler Hausverwaltung GmbH", label)
+                    .iter()
+                    .all(|(e, _)| e != "PERSON"),
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
     fn an_address_in_the_cells_of_a_row_is_one() {
         // A picture's row joins its cells with two spaces.
         for (text, value) in [

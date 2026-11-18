@@ -61,6 +61,8 @@ const ROUNDS: usize = 6;
 /// low_confidence = "box"` (ADR-0045), and its detector.
 pub const UNREAD_TEXT: &str = "UNREAD_TEXT";
 const UNREAD_DETECTOR: &str = "ocr:low-confidence";
+/// The detector of a line the picture's edge cuts, filled whole (ADR-0059).
+const CUT_DETECTOR: &str = "ocr:cut-edge";
 
 /// Where a finding is, as the report and the messages say it.
 fn place(f: &Finding) -> String {
@@ -804,7 +806,14 @@ fn settle(
         }) {
             return Ok(None);
         }
-        let candidates = candidates(engine, &lines, w, h, round > 1)?;
+        // A line the edge cuts that could not be read holds no text to
+        // detect in; it is filled whole below (ADR-0059).
+        let read: Vec<Line> = lines
+            .iter()
+            .filter(|l| !l.text.trim().is_empty())
+            .cloned()
+            .collect();
+        let candidates = candidates(engine, &read, w, h, round > 1)?;
         let mut new: Vec<Rect> = Vec::new();
         for (c, rects) in candidates {
             // Found twice (page and line), inside a box already filled, or
@@ -899,7 +908,9 @@ fn settle(
 /// The lines OCR read badly where nothing in `new` covers them, as the
 /// policy says (ADR-0045): `review` notes each for the report's reason,
 /// `box` reports each as `UNREAD_TEXT` and returns its box to fill, `error`
-/// stops at the first.
+/// stops at the first. A line the picture's edge cuts, read badly or not at
+/// all, is filled whole whatever the policy says (ADR-0059): what is left of
+/// it cannot be read better.
 fn unread(
     engine: &Engine,
     lines: &[Line],
@@ -912,7 +923,9 @@ fn unread(
     let low = engine.policy().picture.low_confidence.unwrap_or_default();
     let mut boxes = Vec::new();
     for l in lines {
-        if !l.weak().any(|r| !covered(r, new.iter())) {
+        let weak = l.weak().any(|r| !covered(r, new.iter()));
+        let cut = l.cut && (weak || (l.text.trim().is_empty() && !covered(&l.rect, new.iter())));
+        if !weak && !cut {
             continue;
         }
         let r = Rect {
@@ -923,6 +936,7 @@ fn unread(
         if released(engine, frame, &r) {
             continue;
         }
+        let low = if cut { LowConfidence::Box } else { low };
         match low {
             LowConfidence::Review => out.weak_lines.push(at(&r, frame)),
             LowConfidence::Error => return Err(Error::Unread { at: at(&r, frame) }),
@@ -938,7 +952,7 @@ fn unread(
                         height: r.h,
                     },
                     confidence: 1.0,
-                    detector: UNREAD_DETECTOR.into(),
+                    detector: if cut { CUT_DETECTOR } else { UNREAD_DETECTOR }.into(),
                     pseudonym: None,
                 });
                 boxes.push(grown(&l.rect, w, h));
@@ -1389,6 +1403,7 @@ mod tests {
             scores: vec![1.0; text.chars().count()],
             chars,
             score: 1.0,
+            cut: false,
         }
     }
 
@@ -1579,6 +1594,45 @@ mod tests {
         )
         .unwrap();
         assert_eq!(out.weak_lines.len(), 1, "outside every region");
+    }
+
+    #[test]
+    fn a_line_the_edge_cuts_is_filled_when_it_cannot_be_read() {
+        // ADR-0059: with the default policy (`review`) too.
+        let engine = Engine::new(&crate::Policy::default(), None, b"test", None).unwrap();
+        let mut weak = line("Lina Petersen", 0, 990);
+        weak.cut = true;
+        weak.scores[6] = 0.5;
+        let mut blank = line("", 300, 992);
+        blank.rect = Rect {
+            x: 300,
+            y: 992,
+            w: 120,
+            h: 8,
+        };
+        blank.cut = true;
+        let mut clear = line("Freundliche Grüße", 600, 990);
+        clear.cut = true;
+        let mut out = outcome();
+        let boxes = unread(
+            &engine,
+            &[weak, blank, clear],
+            &[],
+            &Band::WHOLE,
+            None,
+            (1000, 1000),
+            &mut out,
+        )
+        .unwrap();
+        assert_eq!(boxes.len(), 2, "{boxes:?}");
+        assert!(out.weak_lines.is_empty(), "filled, not left for review");
+        assert!(
+            out.findings
+                .iter()
+                .all(|f| f.detector == CUT_DETECTOR && f.entity.as_str() == UNREAD_TEXT)
+        );
+        // Read well, a cut line is read like any other.
+        assert!(boxes.iter().all(|b| b.x < 600));
     }
 
     #[test]
