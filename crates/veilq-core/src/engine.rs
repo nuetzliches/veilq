@@ -267,6 +267,27 @@ pub struct Explained {
     pub lifted: bool,
 }
 
+/// An area of a picture in its pixels: of a still image (`frame` `None`) or
+/// of a PDF's page `frame` (from 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Area {
+    #[serde(default)]
+    pub frame: Option<u64>,
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// The areas a user marked on a picture for one run (#34).
+#[derive(Debug, Clone, Default)]
+pub struct PictureMarks {
+    /// Personal data left: filled and reported as the type.
+    pub missed: Vec<(Area, EntityType)>,
+    /// No personal data: what is found inside is left.
+    pub released: Vec<Area>,
+}
+
 /// The highest threshold a run may set (ADR-0046): a finding at 1.0 (a
 /// valid checksum, a policy's list) never drops out.
 pub const MAX_RUN_CONFIDENCE: f32 = 0.95;
@@ -291,6 +312,8 @@ pub struct Engine {
     /// The names of the file being read (ADR-0047), shared by the clones
     /// that read its parts; `None` outside a run.
     names: Option<std::sync::Arc<crate::names::Names>>,
+    /// The areas a user marked on a picture's pages for this run (#34).
+    picture_marks: std::sync::Arc<PictureMarks>,
     /// How many candidates the learned decider lifted in this run (#35),
     /// shared by the clones that read its parts; `None` outside a run.
     lifted: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
@@ -336,6 +359,7 @@ impl Engine {
             no_watermark: false,
             explain: None,
             names: None,
+            picture_marks: std::sync::Arc::default(),
             lifted: None,
             #[cfg(feature = "ocr")]
             ocr: None,
@@ -686,7 +710,7 @@ impl Engine {
         let mut at = 0;
         for seg in segments {
             let mut found: Vec<Candidate> = self
-                .decided(&seg.text, &seg.context, false, Source::Text, false, &[])?
+                .decided(&seg.text, &seg.context, false, Source::Text, false)?
                 .into_iter()
                 .filter(|c| seg.raw_of(c.start) < upto)
                 .collect();
@@ -950,8 +974,14 @@ impl Engine {
                 policy.allow.values.push(value.clone());
             }
         }
+        self.with_policy(&policy)
+    }
+
+    /// This engine with `policy` in place of its own, its models and the
+    /// run's threshold kept: a rule tried before it is saved (#34).
+    pub fn with_policy(&self, policy: &Policy) -> Result<Self, Error> {
         let mut engine = self.clone();
-        engine.detector = self.detector.with_policy(&policy)?;
+        engine.detector = self.detector.with_policy(policy)?;
         Ok(engine)
     }
 
@@ -984,6 +1014,27 @@ impl Engine {
     /// This engine writing pictures without the `veilq <version>` mark
     /// (`--no-watermark`, ADR-0050) when `off`; with `false` as it was. A
     /// policy that switched the mark off is not overridden.
+    /// This engine with the areas a user marked on a picture (#34), for this
+    /// run: each `missed` area is filled and reported as its type before
+    /// the picture is read; what a detector finds inside a `released` area
+    /// is left, in every round of the check. A still image's area has no
+    /// frame, a PDF page's names its page.
+    pub fn with_picture_marks(&self, missed: Vec<(Area, EntityType)>, released: Vec<Area>) -> Self {
+        let mut engine = self.clone();
+        engine.picture_marks = std::sync::Arc::new(PictureMarks { missed, released });
+        engine
+    }
+
+    #[cfg_attr(not(feature = "ocr"), allow(dead_code))]
+    pub(crate) fn picture_marks(&self) -> &PictureMarks {
+        &self.picture_marks
+    }
+
+    /// Whether this run has areas marked on a picture (#34).
+    pub fn has_picture_marks(&self) -> bool {
+        !self.picture_marks.missed.is_empty() || !self.picture_marks.released.is_empty()
+    }
+
     pub fn without_watermark(&self, off: bool) -> Self {
         let mut engine = self.clone();
         engine.no_watermark |= off;
@@ -1078,13 +1129,13 @@ impl Engine {
 
     /// The findings in `text`, decided (for formats beside this module).
     pub(crate) fn findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
-        self.decided(text, context, true, Source::Text, false, &[])
+        self.decided(text, context, true, Source::Text, false)
     }
 
     /// [`findings`](Self::findings) in text OCR read off a picture: a
     /// failed checksum costs less (ADR-0037).
     pub(crate) fn ocr_findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
-        self.decided(text, context, true, Source::Ocr, false, &[])
+        self.decided(text, context, true, Source::Ocr, false)
     }
 
     /// [`ocr_findings`](Self::ocr_findings) in a picture read again after
@@ -1094,15 +1145,15 @@ impl Engine {
         text: &str,
         context: &str,
     ) -> Result<Vec<Candidate>, Error> {
-        self.decided(text, context, true, Source::Ocr, true, &[])
+        self.decided(text, context, true, Source::Ocr, true)
     }
 
     /// The detector's findings in `text`, written to the explanation when
     /// there is one; with `placeholders`, what lies inside one of veilq's
     /// own placeholders (`<PERSON>`, `[PERSON:0a1b2c3d]`, ADR-0001) is
     /// dropped, so a model that reads `<PERSON>` as a name changes nothing.
-    /// A person inside `replaced` (a verify round's stand-ins, a `fake`
-    /// name among them) does not go on the file's list of names.
+    /// A `verify` reading finds the file's names but learns none: it reads
+    /// veilq's own output, its stand-ins and placeholders (#112).
     fn decided(
         &self,
         text: &str,
@@ -1110,7 +1161,6 @@ impl Engine {
         placeholders: bool,
         source: Source,
         verify: bool,
-        replaced: &[Range<usize>],
     ) -> Result<Vec<Candidate>, Error> {
         static PLACEHOLDER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
             regex::Regex::new(r"\\?<[A-Z][A-Z0-9_]*\\?>|\[[A-Z][A-Z0-9_]*:[0-9a-f]{8}\]")
@@ -1138,9 +1188,9 @@ impl Engine {
             Ok::<_, Error>(decisions)
         };
         let mut decisions = decide(self.names.as_deref())?;
-        // The file's names (ADR-0047): a person found here goes on the list,
-        // and a name new to it is looked for in this text too.
-        if let Some(names) = &self.names {
+        // The file's names (ADR-0047): a person found in the input goes on
+        // the list, and a name new to it is looked for in this text too.
+        if let Some(names) = self.names.as_ref().filter(|_| !verify) {
             let kept = |d: &&crate::detect::Decision| d.verdict == Verdict::Kept;
             let persons: Vec<(usize, usize, f32)> = decisions
                 .iter()
@@ -1148,9 +1198,6 @@ impl Engine {
                 .filter(|d| {
                     d.candidate.entity.as_str() == "PERSON"
                         && d.candidate.detector != crate::names::DETECTOR
-                        && !replaced
-                            .iter()
-                            .any(|r| r.start < d.candidate.end && d.candidate.start < r.end)
                 })
                 .map(|d| (d.candidate.start, d.candidate.end, d.candidate.confidence))
                 .collect();
@@ -1268,13 +1315,11 @@ impl Engine {
         // Each kept piece: its range in the new text and where it starts in
         // the old one.
         let mut kept: Vec<(Range<usize>, usize)> = Vec::new();
-        let mut stand_ins: Vec<Range<usize>> = Vec::new();
         let (mut new_at, mut old_at, mut k) = (0, 0, 0);
         for (p, replaced) in pieces {
             if *replaced {
                 old_at = found[k].end;
                 k += 1;
-                stand_ins.push(new_at..new_at + p.len());
             } else {
                 kept.push((new_at..new_at + p.len(), old_at));
                 old_at += p.len();
@@ -1282,7 +1327,7 @@ impl Engine {
             new_at += p.len();
         }
         let mut out = Vec::new();
-        for f in self.decided(&new, context, false, Source::Text, true, &stand_ins)? {
+        for f in self.decided(&new, context, false, Source::Text, true)? {
             let Some((range, old)) = kept
                 .iter()
                 .find(|(r, _)| r.start <= f.start && f.end <= r.end)
@@ -1869,29 +1914,27 @@ mod tests {
     }
 
     #[test]
-    fn a_stand_in_a_verify_round_reads_is_not_learned() {
-        // `fake` writes a stand-in name; the verify round finds it as a
-        // person. Learned, every `Brandt` of the file would be filled.
+    fn a_verify_round_learns_no_names() {
+        // A verify round reads veilq's own output: a stand-in name (`fake`),
+        // or a label a model takes for a name beside a placeholder
+        // (`Kundennummer <ACCOUNT_ID>`, #112). What it finds is filled there;
+        // learned, every such word of the file would be filled too.
         let text = "Herr Jonas Brandt";
         let later = "Brandt kommt";
-        let found = |e: &Engine, t: &str, replaced: &[Range<usize>]| -> Vec<String> {
-            e.decided(t, "", false, Source::Text, true, replaced)
+        let found = |e: &Engine, t: &str, verify: bool| -> Vec<String> {
+            e.decided(t, "", false, Source::Text, verify)
                 .unwrap()
                 .into_iter()
                 .map(|c| t[c.start..c.end].to_owned())
                 .collect()
         };
         let e = engine().with_names();
-        let stand_in = vec![Range {
-            start: 0,
-            end: text.len(),
-        }];
-        assert!(!found(&e, text, &stand_in).is_empty());
-        assert!(found(&e, later, &[]).is_empty());
-        // Outside a stand-in the name is learned as before.
+        assert!(!found(&e, text, true).is_empty(), "found in the round");
+        assert!(found(&e, later, false).is_empty(), "not learned");
+        // Read from the input, the name is learned as before.
         let e = engine().with_names();
-        found(&e, text, &[]);
-        assert_eq!(found(&e, later, &[]), ["Brandt"]);
+        found(&e, text, false);
+        assert_eq!(found(&e, later, false), ["Brandt"]);
     }
 
     #[test]

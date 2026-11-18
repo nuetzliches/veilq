@@ -1,6 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { ApiError, createApi, type Info, type Mark, type Redaction, type Source } from '@/api';
+import {
+  ApiError,
+  createApi,
+  type Area,
+  type Info,
+  type Mark,
+  type Proposal,
+  type Redaction,
+  type Rule,
+  type Source,
+} from '@/api';
 import BrandMark from '@/components/BrandMark.vue';
 import ComparePane from '@/components/ComparePane.vue';
 import FileBrowser from '@/components/FileBrowser.vue';
@@ -293,8 +303,12 @@ async function run(source: Source, name: string | null, unverified = false, expl
     explained.value = false;
     marks.value = [];
     markNote.value = null;
+    drawing.value = false;
+    proposal.value = null;
+    ruleNote.value = null;
   }
   selection.value = null;
+  drawnArea.value = null;
   if (explain) explained.value = true;
   sourceName.value = name;
   lastRun.value = { source, name };
@@ -369,15 +383,96 @@ async function addMark(mark: Mark) {
   const source = lastRun.value.source;
   marks.value = [...marks.value, mark];
   selection.value = null;
+  drawnArea.value = null;
   window.getSelection()?.removeAllRanges();
   markNote.value = null;
   const kept = api.addCase(source, mark, threshold.value ?? undefined);
   runAgain();
+  void offerRule(source, mark);
   try {
     const added = await kept;
-    markNote.value = added.excerpt ? t('marks.kept') : t('marks.keptNoExcerpt');
+    markNote.value = [added.excerpt ? t('marks.kept') : t('marks.keptNoExcerpt'), added.twin ? t('marks.twin') : '']
+      .filter(Boolean)
+      .join(' ');
   } catch (e) {
     markNote.value = t('marks.notKept', { error: e instanceof Error ? e.message : String(e) });
+  }
+}
+
+/** The rules the last mark proposes (#34), each tried on the document and the earlier cases. */
+const proposal = ref<Proposal | null>(null);
+/** The marked value the rules were proposed from: the shape rules are said by it. */
+const proposedFrom = ref('');
+/** Which of the proposed rules is shown; the cheapest first. */
+const chosenRule = ref(0);
+/** What became of the proposal: saved, copied, or why not. */
+const ruleNote = ref<string | null>(null);
+
+/** A mark on text proposes its rules; an area names no value a rule could take. */
+async function offerRule(source: Source, mark: Mark) {
+  proposal.value = null;
+  ruleNote.value = null;
+  chosenRule.value = 0;
+  if (mark.kind !== 'missed' && mark.kind !== 'extra') return;
+  try {
+    const p = await api.propose(source, mark, threshold.value ?? undefined);
+    proposedFrom.value = mark.value.trim();
+    proposal.value = p.rules.length ? p : null;
+  } catch {
+    // No proposal is no fault of the mark: it acts all the same.
+  }
+}
+
+const proposed = computed(() => proposal.value?.rules[chosenRule.value] ?? null);
+
+function describeRule(r: Rule): string {
+  const value = proposedFrom.value;
+  switch (r.kind) {
+    case 'deny':
+      return t('rules.proposeDeny', { value: r.value, type: entityLabel(r.entity) });
+    case 'allow':
+      return t('rules.proposeAllow', { value: r.value });
+    case 'context':
+      return t('rules.proposeContext', { value, word: r.word, type: entityLabel(r.entity) });
+    case 'shape':
+      return t('rules.proposeShape', { value, type: entityLabel(r.entity) });
+    case 'allow_shape':
+      return t('rules.proposeAllowShape', { value });
+    case 'threshold':
+      return t('rules.proposeThreshold', { type: entityLabel(r.entity), threshold: r.min_confidence.toFixed(2) });
+  }
+}
+
+const ruleCounts = computed(() => {
+  const p = proposed.value;
+  if (!p || !proposal.value) return '';
+  const here = t('rules.proposeHere', { gained: p.document.gained, lost: p.document.lost });
+  const tried = proposal.value.tried;
+  return tried
+    ? `${here}; ${t('rules.proposeCases', { n: tried, gained: p.cases.gained, lost: p.cases.lost })}`
+    : here;
+});
+
+async function adoptRule() {
+  const p = proposed.value;
+  if (!p) return;
+  try {
+    await api.adoptRule(p.rule);
+    proposal.value = null;
+    ruleNote.value = t('rules.adopted');
+  } catch (e) {
+    ruleNote.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+async function copyRule() {
+  const p = proposed.value;
+  if (!p) return;
+  try {
+    await navigator.clipboard.writeText(p.toml);
+    ruleNote.value = t('rules.copied');
+  } catch (e) {
+    ruleNote.value = e instanceof Error ? e.message : String(e);
   }
 }
 
@@ -385,16 +480,60 @@ function markMissed() {
   if (selection.value) void addMark({ kind: 'missed', value: selection.value, entity: markType.value });
 }
 
-/** Per finding, whether a mark can release it: a box in text, with its place in the input. */
+/** A still image or a PDF's pages in the output: where an area can be marked (not a GIF's frames). */
+const areaOutput = computed(() => (!!image.value && image.value.media_type !== 'image/gif') || !!pdf.value);
+/** A drag on the output picture draws an area to mark. */
+const drawing = ref(false);
+/** The area drawn, while it is offered as a mark; `frame` names a PDF's page. */
+const drawnArea = ref<Area | null>(null);
+
+function onDraw(area: Omit<Area, 'frame'>, page?: number) {
+  drawnArea.value = page === undefined ? area : { ...area, frame: page };
+}
+
+function markArea() {
+  const area = drawnArea.value;
+  if (!area) return;
+  drawnArea.value = null;
+  drawing.value = false;
+  void addMark({ kind: 'missed_area', area, entity: markType.value });
+}
+
+/**
+ * Per finding, whether a mark can release it: a box in text with its place in the input, or a box
+ * on a still image or a PDF page.
+ */
 const releasable = computed(() =>
-  findings.value.map((_, i) => markableOutput.value && !!result.value?.input_spans[i]),
+  findings.value.map((f, i) =>
+    markableOutput.value
+      ? !!result.value?.input_spans[i]
+      : areaOutput.value && f.location.kind === 'region' && f.location.part === undefined,
+  ),
 );
+
+/** Room around a released box: OCR reads it a pixel or two off the next time. */
+const RELEASE_MARGIN = 3;
 
 function release(i: number) {
   const r = result.value;
-  const span = r?.input_spans[i];
-  if (!r || !span) return;
-  void addMark({ kind: 'extra', value: byteSlice(r.input, span).trim(), entity: findings.value[i].entity });
+  const f = findings.value[i];
+  if (!r || !f) return;
+  const l = f.location;
+  if (l.kind === 'region') {
+    const x = Math.max(0, l.x - RELEASE_MARGIN);
+    const y = Math.max(0, l.y - RELEASE_MARGIN);
+    const area: Area = {
+      x,
+      y,
+      width: l.width + (l.x - x) + RELEASE_MARGIN,
+      height: l.height + (l.y - y) + RELEASE_MARGIN,
+    };
+    if (l.frame !== undefined) area.frame = l.frame;
+    void addMark({ kind: 'extra_area', area, entity: f.entity });
+    return;
+  }
+  const span = r.input_spans[i];
+  if (span) void addMark({ kind: 'extra', value: byteSlice(r.input, span).trim(), entity: f.entity });
 }
 
 /** The marks of this document taken back: it runs as the policy alone has it; the cases stay. */
@@ -834,6 +973,19 @@ onBeforeUnmount(() => {
             </span>
           </label>
           <span class="spacer" />
+          <button
+            v-if="areaOutput && !busy"
+            class="small"
+            :class="{ on: drawing }"
+            :aria-pressed="drawing"
+            :title="t('marks.drawTitle')"
+            @click="
+              drawing = !drawing;
+              drawnArea = null;
+            "
+          >
+            {{ t('marks.draw') }}
+          </button>
           <button v-if="outputPictures" class="small" :title="t('pane.zoomTitle')" @click="openViewer('output')">
             {{ t('pane.zoom') }}
           </button>
@@ -871,6 +1023,27 @@ onBeforeUnmount(() => {
             </button>
             <button class="small" :aria-label="t('common.close')" @click="selection = null">×</button>
           </div>
+          <div v-else-if="drawnArea" class="markbar" role="group" :aria-label="t('marks.missedTitle')">
+            <span class="what">{{ t('marks.areaMissed') }}</span>
+            <select v-model="markType" :aria-label="t('marks.missedTitle')">
+              <option v-for="e in MARK_TYPES" :key="e" :value="e">{{ entityLabel(e) }}</option>
+            </select>
+            <button class="primary small" :disabled="busy" @click="markArea">{{ t('marks.mark') }}</button>
+            <button class="small" :aria-label="t('common.close')" @click="drawnArea = null">×</button>
+          </div>
+          <p v-else-if="drawing" class="markbar hint">{{ t('marks.drawHint') }}</p>
+          <div v-else-if="proposal && proposed" class="markbar proposal" role="group" :aria-label="t('rules.proposeTitle')">
+            <select v-if="proposal.rules.length > 1" v-model="chosenRule" :aria-label="t('rules.choose')">
+              <option v-for="(p, i) in proposal.rules" :key="i" :value="i">{{ describeRule(p.rule) }}</option>
+            </select>
+            <span class="what" :title="`${describeRule(proposed.rule)} ${ruleCounts}`">
+              <strong v-if="proposal.rules.length === 1">{{ describeRule(proposed.rule) }}</strong> {{ ruleCounts }}
+            </span>
+            <button v-if="proposal.user_in_use" class="primary small" @click="adoptRule">{{ t('rules.adopt') }}</button>
+            <button v-else class="small" :title="t('rules.copyTitle')" @click="copyRule">{{ t('rules.copy') }}</button>
+            <button class="small" :aria-label="t('common.close')" @click="proposal = null">×</button>
+          </div>
+          <p v-else-if="ruleNote" class="markbar hint">{{ ruleNote }}</p>
           <div v-if="result?.report.review_required" class="review" role="status">
             <strong>{{ t('output.review') }}</strong>
             <span v-for="(r, i) in result.report.review_reasons ?? []" :key="i">{{ r }}</span>
@@ -894,8 +1067,11 @@ onBeforeUnmount(() => {
               :findings="findings"
               :hovered="hovered"
               :selected="selected"
+              :drawing="drawing && areaOutput"
+              :drawn="drawnArea && drawnArea.frame === undefined ? drawnArea : null"
               @hover="hovered = $event"
               @select="selectIn('output', $event)"
+              @draw="onDraw($event)"
               :zoom="paneZoom"
               @open="openViewer('output')"
             />
@@ -911,8 +1087,11 @@ onBeforeUnmount(() => {
                 :findings="findings"
                 :hovered="hovered"
                 :selected="selected"
+                :drawing="drawing"
+                :drawn="drawnArea?.frame === i + 1 ? drawnArea : null"
                 @hover="hovered = $event"
                 @select="selectIn('output', $event)"
+                @draw="onDraw($event, i + 1)"
                 :zoom="paneZoom"
                 @open="openViewer('output')"
               />
@@ -1363,6 +1542,16 @@ button.icon {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* A rule proposed: its counts are what to decide on, so they wrap rather than hide. */
+.markbar.proposal .what {
+  white-space: normal;
+}
+/* The rules to choose from: a long one is cut in the closed list, not the counts beside it. */
+.markbar.proposal select {
+  min-width: 0;
+  max-width: 55%;
+  text-overflow: ellipsis;
 }
 .markbar select {
   border: 1px solid var(--border-strong);

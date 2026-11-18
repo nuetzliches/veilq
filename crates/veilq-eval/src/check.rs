@@ -337,11 +337,17 @@ pub fn engine() -> anyhow::Result<Engine> {
 
 /// Evaluates every document under `dir`; returns the evaluation and the
 /// number of findings.
+///
+/// With `redact`, the findings are a redaction's, not a scan's (#108): a
+/// picture's faces and signatures are filled as a redaction fills them, and
+/// it is read again until a round finds nothing new (ADR-0026). A scan fills
+/// nothing, so it cannot see a value a filled region took the context of.
 pub fn evaluate(
     dir: &Path,
     only: Option<&str>,
     ner: bool,
     ocr: bool,
+    redact: bool,
 ) -> anyhow::Result<(Evaluation, usize)> {
     let engine = engine_for(ner, ocr)?;
     let mut eval = Evaluation::default();
@@ -362,7 +368,7 @@ pub fn evaluate(
             String::from_utf8(bytes.clone()).map_err(|_| anyhow::anyhow!("{name}: not UTF-8"))?
         };
         let found = engine
-            .run_bytes(&bytes, format, false)
+            .run_bytes(&bytes, format, redact)
             .map_err(|e| anyhow::anyhow!("{name}: {e}"))?
             .1
             .report

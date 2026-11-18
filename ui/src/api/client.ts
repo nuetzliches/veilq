@@ -6,6 +6,7 @@ import {
   type Listing,
   type Models,
   type Picture,
+  type Proposal,
   type Redaction,
   type RedactOptions,
   type SetupStatus,
@@ -66,11 +67,18 @@ export function httpApi(token: string): Api {
         }),
       }),
     addCase: (source, mark, minConfidence) =>
-      call<{ id: string; excerpt: boolean }>('/cases', {
+      call<{ id: string; excerpt: boolean; twin?: boolean }>('/cases', {
         method: 'POST',
         body: JSON.stringify({ source, mark, min_confidence: minConfidence }),
       }),
     cases: () => call<CaseCount>('/cases'),
+    propose: (source, mark, minConfidence) =>
+      call<Proposal>('/cases/propose', {
+        method: 'POST',
+        body: JSON.stringify({ source, mark, min_confidence: minConfidence }),
+      }),
+    adoptRule: (rule) =>
+      call<{ path: string; in_use: boolean }>('/policy/rule', { method: 'POST', body: JSON.stringify(rule) }),
     deleteCases: () => call<{ deleted: number }>('/cases', { method: 'DELETE' }),
     setup: () => call<SetupStatus>('/setup'),
     install: (request) => call<SetupStatus>('/setup', { method: 'POST', body: JSON.stringify(request) }),

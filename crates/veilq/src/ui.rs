@@ -383,6 +383,8 @@ fn router(state: Arc<AppState>) -> Router {
             "/cases",
             get(cases::count).post(cases::add).delete(cases::delete_all),
         )
+        .route("/cases/propose", post(cases::propose))
+        .route("/policy/rule", post(cases::adopt))
         .route("/folders", get(settings::folders))
         .route("/root", axum::routing::put(settings::set_root))
         .route(
@@ -682,7 +684,7 @@ fn list(root: &Path, dir: &str) -> Result<Listing, Error> {
     })
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum Source {
     /// Pasted text.
@@ -922,6 +924,17 @@ fn redact_source(
         Some(n) => Format::from_path(Path::new(n)).map_err(Failure::from)?,
         None => Format::Text,
     };
+    // Fail closed: an area marked where it cannot be applied (a GIF's
+    // frames, text) is an error, not a mark left out.
+    if engine.has_picture_marks() && !cases::takes_areas(format) {
+        return Err(Failure(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!(
+                "areas are marked on images and PDF pages, not on {}",
+                format.name()
+            ),
+        ));
+    }
     if format.is_container() {
         // Read whole (ADR-0019, ADR-0020). A mail is text: both sides are
         // shown, without marks (its findings name their parts). An Office
@@ -1189,6 +1202,8 @@ mod tests {
             .await;
             assert_eq!(status, StatusCode::OK, "{body}");
             assert_eq!(body["excerpt"], true);
+            // A twin for the miss; none for the box released.
+            assert_eq!(body["twin"], mark["kind"] == "missed", "{body}");
         }
         let (_, body) = send(
             app(),
@@ -1201,16 +1216,25 @@ mod tests {
             .unwrap()
             .list()
             .unwrap();
-        assert_eq!(cases[0].kind, veilq_core::cases::Kind::Missed);
+        // Both were made in the same second: their order is not the test's.
+        let of = |kind| cases.iter().find(|c| c.kind == kind).expect("a case");
+        let missed = of(veilq_core::cases::Kind::Missed);
+        let extra = of(veilq_core::cases::Kind::Extra);
         assert!(matches!(
-            cases[0].location,
+            missed.location,
             veilq_core::Location::Span {
                 start: 8,
                 end: 19,
                 ..
             }
         ));
-        assert_eq!(cases[1].kind, veilq_core::cases::Kind::Extra);
+        // The miss's twin: the text with stand-ins, the marked one at its span.
+        let store_ = veilq_core::cases::Store::open(store.path()).unwrap();
+        let twin = store_.twin(&missed.id).unwrap().expect("a twin");
+        let span = missed.twin.as_ref().unwrap();
+        assert!(twin.starts_with("Projekt "), "{twin}");
+        assert!(!twin[span.start..span.end].is_empty());
+        assert!(store_.twin(&extra.id).unwrap().is_none());
         // No file of the store holds a value in the clear.
         let mut files = vec![store.path().to_owned()];
         while let Some(p) = files.pop() {
@@ -1233,6 +1257,265 @@ mod tests {
         )
         .await;
         assert_eq!(body["deleted"], 2);
+    }
+
+    /// A white PNG of one pixel.
+    const ONE_PIXEL_PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+    #[cfg(feature = "ocr")]
+    #[tokio::test]
+    async fn an_area_on_a_picture_is_kept_as_a_case_with_the_picture_around_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let key = age::x25519::Identity::generate();
+        let source =
+            serde_json::json!({ "kind": "upload", "name": "shot.png", "data": ONE_PIXEL_PNG });
+        let mark = serde_json::json!({
+            "kind": "missed_area",
+            "area": { "x": 0, "y": 0, "width": 1, "height": 1 },
+            "entity": "PERSON"
+        });
+        let (status, body) = send(
+            cases_app(dir.path(), store.path(), Some(key.clone())),
+            json_post(
+                "/api/cases",
+                serde_json::json!({ "source": source, "mark": mark }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["excerpt"], true);
+        let store = veilq_core::cases::Store::open(store.path()).unwrap();
+        let case = &store.list().unwrap()[0];
+        assert!(matches!(
+            case.location,
+            veilq_core::Location::Region {
+                frame: None,
+                width: 1,
+                height: 1,
+                ..
+            }
+        ));
+        assert_eq!(case.excerpt.as_ref().unwrap().media_type, "image/png");
+        let png = store.excerpt(&case.id, &key).unwrap().unwrap();
+        assert!(png.starts_with(b"\x89PNG"));
+    }
+
+    #[tokio::test]
+    async fn an_area_where_it_cannot_be_applied_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let area = serde_json::json!({
+            "kind": "missed_area",
+            "area": { "x": 0, "y": 0, "width": 1, "height": 1 },
+            "entity": "PERSON"
+        });
+        let text = serde_json::json!({ "kind": "text", "text": "Hallo Welt" });
+        // Fail closed: not a mark left out, an error.
+        let (status, body) = send(
+            cases_app(dir.path(), store.path(), None),
+            json_post(
+                "/api/redact",
+                serde_json::json!({ "source": text, "marks": [area] }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        let gif =
+            serde_json::json!({ "kind": "upload", "name": "clip.gif", "data": ONE_PIXEL_PNG });
+        let (status, _) = send(
+            cases_app(dir.path(), store.path(), None),
+            json_post(
+                "/api/cases",
+                serde_json::json!({ "source": gif, "mark": area }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            veilq_core::cases::Store::open(store.path())
+                .unwrap()
+                .list()
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_mark_proposes_a_rule_tried_on_the_document_and_the_earlier_cases() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let key = age::x25519::Identity::generate();
+        let app = || cases_app(dir.path(), store.path(), Some(key.clone()));
+        let mark = serde_json::json!({ "kind": "missed", "value": "Falkenstein", "entity": "ORGANIZATION" });
+        // An earlier case whose line names the value too.
+        let earlier =
+            serde_json::json!({ "kind": "text", "text": "Lieferung an Falkenstein am Montag." });
+        let (status, _) = send(
+            app(),
+            json_post(
+                "/api/cases",
+                serde_json::json!({ "source": earlier, "mark": mark }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let source = serde_json::json!({ "kind": "text", "text": "Projekt Falkenstein, Falkenstein zahlt." });
+        let (status, body) = send(
+            app(),
+            json_post(
+                "/api/cases/propose",
+                serde_json::json!({ "source": source, "mark": mark }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let deny = &body["rules"][0];
+        assert_eq!(deny["rule"]["kind"], "deny");
+        assert_eq!(deny["rule"]["value"], "Falkenstein");
+        assert_eq!(deny["document"]["gained"], 2, "{body}");
+        assert_eq!(deny["document"]["lost"], 0);
+        assert_eq!(body["tried"], 1);
+        assert_eq!(deny["cases"]["gained"], 1, "{body}");
+        assert!(deny["toml"].as_str().unwrap().contains("[[deny]]"));
+        // A name's shape would match nearly every word: not proposed.
+        let kinds: Vec<_> = body["rules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["rule"]["kind"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(kinds, ["deny", "context"], "{body}");
+        assert_eq!(body["rules"][1]["rule"]["word"], "Projekt");
+        // An area names no value a rule could take.
+        let area = serde_json::json!({
+            "kind": "missed_area", "area": { "x": 0, "y": 0, "width": 1, "height": 1 }, "entity": "PERSON"
+        });
+        let (status, _) = send(
+            app(),
+            json_post(
+                "/api/cases/propose",
+                serde_json::json!({ "source": source, "mark": area }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn a_number_marked_proposes_its_word_its_shape_and_a_released_one_a_threshold() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let app = || cases_app(dir.path(), store.path(), None);
+        let propose = |source: serde_json::Value, mark: serde_json::Value| {
+            json_post(
+                "/api/cases/propose",
+                serde_json::json!({ "source": source, "mark": mark }),
+            )
+        };
+        let source = serde_json::json!({
+            "kind": "text",
+            "text": "Kundennummer KD-48213, früher Kundennummer KD-77120.\nDie Unterlagen liegen bis Ende des Monats im Raum KG-30551."
+        });
+        let mark =
+            serde_json::json!({ "kind": "missed", "value": "KD-48213", "entity": "ACCOUNT_ID" });
+        let (status, body) = send(app(), propose(source, mark)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let rules = body["rules"].as_array().unwrap();
+        let kinds: Vec<_> = rules
+            .iter()
+            .map(|p| p["rule"]["kind"].as_str().unwrap())
+            .collect();
+        assert_eq!(kinds, ["deny", "context", "shape"], "{body}");
+        // The value alone; after its word both; its shape all three.
+        let gained: Vec<_> = rules
+            .iter()
+            .map(|p| p["document"]["gained"].as_u64().unwrap())
+            .collect();
+        assert_eq!(gained, [1, 2, 3], "{body}");
+        assert_eq!(rules[1]["rule"]["word"], "Kundennummer");
+        assert_eq!(rules[2]["rule"]["regex"], r"\b\p{Lu}{2}\-\d{5}\b");
+
+        // A box released: never this value, or a threshold above its
+        // finding's confidence, which drops it.
+        let source =
+            serde_json::json!({ "kind": "text", "text": "Mail an info@beispiel.de bitte." });
+        let mark = serde_json::json!({
+            "kind": "extra", "value": "info@beispiel.de", "entity": "EMAIL_ADDRESS"
+        });
+        let (status, body) = send(app(), propose(source, mark)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let rules = body["rules"].as_array().unwrap();
+        assert_eq!(rules[0]["rule"]["kind"], "allow");
+        let threshold = rules.last().unwrap();
+        assert_eq!(threshold["rule"]["kind"], "threshold", "{body}");
+        assert_eq!(threshold["document"]["lost"], 1, "{body}");
+        assert!(
+            threshold["toml"]
+                .as_str()
+                .unwrap()
+                .starts_with("[entities.EMAIL_ADDRESS]")
+        );
+    }
+
+    #[test]
+    fn every_rule_goes_into_a_policy_veilq_reads() {
+        let rules: Vec<cases::Rule> = serde_json::from_value(serde_json::json!([
+            { "kind": "context", "entity": "ACCOUNT_ID", "word": "Kundennummer", "regex": r"\b\p{Lu}{2}\-\d{5}\b" },
+            { "kind": "shape", "entity": "ACCOUNT_ID", "regex": r"\b\p{Lu}{2}\-\d{5}\b" },
+            { "kind": "allow_shape", "regex": r"\d{4}\-\d{2}" },
+            { "kind": "threshold", "entity": "PHONE_NUMBER", "min_confidence": 0.81 }
+        ]))
+        .unwrap();
+        let mut policy = Policy::default();
+        for rule in &rules {
+            rule.add_to(&mut policy);
+            // Saved twice, kept once.
+            rule.add_to(&mut policy);
+        }
+        assert_eq!(policy.patterns.len(), 2);
+        assert_ne!(policy.patterns[0].name, policy.patterns[1].name);
+        assert_eq!(policy.allow.patterns.len(), 1);
+        veilq_core::Engine::new(&policy, None, b"test", None).unwrap();
+        let toml = format!(
+            "version = 1\n{}",
+            rules.iter().map(|r| r.toml()).collect::<String>()
+        );
+        let read = Policy::parse(&toml).unwrap();
+        assert_eq!(read.patterns, policy.patterns);
+        assert_eq!(read.allow.patterns, policy.allow.patterns);
+        assert_eq!(read.entities, policy.entities);
+    }
+
+    #[test]
+    fn a_rule_goes_into_a_policy_and_reads_as_toml() {
+        let deny: cases::Rule = serde_json::from_value(
+            serde_json::json!({ "kind": "deny", "entity": "ORGANIZATION", "value": "Falkenstein \"Nord\"" }),
+        )
+        .unwrap();
+        let allow: cases::Rule =
+            serde_json::from_value(serde_json::json!({ "kind": "allow", "value": "Copilot" }))
+                .unwrap();
+        let mut policy = Policy::default();
+        deny.add_to(&mut policy);
+        allow.add_to(&mut policy);
+        allow.add_to(&mut policy);
+        assert_eq!(policy.deny.len(), 1);
+        assert!(!policy.deny[0].parts);
+        assert_eq!(
+            policy
+                .allow
+                .values
+                .iter()
+                .filter(|v| *v == "Copilot")
+                .count(),
+            1
+        );
+        // The TOML to copy is a policy veilq reads.
+        let toml = format!("version = 1\n{}{}", deny.toml(), allow.toml());
+        let read = Policy::parse(&toml).unwrap();
+        assert_eq!(read.deny[0].values, vec!["Falkenstein \"Nord\"".to_owned()]);
+        assert_eq!(read.allow.values, vec!["Copilot".to_owned()]);
     }
 
     #[tokio::test]

@@ -92,3 +92,6 @@ keep it to about a page.
 | [0050](0050-a-redacted-picture-names-veilq-and-its-version.md) | A redacted picture names veilq and its version | Accepted |
 | [0051](0051-file-numbers-by-their-label-cut-names-and-boxes-that-grow.md) | File numbers by their label, names cut short, boxes that grow | Accepted |
 | [0052](0052-a-possessive-and-a-noun-are-no-name.md) | A possessive and a noun are no name | Accepted |
+| [0053](0053-every-detector-reads-the-picture-before-anything-is-filled.md) | Every detector reads the picture before anything is filled | Accepted |
+| [0054](0054-a-mark-acts-on-its-document-is-kept-as-a-case-and-proposes-rules.md) | A mark acts on its document, is kept as a case, and proposes rules | Accepted |
+| [0055](0055-a-verify-round-learns-no-names-and-a-field-label-is-no-name.md) | A verify round learns no names, and a field label is no name | Accepted |

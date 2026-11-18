@@ -8,6 +8,12 @@ Notable changes per release. The format follows
 
 ### Added
 
+- `veilq-eval check --redact` measures what a redaction finds, not a scan
+  (#108): a picture's faces and signatures are filled as a redaction fills
+  them, and it is read again. It sees what a filled region costs a text
+  detector, which a scan cannot: on the corpus and every held-out seed,
+  a signature found on a field label hides the tax ID or licence plate
+  beside it. CI gates on it as on the scan.
 - Every picture veilq writes (an image, each GIF frame, each PDF page)
   carries a small `veilq <version>` mark at its bottom right (ADR-0050),
   drawn after redaction and verification, so it never hides or causes a
@@ -47,9 +53,54 @@ Notable changes per release. The format follows
   OS key store (Credential Manager, Keychain, Secret Service), without that
   line where there is none. Settings → Detection shows the cases and
   deletes them all. Text, CSV and JSON for now; pictures follow.
+- **Marks on images and PDF pages** (#34): "Mark an area" in the output
+  draws a frame around personal data veilq left; it is filled black and
+  reported as its type (detector `mark`). A box on a picture is released from the findings panel: what
+  OCR, the face or the signature detector finds inside is left, in every
+  round of the check. A case keeps the picture around the area, encrypted.
+  Not on a GIF's frames yet: an area marked there is an error, not a mark
+  left out.
+- **A case's synthetic twin** (#34): a miss marked on text gets a twin, the
+  line it was read in with every value veilq replaced and the marked one
+  as made-up stand-ins (`fake`). It is kept in the clear beside the case
+  only if veilq, without the mark, leaves the stand-in as it left the value,
+  and if none of the original values is in it; twins are what every later
+  rule is tried on. A box released gets none: its twin would have to keep
+  the released value.
+- **A mark proposes a rule** (#34): a value marked on text as always found
+  as its type (a deny value), a value released as never found (an allow
+  value). The proposal says what it changes in the document and in the
+  earlier cases (their excerpts where the key reads them, else their
+  twins); "Add to my rules" saves it into the user's policy, checked as the
+  settings save it. Where a project's `veilq.toml` is in effect, the rule
+  is offered as TOML to copy instead.
+- **More rules from a mark** (#34, ADR-0054): besides the value, a miss
+  proposes values of its shape after the word before it (in its line, or
+  its column's name), values of its shape anywhere (only when it holds a
+  digit) and its type's threshold lowered to where veilq had it; a box
+  released proposes values of its shape never found and its type's
+  threshold raised above the finding. The proposal bar lists them, the
+  cheapest first, each with what it changes here and in the earlier cases.
+
+### Changed
+
+- Every detector reads a picture before anything in it is filled
+  (ADR-0053, #108): marked areas, faces and signatures are found on the
+  picture as it came, OCR reads the same picture, and all of it is filled
+  once with the first reading's boxes, then verified as before. A field
+  label taken for a signature no longer costs the tax ID or licence plate
+  beside it: in a redaction, both are found on the corpus and every
+  held-out seed. A line read badly inside a face or signature is no longer
+  a review reason.
 
 ### Fixed
 
+- A field label beside a redacted value no longer becomes a name for the
+  whole file (ADR-0055, #112): `Kundennummer KD-48213` with the number
+  redacted came out as `<PERSON> <ACCOUNT_ID>`, since the verify round's
+  model took `Kundennummer` before the placeholder for a name and the
+  file's names learned it. A verify round now learns no names, and a word
+  ending in `nummer`, `zeichen` or `number` is no name.
 - `Ihre Nachricht`, `Ihr Anliegen` and other pairs of a possessive and one
   word in a sentence are no longer taken for a name (ADR-0052). NER found
   them in subjects such as `Wir haben Ihre Nachricht erhalten`, and the

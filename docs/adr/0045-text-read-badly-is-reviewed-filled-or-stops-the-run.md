@@ -1,6 +1,6 @@
 # ADR-0045: Text read badly is reviewed, filled or stops the run
 
-- **Status:** Accepted (card in issue #52, points C1 to C4, approved by the owner 2026-11-13); amends [ADR-0023](0023-pictures-are-read-with-ocr-and-redacted-with-black-boxes.md) and [ADR-0040](0040-purposes-are-built-in-policy-packs.md)
+- **Status:** Accepted (card in issue #52, points C1 to C4, approved by the owner 2026-11-13); amends [ADR-0023](0023-pictures-are-read-with-ocr-and-redacted-with-black-boxes.md) and [ADR-0040](0040-purposes-are-built-in-policy-packs.md); amended by [ADR-0053](0053-every-detector-reads-the-picture-before-anything-is-filled.md) (a line inside a face or signature is no reason)
 - **Date:** 2026-11-13
 - **Deciders:** project owner
 - **Related:** [ADR-0026](0026-a-picture-is-filled-until-a-round-finds-nothing-new.md), #52, #58

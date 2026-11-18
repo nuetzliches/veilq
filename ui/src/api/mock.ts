@@ -312,6 +312,25 @@ export function mockApi(): Api {
     async cases() {
       return { count: cases, key_store: false };
     },
+    async propose(_source: Source, mark: Mark) {
+      if (mark.kind !== 'missed' && mark.kind !== 'extra') throw new ApiError(422, 'an area holds no value a rule could name yet');
+      const rule = mark.kind === 'missed' ? { kind: 'deny' as const, entity: mark.entity, value: mark.value } : { kind: 'allow' as const, value: mark.value };
+      return {
+        rules: [
+          {
+            rule,
+            document: { gained: mark.kind === 'missed' ? 1 : 0, lost: mark.kind === 'extra' ? 1 : 0 },
+            cases: { gained: 0, lost: 0 },
+            toml: '',
+          },
+        ],
+        tried: cases,
+        user_in_use: true,
+      };
+    },
+    async adoptRule() {
+      throw new ApiError(422, 'the mock saves nothing');
+    },
     async deleteCases() {
       const deleted = cases;
       cases = 0;

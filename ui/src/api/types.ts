@@ -290,7 +290,54 @@ export interface RedactOptions {
  */
 export type Mark =
   | { kind: 'missed'; value: string; entity: string; label?: string }
-  | { kind: 'extra'; value: string; entity: string };
+  | { kind: 'extra'; value: string; entity: string }
+  | { kind: 'missed_area'; area: Area; entity: string; label?: string }
+  | { kind: 'extra_area'; area: Area; entity: string };
+
+/** An area of a still image (no `frame`) or of a PDF's page `frame`, in the picture's pixels. */
+export interface Area {
+  frame?: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * A rule a mark proposes (#34): a value always found as its type, or never found; values of its shape
+ * after the word beside it, or anywhere; a threshold for its type.
+ */
+export type Rule =
+  | { kind: 'deny'; entity: string; value: string }
+  | { kind: 'allow'; value: string }
+  | { kind: 'context'; entity: string; word: string; regex: string }
+  | { kind: 'shape'; entity: string; regex: string }
+  | { kind: 'allow_shape'; regex: string }
+  | { kind: 'threshold'; entity: string; min_confidence: number };
+
+/** What a rule changes: findings it adds and findings it drops. */
+export interface RuleChange {
+  gained: number;
+  lost: number;
+}
+
+/** A rule tried on the document and on the earlier cases (their excerpts or twins). */
+export interface ProposedRule {
+  rule: Rule;
+  document: RuleChange;
+  cases: RuleChange;
+  /** The rule as TOML, to copy where a project's policy is in effect. */
+  toml: string;
+}
+
+/** The rules a mark proposes, the cheapest first. */
+export interface Proposal {
+  rules: ProposedRule[];
+  /** How many earlier cases each rule was tried on. */
+  tried: number;
+  /** The user's policy is in use: a rule can be saved there. */
+  user_in_use: boolean;
+}
 
 /** The case store: how many cases, and whether an excerpt can be kept. */
 export interface CaseCount {
@@ -306,8 +353,13 @@ export interface Api {
   picture(path: string): Promise<Picture>;
   redact(source: Source, options?: RedactOptions): Promise<Redaction>;
   /** Keeps a mark as a case; `excerpt`: the line around it was kept, encrypted. */
-  addCase(source: Source, mark: Mark, minConfidence?: number): Promise<{ id: string; excerpt: boolean }>;
+  /** `twin`: a synthetic twin reproduces the mistake and was kept beside it (a miss on text). */
+  addCase(source: Source, mark: Mark, minConfidence?: number): Promise<{ id: string; excerpt: boolean; twin?: boolean }>;
   cases(): Promise<CaseCount>;
+  /** The rules a mark proposes, each tried on the document and the earlier cases. */
+  propose(source: Source, mark: Mark, minConfidence?: number): Promise<Proposal>;
+  /** Saves a rule into the user's policy. */
+  adoptRule(rule: Rule): Promise<{ path: string; in_use: boolean }>;
   /** "Delete all cases". */
   deleteCases(): Promise<{ deleted: number }>;
   setup(): Promise<SetupStatus>;
