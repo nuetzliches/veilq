@@ -200,6 +200,13 @@ mails are never marked.
   each word of the name alone; in a picture also a word cut short (`Jon..`)
   or by a window's edge. `[names] everywhere = false` leaves each text to
   its own detectors.
+- **A file's values** (ADR-0059): a file number, an IBAN, a phone number or
+  an e-mail address found once is found wherever the file holds it again,
+  with or without its spaces (`[names] values`); in a picture a name read
+  one letter off (`Severln`) is the name (`[names] similar`). A firm under
+  a party's label (`Gläubiger`, `Schuldner`, `Mandant`) is filled like a
+  person, legal form and all, and a line the picture's top or bottom edge
+  cuts is filled whole when it cannot be read.
 - **`veilq mark <body>`** decides on a ticket's description for a gateway
   between a tracker and an agent: a body whose first line is a matching
   `veilq: cleaned|pass <hash>` (or an exempt prefix from the policy's

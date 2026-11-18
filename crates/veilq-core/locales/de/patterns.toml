@@ -137,6 +137,20 @@ regex = '^\p{Lu}[\p{L}.\-]*(?: [\p{L}.\-]+){0,3}(?: \d{1,4} ?[a-zA-Z]?)?(?: ?\(?
 confidence = 0.0
 context = { words = ["straße", "strasse", "str.", "street", "anschrift", "adresse", "address"], boost = 0.85, window = 32 }
 
+# A firm under the label of a party (ADR-0059): a creditor, a debtor, an
+# opponent, a client, a sender or a recipient is as often a firm named
+# after its owner as a person (`Kessler Hausverwaltung GmbH`). The
+# whole value with its legal form, weighed as `name-field`: below every
+# default threshold without such a label (a firm alone is not a person), and
+# a label beside or above it counts, as a picture's field has one, not
+# only a column's head.
+[[patterns]]
+name = "party-firm"
+entity = "PERSON"
+regex = '^\p{Lu}[\p{L}.\-]*(?: (?:\p{Lu}[\p{L}.\-]*|&|und)){0,5} (?:GmbH & Co\. KG|GmbH|gGmbH|mbH|UG \(haftungsbeschränkt\)|UG|AG|KG|OHG|GbR|e\. ?K\.|PartG mbB|PartG)$'
+confidence = 0.35
+context = { words = ["gläubiger", "gläubigerin", "schuldner", "schuldnerin", "gegner", "gegnerin", "mandant", "mandantin", "absender", "absenderin", "empfänger", "empfängerin"], boost = 0.5, window = 32 }
+
 # National numbers: 0 and an area code. Not after a digit and `-` or `/`,
 # so that `2026-0421-5550` (an invoice number) stays. At least three digits
 # after the area code: a postcode (`01067`) is not a number. No area code

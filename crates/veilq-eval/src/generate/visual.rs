@@ -353,7 +353,8 @@ const LIST_STATUS: &[&str] = &[
     "Antwort ausstehend",
 ];
 
-/// A case list in a browser (ADR-0041, ADR-0042): the client, a surname
+/// A case list in a browser (ADR-0041, ADR-0042): the client (a person or
+/// a firm, ADR-0059), a surname
 /// alone in the column of opposing parties, a status, and street, number,
 /// postcode and town in columns of their own, cells cut short where a
 /// value is too long for its column.
@@ -391,8 +392,9 @@ pub(super) fn list_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
         c.lit(cols[0].1, y, 12.0, r.pick(&["MTH", "CLI", "LKA"]), INK);
         c.lit(cols[1].1, y, 12.0, "sab", INK);
         c.lit(cols[2].1, y, 12.0, &format!("B0{}", r.digits(4)), INK);
+        // A firm as a party is filled as a person (ADR-0059).
         if r.chance(25) {
-            c.lit(cols[3].1, y, 12.0, "Nordwerk GmbH", INK);
+            c.pii("PERSON", cols[3].1, y, 12.0, "Nordwerk GmbH", INK);
         } else {
             c.pii("PERSON", cols[3].1, y, 12.0, &p.name(), INK);
         }

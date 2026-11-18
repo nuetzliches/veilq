@@ -1,6 +1,6 @@
 # ADR-0047: A name found once is found wherever the file names it
 
-- **Status:** Accepted (card in the conversation, points A1 to A6, approved by the owner 2026-11-13); amends [ADR-0004](0004-the-policy-is-veilq-toml-in-the-current-directory-or-the-git-root.md) (a new section); amended by [ADR-0055](0055-a-verify-round-learns-no-names-and-a-field-label-is-no-name.md) (a verify round learns no names)
+- **Status:** Accepted (card in the conversation, points A1 to A6, approved by the owner 2026-11-13); amends [ADR-0004](0004-the-policy-is-veilq-toml-in-the-current-directory-or-the-git-root.md) (a new section); amended by [ADR-0055](0055-a-verify-round-learns-no-names-and-a-field-label-is-no-name.md) (a verify round learns no names) and [ADR-0059](0059-a-files-values-firms-as-parties-and-lines-cut-by-the-edge.md) (a file's values, a name read one letter off)
 - **Date:** 2026-11-16
 - **Deciders:** project owner
 - **Related:** [ADR-0044](0044-a-deny-list-names-the-people-a-text-can-name.md), [ADR-0023](0023-pictures-are-read-with-ocr-and-redacted-with-black-boxes.md), [ADR-0026](0026-a-picture-is-filled-until-a-round-finds-nothing-new.md), #34, #39

@@ -452,7 +452,7 @@ impl Engine {
         if self.names.is_some() || !self.policy().names.everywhere {
             return once(self);
         }
-        let mut names = std::sync::Arc::new(crate::names::Names::default());
+        let mut names = std::sync::Arc::new(self.new_names());
         for pass in 1..=NAME_PASSES {
             let mut engine = self.clone();
             engine.names = Some(names.clone());
@@ -558,7 +558,7 @@ impl Engine {
         // Streamed, the list of names learns forward only (ADR-0047): what
         // was written is not read again.
         if self.names.is_none() && self.policy().names.everywhere {
-            let names = std::sync::Arc::new(crate::names::Names::default());
+            let names = std::sync::Arc::new(self.new_names());
             let mut engine = self.clone();
             engine.names = Some(names.clone());
             let mut run = engine.run(input, output, format)?;
@@ -760,11 +760,18 @@ impl Engine {
         Ok(())
     }
 
+    /// A new list of the file's names, as the policy has it (ADR-0047,
+    /// ADR-0059).
+    fn new_names(&self) -> crate::names::Names {
+        let n = &self.policy().names;
+        crate::names::Names::new(n.values, n.similar)
+    }
+
     /// This engine with a list of names of its own, as inside a run.
     #[cfg(test)]
     pub(crate) fn with_names(&self) -> Self {
         let mut engine = self.clone();
-        engine.names = Some(std::sync::Arc::new(crate::names::Names::default()));
+        engine.names = Some(std::sync::Arc::new(self.new_names()));
         engine
     }
 
@@ -1250,7 +1257,20 @@ impl Engine {
         let decide = |names: Option<&crate::names::Names>| {
             let mut all = found.clone();
             if let Some(n) = names {
-                all.extend(n.candidates(text, source)?);
+                // One that repeats a candidate as strong on its span adds
+                // nothing but a line to the explanation.
+                let repeats = |c: &Candidate| {
+                    found.iter().any(|f| {
+                        (f.start, f.end) == (c.start, c.end)
+                            && f.entity == c.entity
+                            && f.confidence >= c.confidence
+                    })
+                };
+                all.extend(
+                    n.candidates(text, source)?
+                        .into_iter()
+                        .filter(|c| !repeats(c)),
+                );
             }
             let mut decisions = self.detector.resolve(text, all, self.explain.is_some());
             if placeholders && text.contains(['<', '[']) {
@@ -1272,14 +1292,29 @@ impl Engine {
         // the list, and a name new to it is looked for in this text too.
         if let Some(names) = self.names.as_ref().filter(|_| !verify) {
             let kept = |d: &&crate::detect::Decision| d.verdict == Verdict::Kept;
+            let own = |d: &&crate::detect::Decision| {
+                d.candidate.detector != crate::names::DETECTOR
+                    && d.candidate.detector != crate::names::VALUES_DETECTOR
+            };
             let persons: Vec<(usize, usize, f32)> = decisions
                 .iter()
                 .filter(kept)
-                .filter(|d| {
-                    d.candidate.entity.as_str() == "PERSON"
-                        && d.candidate.detector != crate::names::DETECTOR
-                })
+                .filter(own)
+                .filter(|d| d.candidate.entity.as_str() == "PERSON")
                 .map(|d| (d.candidate.start, d.candidate.end, d.candidate.confidence))
+                .collect();
+            // The file's values (ADR-0059): every other type found here but
+            // an IPv4 address, which has a version number's shape and is
+            // told from one only by a word before it.
+            let values: Vec<(usize, usize, &EntityType, f32)> = decisions
+                .iter()
+                .filter(kept)
+                .filter(own)
+                .filter(|d| !matches!(d.candidate.entity.as_str(), "PERSON" | "IP_ADDRESS"))
+                .map(|d| {
+                    let c = &d.candidate;
+                    (c.start, c.end, &c.entity, c.confidence)
+                })
                 .collect();
             let spans = |ds: &[crate::detect::Decision]| -> Vec<(usize, usize)> {
                 ds.iter()
@@ -1287,7 +1322,7 @@ impl Engine {
                     .map(|d| (d.candidate.start, d.candidate.end))
                     .collect()
             };
-            if names.read(text, &persons, &spans(&decisions)) {
+            if names.read(text, &persons, &values, &spans(&decisions)) {
                 decisions = decide(Some(names))?;
             }
         }
