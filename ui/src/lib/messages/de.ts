@@ -332,6 +332,7 @@ export const de: Record<MessageKey, string> = {
   'marks.keptNoExcerpt': 'Als Fall auf diesem Rechner gespeichert, ohne die Zeile darum (kein Schlüsselspeicher).',
   'marks.notKept': 'Die Markierung wirkt hier, wurde aber nicht als Fall gespeichert: {error}',
   'rules.proposeTitle': 'Eine Regel aus dieser Markierung',
+  'rules.nothingRead': 'Im Rahmen hat die Texterkennung nichts gelesen: keine Regel vorgeschlagen. Die Markierung wirkt trotzdem.',
   'rules.proposeDeny': 'Regel: „{value}“ immer als {type} finden.',
   'rules.proposeAllow': 'Regel: „{value}“ nie finden.',
   'rules.proposeContext': 'Regel: Werte wie „{value}“ nach „{word}“ als {type} finden.',

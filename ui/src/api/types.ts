@@ -337,6 +337,8 @@ export interface Proposal {
   tried: number;
   /** The user's policy is in use: a rule can be saved there. */
   user_in_use: boolean;
+  /** For an area: what OCR read inside it, the value the rules name; absent when it read nothing (#114). */
+  read?: string;
 }
 
 /** The case store: how many cases, and whether an excerpt can be kept. */
