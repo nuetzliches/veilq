@@ -82,7 +82,7 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
   measurement, 2026-11-18. A filter of boxes by their background (a box with
   little even background is a photo) was measured and not built: retraining
   was chosen over a rule beside the model.
-- **Before 0.5.1: veilq-signature-v3.** v2 found 1 of 16 signatures written
+- **0.6.0: veilq-signature-v3.** v2 found 1 of 16 signatures written
   on a photo: their ink had been chosen at random, so white strokes lay on
   a bright sky, labelled but not to be seen. The next training wrote them in
   an ink that stands out from what lies under it, made them 14 % of the
