@@ -24,7 +24,8 @@ ADR is the first two.
   filled and reported (detector `mark`), and what a detector finds inside a
   released box is left in every round of the check. No other file changes.
   A value both marked and released is found (fail closed). An area on a
-  GIF's frames is an error, not a mark left out.
+  GIF's frames, on no page of the input or wholly outside its picture is an
+  error, not a mark left out.
 - **Every mark is a case** under the user's local data (`%LOCALAPPDATA%\veilq\cases`,
   in the MSIX package its own copy), in the format of
   `schema/case.schema.json`: format, place, kind (missed or extra), type,
@@ -34,17 +35,20 @@ ADR is the first two.
   read, or the picture around the area (24 pixels on each side), is kept,
   encrypted with age to an X25519 key in the OS key store (Credential
   Manager, Keychain, Secret Service; `keyring`, service `veilq`, account
-  `case-store`), never beside the cases. After 30 days it is deleted; case
-  and twin stay. Without a key store nothing of it is written.
-- **A twin replaces the values.** A miss marked on text gets a synthetic
-  twin: the excerpt with every value veilq replaced and the marked one as
-  stand-ins (`fake`). It is kept in the clear only if veilq, without the
-  mark, leaves the stand-in as it left the value, and none of the original
-  values is in it. A box released gets none: its twin would have to keep
-  the released value.
+  `case-store`), never beside the cases. After 30 days it is deleted; the
+  case stays. Without a key store nothing of it is written.
+- **A twin replaces the values, and is kept as the excerpt is.** A miss
+  marked on text gets a synthetic twin: its line with every value veilq
+  found and the marked one as stand-ins (`fake`), kept only if veilq,
+  without the mark, leaves the stand-in as it left the value. What veilq
+  did not find stays in it, so it is encrypted to the same key, deleted
+  after 30 days, and not written without a key store. A box released gets
+  none: its twin would have to keep the released value. (Changed before
+  0.5.0 after the security review of 2026-11-18, approved by the owner:
+  the card kept twins in the clear, for ever, as the whole text read.)
 - **A mark proposes rules, the cheapest first**, each tried on the document
-  and on every earlier case (its excerpt where the key reads it, else its
-  twin) and shown with what it adds and drops:
+  and on every earlier case still kept (its excerpt where the key reads
+  it, else its twin) and shown with what it adds and drops:
   - a miss: the value always found as its type (`[[deny]]`); values of its
     shape after the word before it, in its line or its column's name (a
     pattern below every threshold, above them with the word, ADR-0011);
@@ -81,9 +85,12 @@ ADR is the first two.
 ## Consequences
 
 - The case store is a folder of personal data's places and, for 30 days,
-  encrypted excerpts on the user's machine; "Delete all cases" and the
-  retention bound it. The key stays in the OS key store when the cases are
-  deleted.
+  encrypted excerpts and twins on the user's machine; "Delete all cases"
+  and the retention bound it. Only folders named by a case id are the
+  store's: nothing else in its folder is ever deleted. The key stays in the
+  OS key store when the cases are deleted.
+- A rule is tried on the earlier cases of the last 30 days, and only where
+  the key store reads them.
 - The retention is fixed at 30 days; the card's "configurable" is not
   built yet.
 - A proposed pattern is tried on few texts (the document and the cases): a

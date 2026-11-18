@@ -59,14 +59,15 @@ Notable changes per release. The format follows
   OCR, the face or the signature detector finds inside is left, in every
   round of the check. A case keeps the picture around the area, encrypted.
   Not on a GIF's frames yet: an area marked there is an error, not a mark
-  left out.
+  left out, as is one on no page of the input or wholly outside its
+  picture.
 - **A case's synthetic twin** (#34): a miss marked on text gets a twin, the
-  line it was read in with every value veilq replaced and the marked one
-  as made-up stand-ins (`fake`). It is kept in the clear beside the case
-  only if veilq, without the mark, leaves the stand-in as it left the value,
-  and if none of the original values is in it; twins are what every later
-  rule is tried on. A box released gets none: its twin would have to keep
-  the released value.
+  line it was read in with every value veilq found and the marked one as
+  made-up stand-ins (`fake`), kept only if veilq, without the mark, leaves
+  the stand-in as it left the value; twins are what later rules are tried
+  on. What veilq did not find stays in it, so it is kept as the excerpt
+  is: encrypted, for 30 days, and not at all without a key store. A box
+  released gets none: its twin would have to keep the released value.
 - **A mark proposes a rule** (#34): a value marked on text as always found
   as its type (a deny value), a value released as never found (an allow
   value). The proposal says what it changes in the document and in the
@@ -106,12 +107,15 @@ Notable changes per release. The format follows
   them in subjects such as `Wir haben Ihre Nachricht erhalten`, and the
   names of the file then filled every `Ihre` and `Nachricht` on the page. A
   possessive is never a word of a name: `Ihr Jonas Brandt` under a letter
-  is filled as `Jonas Brandt`, and `Ihr` stays readable elsewhere.
+  is filled as `Jonas Brandt`, and `Ihr` stays readable elsewhere; a
+  sign-off keeps its name, on its own line or after the greeting's comma
+  (`Viele Grüße, Ihre Lena`).
 - A file number after `Aktenzeichen`, `Az.`, `Geschäftszeichen`,
   `Geschäftsnummer` or `Unser/Ihr Zeichen` is found whatever its shape, as
   long as it holds a digit (ADR-0051): a dunning court's `26431907720` or
   `26-4319077-2-0`, a firm's `KL-4471`. Before, only numbers with a slash
-  (`3 O 128/26`) were. A dunning court's number is also found after `Mahn…`
+  (`3 O 128/26`) were. `Az` counts as a word of its own only (`Azure-VM1`
+  is no file number). A dunning court's number is also found after `Mahn…`
   or `Vollstreckungsbescheid` without the word.
 - Under the purpose `legal`, a name a screen cut short in a tab or a cell
   (`Albers,…`, `Albers, M ...`) is filled in a picture even where it stands

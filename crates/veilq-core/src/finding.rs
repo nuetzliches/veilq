@@ -107,6 +107,9 @@ pub enum Location {
     },
 }
 
+/// The detector of an area a user marked on a picture (#34).
+pub const MARK_DETECTOR: &str = "mark";
+
 /// One piece of personal data found.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

@@ -1042,8 +1042,11 @@ fn after_possessive(text: &str, c: &Candidate) -> Option<Candidate> {
     }
     let line_start = text[..c.start].rfind('\n').map_or(0, |i| i + 1);
     let line_end = text[c.end..].find('\n').map_or(text.len(), |i| c.end + i);
-    let alone =
-        text[line_start..c.start].trim().is_empty() && text[c.end..line_end].trim().is_empty();
+    let before = text[line_start..c.start].trim();
+    let after = text[c.end..line_end].trim_matches(|ch: char| ch.is_whitespace() || ch == '.');
+    // A sign-off: the pair alone on its line, or ending the line after the
+    // greeting's comma (`Viele Grüße, Ihre Lena`).
+    let alone = after.is_empty() && (before.is_empty() || before.ends_with(','));
     if !rest.contains(char::is_whitespace) && !alone {
         return None;
     }
@@ -1322,6 +1325,15 @@ mod tests {
             "COURT_FILE_NUMBER",
             "3 O 128/26"
         ));
+        // `Az` is a word of its own, not the start of one.
+        let text = "Server Azure-VM1 neu gestartet.";
+        assert!(
+            !findings(text, "")
+                .iter()
+                .any(|(entity, _)| entity == "COURT_FILE_NUMBER"),
+            "{:?}",
+            findings(text, "")
+        );
     }
 
     #[test]
@@ -1403,6 +1415,9 @@ mod tests {
         // A sign-off: the pair alone on its line, or a whole name after the
         // possessive, is a name without it.
         assert_eq!(kept("Viele Grüße\nIhre Lena\n", "Ihre Lena"), ["Lena"]);
+        // A sign-off on the greeting's line, after its comma.
+        assert_eq!(kept("Viele Grüße, Ihre Lena", "Ihre Lena"), ["Lena"]);
+        assert_eq!(kept("Bis bald, dein Max.\n", "dein Max"), ["Max"]);
         assert_eq!(
             kept(
                 "Mit freundlichen Grüßen\nIhr Jonas Brandt",

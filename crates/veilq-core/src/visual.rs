@@ -441,8 +441,7 @@ fn marked(engine: &Engine, img: &RgbaImage, frame: Option<u64>, out: &mut Outcom
     filled
 }
 
-/// The detector of an area a user marked (#34).
-pub const MARK_DETECTOR: &str = "mark";
+pub use crate::finding::MARK_DETECTOR;
 
 /// Whether `r` (in the picture's pixels, at `frame`) lies in an area a user
 /// released (#34): what a detector finds there is left.

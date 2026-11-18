@@ -331,46 +331,65 @@ fn add_case(state: &AppState, request: CaseRequest) -> Result<CaseAdded, Failure
         }
         Mark::MissedArea { .. } | Mark::ExtraArea { .. } => unreachable!("handled above"),
     };
-    // The excerpt: the line or cell veilq read it in, and what it proposed
-    // there.
+    // The excerpt: the line or cell veilq read it in (a reading of text is
+    // its whole segment), and what it proposed there.
     let reading = readings
         .iter()
         .find(|r| !r.verify && r.text.contains(&value));
     let mut case = Case::new(kind, entity, format.name(), location, &state.policy().0);
     case.label = label;
-    if let Some(r) = reading {
+    let line = reading.map(|r| {
         let at = r.text.find(&value).unwrap_or(0);
-        let end = at + value.len();
+        let (start, line) = line_around(&r.text, at, at + value.len());
         case.candidates = r
             .candidates
             .iter()
-            .filter(|c| c.start < end && at < c.end)
-            .map(CaseCandidate::from)
+            .filter(|c| c.start < at + value.len() && at < c.end)
+            .map(|c| {
+                let mut c = CaseCandidate::from(c);
+                c.start = c.start.saturating_sub(start);
+                c.end = (c.end - start).min(line.len());
+                c
+            })
             .collect();
-    }
-    let mut added = keep(
-        state,
-        case,
-        reading.map(|r| ("text/plain", r.text.as_bytes())),
-    )?;
-    if let Some((text, span)) = reading.and_then(|r| twin(&base, &request.mark, &r.text)) {
+        line
+    });
+    let mut added = keep(state, case, line.map(|l| ("text/plain", l.as_bytes())))?;
+    // The twin keeps what veilq did not find: encrypted as the excerpt is,
+    // and without a key not at all (ADR-0054).
+    let key = (state.cases.key)();
+    if let (Some(key), Some((text, span))) = (key, line.and_then(|l| twin(&base, &request.mark, l)))
+    {
         store(state)?
-            .set_twin(&added.id, &text, span)
+            .set_twin(
+                &added.id,
+                &text,
+                span,
+                &key.to_public(),
+                veilq_core::cases::now(),
+            )
             .map_err(Failure::from)?;
         added.twin = true;
     }
     Ok(added)
 }
 
+/// The line of `text` that holds `start..end`, and where it starts.
+fn line_around(text: &str, start: usize, end: usize) -> (usize, &str) {
+    let from = text[..start].rfind('\n').map_or(0, |i| i + 1);
+    let to = text[end..].find('\n').map_or(text.len(), |i| end + i);
+    (from, &text[from..to])
+}
+
 /// The synthetic twin of a miss marked on text (#34, card point 6):
-/// `excerpt` with the values replaced by stand-ins (`fake`), the marked one
-/// too, and where the marked value's stand-in is in it. `None` unless veilq,
-/// without the mark, leaves that stand-in as it left the value, and none of
-/// the original values veilq replaced or the user marked is in it.
+/// `excerpt` (its line) with the values veilq found replaced by stand-ins
+/// (`fake`), the marked one too, and where the marked value's stand-in is in
+/// it. `None` unless veilq, without the mark, leaves that stand-in as it
+/// left the value, and none of the values veilq replaced or the user marked
+/// is in it. What veilq did not find stays: the twin is kept encrypted.
 ///
 /// A box released has no twin: it would have to keep the released value to
-/// make the same mistake, and a twin holds no original value; were the
-/// release wrong, a value would lie on the disk in the clear.
+/// make the same mistake.
 fn twin(base: &Engine, mark: &Mark, excerpt: &str) -> Option<(String, std::ops::Range<usize>)> {
     let Mark::Missed { value, .. } = mark else {
         return None;
@@ -905,7 +924,11 @@ fn propose_rule(state: &AppState, request: CaseRequest) -> Result<Proposal, Fail
                 .and_then(|b| String::from_utf8(b).ok()),
             _ => None,
         };
-        if let Some(text) = excerpt.or_else(|| store.twin(&case.id).ok().flatten()) {
+        let twin = || {
+            key.as_ref()
+                .and_then(|k| store.twin(&case.id, k).ok().flatten())
+        };
+        if let Some(text) = excerpt.or_else(twin) {
             texts.push(text);
         }
     }
