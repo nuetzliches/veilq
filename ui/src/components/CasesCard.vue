@@ -49,6 +49,8 @@ onMounted(load);
     <p v-if="error" class="failure">{{ error }}</p>
     <template v-if="cases">
       <p v-if="!cases.key_store" class="hint">{{ t('cases.noKeyStore') }}</p>
+      <p v-else-if="cases.excerpt_days" class="hint">{{ t('cases.keptDays', { n: cases.excerpt_days }) }}</p>
+      <p v-else class="hint">{{ t('cases.keptNone') }}</p>
       <div class="row">
         <span>{{ t('cases.count', { n: cases.count }) }}</span>
         <button :disabled="busy || !cases.count" @click="deleteAll">{{ t('cases.delete') }}</button>

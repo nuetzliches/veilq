@@ -6,7 +6,8 @@
 //! `schema/case.schema.json`, which holds no value, and, where the OS has a
 //! key store, `excerpt.age`: the line, cell or picture crop around the mark,
 //! encrypted with age to the store's key, and `twin.age`, its synthetic twin,
-//! encrypted the same way. Both go after [`EXCERPT_DAYS`]; the case stays.
+//! encrypted the same way. Both go after [`EXCERPT_DAYS`], or the days the
+//! policy sets (`[cases] excerpt_days`, #114); the case stays.
 //! Without a key neither is written, and neither is ever written
 //! unencrypted (fail closed).
 
@@ -208,6 +209,9 @@ pub fn case_dir() -> PathBuf {
 /// The cases in one folder.
 pub struct Store {
     dir: PathBuf,
+    /// How many days an excerpt and a twin are kept ([`EXCERPT_DAYS`]
+    /// unless the policy says otherwise, #114).
+    days: u64,
 }
 
 fn io(path: &Path) -> impl Fn(std::io::Error) -> Error + '_ {
@@ -258,7 +262,29 @@ impl Store {
     pub fn open(dir: impl Into<PathBuf>) -> Result<Self, Error> {
         let dir = dir.into();
         std::fs::create_dir_all(&dir).map_err(io(&dir))?;
-        Ok(Self { dir })
+        Ok(Self {
+            dir,
+            days: EXCERPT_DAYS,
+        })
+    }
+
+    /// This store keeping excerpts and twins for `days` (`[cases]
+    /// excerpt_days`, #114): `0` keeps none. A time shorter than one a case
+    /// was kept with ends it early: [`purge`](Self::purge) counts from
+    /// when the case was made.
+    pub fn keeping(mut self, days: u64) -> Self {
+        self.days = days;
+        self
+    }
+
+    /// Whether this store keeps excerpts and twins at all.
+    pub fn keeps_excerpts(&self) -> bool {
+        self.days > 0
+    }
+
+    /// When what is kept from `now` on goes.
+    fn expires(&self, now: u64) -> u64 {
+        now + self.days * 86_400
     }
 
     fn folder(&self, id: &str) -> Result<PathBuf, Error> {
@@ -270,8 +296,9 @@ impl Store {
     }
 
     /// Adds `case` with its excerpt (`media_type`, bytes), encrypted to
-    /// `key`; without a key the excerpt is dropped and only the case kept.
-    /// Returns the case as stored.
+    /// `key`; without a key, or in a store that keeps no excerpts, the
+    /// excerpt is dropped and only the case kept. Returns the case as
+    /// stored.
     pub fn add(
         &self,
         mut case: Case,
@@ -288,12 +315,13 @@ impl Store {
         let folder = self.folder(&case.id)?;
         std::fs::create_dir_all(&folder).map_err(io(&folder))?;
         case.excerpt = None;
-        if let (Some((media_type, bytes)), Some(key)) = (excerpt, key) {
+        if let (Some((media_type, bytes)), Some(key), true) = (excerpt, key, self.keeps_excerpts())
+        {
             let path = folder.join(EXCERPT_FILE);
             write_whole(&path, &encrypt(bytes, key)?)?;
             case.excerpt = Some(Excerpt {
                 media_type: media_type.to_owned(),
-                expires: now + EXCERPT_DAYS * 86_400,
+                expires: self.expires(now),
             });
         }
         self.write(&case)?;
@@ -301,8 +329,9 @@ impl Store {
     }
 
     /// Gives case `id` its twin: `text`, the marked value's stand-in at
-    /// `span`, encrypted to `key` and kept for [`EXCERPT_DAYS`] from `now`.
-    /// Returns the case as stored.
+    /// `span`, encrypted to `key` and kept for the store's days from `now`.
+    /// Returns the case as stored; an error in a store that keeps no
+    /// excerpts.
     pub fn set_twin(
         &self,
         id: &str,
@@ -311,6 +340,9 @@ impl Store {
         key: &age::x25519::Recipient,
         now: u64,
     ) -> Result<Case, Error> {
+        if !self.keeps_excerpts() {
+            return Err(bad("this store keeps no excerpts or twins"));
+        }
         if text.get(span.clone()).is_none_or(str::is_empty) {
             return Err(bad("a twin's span is not in its text"));
         }
@@ -324,7 +356,7 @@ impl Store {
         case.twin = Some(Twin {
             start: span.start,
             end: span.end,
-            expires: now + EXCERPT_DAYS * 86_400,
+            expires: self.expires(now),
         });
         self.write(&case)?;
         Ok(case)
@@ -425,8 +457,10 @@ impl Store {
         Ok(folders.len())
     }
 
-    /// Deletes the excerpts whose time is up (their cases stay) and the
-    /// cases whose writing broke ([`STALE`]). Returns how many excerpts went.
+    /// Deletes the excerpts and twins whose time is up (their cases stay),
+    /// by the time they were kept with or by this store's days from when
+    /// the case was made, whichever ends first, and the cases whose writing
+    /// broke ([`STALE`]). Returns how many excerpts went.
     pub fn purge(&self, now: u64) -> Result<usize, Error> {
         for (folder, complete) in self.folders()? {
             let made = std::fs::metadata(&folder)
@@ -440,8 +474,10 @@ impl Store {
         }
         let mut n = 0;
         for mut case in self.list()? {
-            let excerpt = case.excerpt.as_ref().is_some_and(|e| e.expires <= now);
-            let twin = case.twin.as_ref().is_some_and(|t| t.expires <= now);
+            // A shorter time set since ends what was kept with a longer one.
+            let up = |expires: u64| expires.min(self.expires(case.created)) <= now;
+            let excerpt = case.excerpt.as_ref().is_some_and(|e| up(e.expires));
+            let twin = case.twin.as_ref().is_some_and(|t| up(t.expires));
             for (gone, file) in [(excerpt, EXCERPT_FILE), (twin, TWIN_FILE)] {
                 let path = self.folder(&case.id)?.join(file);
                 if gone && path.exists() {
@@ -586,6 +622,86 @@ mod tests {
         let left = store.list().unwrap();
         assert_eq!(left.len(), 1);
         assert!(left[0].excerpt.is_none());
+    }
+
+    #[test]
+    fn a_store_keeps_excerpts_as_long_as_it_is_told() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = age::x25519::Identity::generate();
+        let add = |store: &Store, now| {
+            store
+                .add(
+                    case(),
+                    Some(("text/plain", EXCERPT)),
+                    Some(&key.to_public()),
+                    now,
+                )
+                .unwrap()
+        };
+        let week = Store::open(dir.path()).unwrap().keeping(7);
+        let stored = add(&week, 1_000);
+        assert_eq!(stored.excerpt.unwrap().expires, 1_000 + 7 * 86_400);
+        // `0` keeps no excerpt and no twin, only the case.
+        let none = Store::open(dir.path()).unwrap().keeping(0);
+        assert!(!none.keeps_excerpts());
+        let bare = add(&none, 1_000);
+        assert!(bare.excerpt.is_none());
+        assert!(!dir.path().join(&bare.id).join(EXCERPT_FILE).exists());
+        assert!(
+            none.set_twin(
+                &bare.id,
+                "Termin mit Jonas Keller",
+                11..23,
+                &key.to_public(),
+                1_000
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn a_shorter_time_ends_what_was_kept_longer() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = age::x25519::Identity::generate();
+        let month = Store::open(dir.path()).unwrap();
+        let stored = month
+            .add(
+                case(),
+                Some(("text/plain", EXCERPT)),
+                Some(&key.to_public()),
+                1_000,
+            )
+            .unwrap();
+        month
+            .set_twin(
+                &stored.id,
+                "Termin mit Jonas Keller",
+                11..23,
+                &key.to_public(),
+                1_000,
+            )
+            .unwrap();
+        // Kept for 30 days; the policy now says 7: on day 8 both go.
+        let week = Store::open(dir.path()).unwrap().keeping(7);
+        assert_eq!(week.purge(1_000 + 7 * 86_400 - 1).unwrap(), 0);
+        assert_eq!(week.purge(1_000 + 7 * 86_400).unwrap(), 1);
+        assert_eq!(week.excerpt(&stored.id, &key).unwrap(), None);
+        assert_eq!(week.twin(&stored.id, &key).unwrap(), None);
+        let left = week.list().unwrap();
+        assert!(left[0].excerpt.is_none() && left[0].twin.is_none());
+        // `0` ends every excerpt at the next purge.
+        let again = month
+            .add(
+                case(),
+                Some(("text/plain", EXCERPT)),
+                Some(&key.to_public()),
+                2_000,
+            )
+            .unwrap();
+        let none = Store::open(dir.path()).unwrap().keeping(0);
+        assert_eq!(none.purge(2_000).unwrap(), 1);
+        assert_eq!(none.excerpt(&again.id, &key).unwrap(), None);
+        assert_eq!(none.list().unwrap().len(), 2, "the cases stay");
     }
 
     #[test]

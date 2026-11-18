@@ -310,7 +310,7 @@ export function mockApi(): Api {
       return { id: `mock${cases}`, excerpt: false };
     },
     async cases() {
-      return { count: cases, key_store: false };
+      return { count: cases, key_store: false, excerpt_days: 30 };
     },
     async propose(_source: Source, mark: Mark) {
       if (mark.kind !== 'missed' && mark.kind !== 'extra') throw new ApiError(422, 'an area holds no value a rule could name yet');

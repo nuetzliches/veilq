@@ -1120,13 +1120,24 @@ mod tests {
 
     /// A server whose cases go to `cases`, encrypted to `key` when given.
     fn cases_app(root: &Path, cases: &Path, key: Option<age::x25519::Identity>) -> Router {
+        cases_app_with(root, cases, key, Policy::default())
+    }
+
+    /// [`cases_app`] with `policy` in effect.
+    fn cases_app_with(
+        root: &Path,
+        cases: &Path,
+        key: Option<age::x25519::Identity>,
+        policy: Policy,
+    ) -> Router {
+        let engine = Engine::new(&policy, None, b"test", None).unwrap();
         let mut state = AppState::new(
             TOKEN.into(),
             &[PORT, PROXY_PORT],
             root.canonicalize().unwrap(),
-            Policy::default(),
-            "built-in defaults".into(),
-            Engine::new(&Policy::default(), None, b"test", None).unwrap(),
+            policy,
+            "a test's policy".into(),
+            engine,
         );
         state.cases = cases::Cases {
             dir: cases.to_owned(),
@@ -1273,7 +1284,8 @@ mod tests {
         let mark = serde_json::json!({
             "kind": "missed_area",
             "area": { "x": 0, "y": 0, "width": 1, "height": 1 },
-            "entity": "PERSON"
+            // A type only the picture detectors report (#114).
+            "entity": "FACE"
         });
         let (status, body) = send(
             cases_app(dir.path(), store.path(), Some(key.clone())),
@@ -1287,6 +1299,7 @@ mod tests {
         assert_eq!(body["excerpt"], true);
         let store = veilq_core::cases::Store::open(store.path()).unwrap();
         let case = &store.list().unwrap()[0];
+        assert_eq!(case.entity.as_str(), "FACE");
         assert!(matches!(
             case.location,
             veilq_core::Location::Region {
@@ -1586,6 +1599,37 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[tokio::test]
+    async fn a_policy_that_keeps_no_excerpts_keeps_the_case_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let key = age::x25519::Identity::generate();
+        let policy = Policy::parse("version = 1\n[cases]\nexcerpt_days = 0").unwrap();
+        let app = || cases_app_with(dir.path(), store.path(), Some(key.clone()), policy.clone());
+        let source = serde_json::json!({ "kind": "text", "text": "Projekt Falkenstein." });
+        let mark =
+            serde_json::json!({ "kind": "missed", "value": "Falkenstein", "entity": "LOCATION" });
+        let (status, body) = send(
+            app(),
+            json_post(
+                "/api/cases",
+                serde_json::json!({ "source": source, "mark": mark }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["excerpt"], false, "{body}");
+        assert_eq!(body["twin"], false, "{body}");
+        let (_, body) = send(
+            app(),
+            authed("GET", "/api/cases").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(body["count"], 1);
+        assert_eq!(body["excerpt_days"], 0);
+        assert_eq!(std::fs::read_dir(store.path()).unwrap().count(), 1);
     }
 
     /// A server whose models are still loading, and its state to end that.

@@ -91,8 +91,8 @@ ADR is the first two.
   OS key store when the cases are deleted.
 - A rule is tried on the earlier cases of the last 30 days, and only where
   the key store reads them.
-- The retention is fixed at 30 days; the card's "configurable" is not
-  built yet.
+- The retention is 30 days by default; `[cases] excerpt_days` sets it
+  ([ADR-0056](0056-an-area-takes-a-face-or-a-signature-and-the-policy-sets-how-long-excerpts-stay.md)).
 - A proposed pattern is tried on few texts (the document and the cases): a
   shape rule can find more elsewhere than the counts show. The counts are
   a guide, not a guarantee.

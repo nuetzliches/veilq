@@ -159,10 +159,17 @@ pub struct CaseCount {
     count: usize,
     /// Whether an excerpt can be kept: the OS has a key store.
     key_store: bool,
+    /// How many days an excerpt is kept (`[cases] excerpt_days`); `0`:
+    /// none.
+    excerpt_days: u64,
 }
 
+/// The case store, keeping excerpts as the policy in effect says (#114),
+/// with what is past that time deleted.
 fn store(state: &AppState) -> Result<Store, Failure> {
-    let store = Store::open(&state.cases.dir).map_err(Failure::from)?;
+    let store = Store::open(&state.cases.dir)
+        .map_err(Failure::from)?
+        .keeping(state.policy().0.cases.excerpt_days);
     store
         .purge(veilq_core::cases::now())
         .map_err(Failure::from)?;
@@ -356,11 +363,16 @@ fn add_case(state: &AppState, request: CaseRequest) -> Result<CaseAdded, Failure
     });
     let mut added = keep(state, case, line.map(|l| ("text/plain", l.as_bytes())))?;
     // The twin keeps what veilq did not find: encrypted as the excerpt is,
-    // and without a key not at all (ADR-0054).
+    // and without a key, or where the policy keeps no excerpts, not at all
+    // (ADR-0054, #114).
     let key = (state.cases.key)();
-    if let (Some(key), Some((text, span))) = (key, line.and_then(|l| twin(&base, &request.mark, l)))
-    {
-        store(state)?
+    let store = store(state)?;
+    if let (Some(key), Some((text, span)), true) = (
+        key,
+        line.and_then(|l| twin(&base, &request.mark, l)),
+        store.keeps_excerpts(),
+    ) {
+        store
             .set_twin(
                 &added.id,
                 &text,
@@ -454,6 +466,7 @@ pub async fn count(State(state): State<Arc<AppState>>) -> Response {
         Ok(CaseCount {
             count: store(&state)?.list().map_err(Failure::from)?.len(),
             key_store: (state.cases.key)().is_some(),
+            excerpt_days: state.policy().0.cases.excerpt_days,
         })
     })
     .await;
