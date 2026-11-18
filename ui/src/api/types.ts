@@ -360,6 +360,8 @@ export interface Api {
   cases(): Promise<CaseCount>;
   /** The rules a mark proposes, each tried on the document and the earlier cases. */
   propose(source: Source, mark: Mark, minConfidence?: number): Promise<Proposal>;
+  /** Frame `frame` (from 1) of a GIF (base64) as PNG, to draw an area on (#114), and how many it has. */
+  frame(data: string, frame: number): Promise<{ png: string; frames: number }>;
   /** Saves a rule into the user's policy. */
   adoptRule(rule: Rule): Promise<{ path: string; in_use: boolean }>;
   /** "Delete all cases". */

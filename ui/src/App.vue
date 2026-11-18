@@ -482,12 +482,35 @@ function markMissed() {
   if (selection.value) void addMark({ kind: 'missed', value: selection.value, entity: markType.value });
 }
 
-/** A still image or a PDF's pages in the output: where an area can be marked (not a GIF's frames). */
-const areaOutput = computed(() => (!!image.value && image.value.media_type !== 'image/gif') || !!pdf.value);
+/** An image, a GIF's frames or a PDF's pages in the output: where an area can be marked. */
+const areaOutput = computed(() => !!image.value || !!pdf.value);
+/** A GIF in the output: an area is drawn on one of its frames, shown still (#114). */
+const gifOutput = computed(() => image.value?.media_type === 'image/gif');
 /** A drag on the output picture draws an area to mark. */
 const drawing = ref(false);
-/** The area drawn, while it is offered as a mark; `frame` names a PDF's page. */
+/** The area drawn, while it is offered as a mark; `frame` names a PDF's page or a GIF's frame. */
 const drawnArea = ref<Area | null>(null);
+/** The GIF frame shown to draw on, while drawing: its number (from 1), as PNG, and how many there are. */
+const gifFrame = ref<{ n: number; png: string; frames: number } | null>(null);
+
+async function showFrame(n: number) {
+  const data = image.value?.output_base64;
+  if (!data) return;
+  try {
+    const shown = await api.frame(data, n);
+    gifFrame.value = { n, png: shown.png, frames: shown.frames };
+    drawnArea.value = null;
+  } catch (e) {
+    drawing.value = false;
+    markNote.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+// Drawing on a GIF starts on its first frame; done drawing, the GIF plays again.
+watch(drawing, (on) => {
+  if (on && gifOutput.value) void showFrame(1);
+  else gifFrame.value = null;
+});
 
 function onDraw(area: Omit<Area, 'frame'>, page?: number) {
   drawnArea.value = page === undefined ? area : { ...area, frame: page };
@@ -503,13 +526,13 @@ function markArea() {
 
 /**
  * Per finding, whether a mark can release it: a box in text with its place in the input, or a box
- * on a still image or a PDF page.
+ * on a still image or a PDF page (not on a GIF's frame: its box stays in the frames after it).
  */
 const releasable = computed(() =>
   findings.value.map((f, i) =>
     markableOutput.value
       ? !!result.value?.input_spans[i]
-      : areaOutput.value && f.location.kind === 'region' && f.location.part === undefined,
+      : areaOutput.value && !gifOutput.value && f.location.kind === 'region' && f.location.part === undefined,
   ),
 );
 
@@ -1033,6 +1056,12 @@ onBeforeUnmount(() => {
             <button class="primary small" :disabled="busy" @click="markArea">{{ t('marks.mark') }}</button>
             <button class="small" :aria-label="t('common.close')" @click="drawnArea = null">×</button>
           </div>
+          <div v-else-if="drawing && gifFrame" class="markbar" role="group" :aria-label="t('marks.frames')">
+            <button class="small" :disabled="gifFrame.n <= 1" :aria-label="t('marks.framePrev')" @click="showFrame(gifFrame.n - 1)">‹</button>
+            <span class="what">{{ t('marks.frame', { n: gifFrame.n, frames: gifFrame.frames }) }}</span>
+            <button class="small" :disabled="gifFrame.n >= gifFrame.frames" :aria-label="t('marks.frameNext')" @click="showFrame(gifFrame.n + 1)">›</button>
+            <span class="hint">{{ t('marks.drawHintGif') }}</span>
+          </div>
           <p v-else-if="drawing" class="markbar hint">{{ t('marks.drawHint') }}</p>
           <div v-else-if="proposal && proposed" class="markbar proposal" role="group" :aria-label="t('rules.proposeTitle')">
             <select v-if="proposal.rules.length > 1" v-model="chosenRule" :aria-label="t('rules.choose')">
@@ -1061,7 +1090,25 @@ onBeforeUnmount(() => {
           <MissingModels v-if="wanted.length && !busy" :api="api" :names="wanted" @ready="runAgain" />
           <template v-if="!error">
             <ImagePane
-              v-if="image"
+              v-if="image && gifFrame"
+              :anchor="pageAnchor(0)"
+              side="output"
+              :data="gifFrame.png"
+              media-type="image/png"
+              :page="gifFrame.n"
+              frame
+              :findings="findings"
+              :hovered="hovered"
+              :selected="selected"
+              :drawing="drawing"
+              :drawn="drawnArea?.frame === gifFrame.n ? drawnArea : null"
+              @hover="hovered = $event"
+              @select="selectIn('output', $event)"
+              @draw="onDraw($event, gifFrame.n)"
+              :zoom="paneZoom"
+            />
+            <ImagePane
+              v-else-if="image"
               :anchor="pageAnchor(0)"
               side="output"
               :data="image.output_base64!"
@@ -1069,7 +1116,7 @@ onBeforeUnmount(() => {
               :findings="findings"
               :hovered="hovered"
               :selected="selected"
-              :drawing="drawing && areaOutput"
+              :drawing="drawing && areaOutput && !gifOutput"
               :drawn="drawnArea && drawnArea.frame === undefined ? drawnArea : null"
               @hover="hovered = $event"
               @select="selectIn('output', $event)"

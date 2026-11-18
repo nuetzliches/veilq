@@ -193,9 +193,10 @@ fn unprocessable(message: impl Into<String>) -> Failure {
     Failure(StatusCode::UNPROCESSABLE_ENTITY, message.into())
 }
 
-/// Whether areas can be marked on `format`: a still image, a PDF's pages.
+/// Whether areas can be marked on `format`: a still image, a GIF's frames
+/// (#114), a PDF's pages.
 pub fn takes_areas(format: Format) -> bool {
-    format.is_picture() && format != Format::Gif
+    format.is_picture()
 }
 
 /// The case of an area marked on a picture or a PDF page: where it is, and
@@ -221,7 +222,13 @@ fn area_case(
             format.name()
         )));
     }
-    let picture = if format == Format::Pdf {
+    let picture = if format == Format::Gif {
+        let frame = area
+            .frame
+            .filter(|f| *f >= 1)
+            .ok_or_else(|| unprocessable("an area on a GIF names its frame"))?;
+        gif_frame(bytes, frame)?.0
+    } else if format == Format::Pdf {
         let page = area
             .frame
             .filter(|p| *p >= 1)
@@ -263,6 +270,17 @@ fn crop(picture: &[u8], area: &Area) -> Result<Vec<u8>, Failure> {
     veilq_core::visual::crop(picture, area, AREA_MARGIN).map_err(|e| unprocessable(e.to_string()))
 }
 
+/// Frame `n` of a GIF as PNG, and how many frames it has.
+#[cfg(feature = "ocr")]
+pub fn gif_frame(gif: &[u8], n: u64) -> Result<(Vec<u8>, u64), Failure> {
+    veilq_core::visual::gif_frame(gif, n).map_err(|e| unprocessable(e.to_string()))
+}
+
+#[cfg(not(feature = "ocr"))]
+pub fn gif_frame(_: &[u8], _: u64) -> Result<(Vec<u8>, u64), Failure> {
+    Err(unprocessable("this build reads no pictures"))
+}
+
 #[cfg(not(feature = "ocr"))]
 fn crop(_: &[u8], _: &Area) -> Result<Vec<u8>, Failure> {
     Err(unprocessable("this build reads no pictures"))
@@ -270,7 +288,7 @@ fn crop(_: &[u8], _: &Area) -> Result<Vec<u8>, Failure> {
 
 /// Pixels of the picture kept around a marked area in its excerpt.
 #[cfg_attr(not(feature = "ocr"), allow(dead_code))]
-const AREA_MARGIN: u32 = 24;
+pub(super) const AREA_MARGIN: u32 = 24;
 
 fn add_case(state: &AppState, request: CaseRequest) -> Result<CaseAdded, Failure> {
     let (name, bytes) = source_bytes(state, request.source.clone())?;
@@ -884,6 +902,56 @@ pub struct Proposal {
     /// Whether the user's policy is the one in use: then a rule is saved
     /// there, else it is offered to copy.
     user_in_use: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FrameRequest {
+    /// The GIF, base64: the run's output, on which an area is drawn.
+    data: String,
+    /// From 1.
+    frame: u64,
+}
+
+#[derive(Serialize)]
+pub struct FrameShown {
+    /// The frame as PNG, base64.
+    png: String,
+    /// How many frames the GIF has.
+    frames: u64,
+}
+
+/// `POST /api/frame`: one frame of a GIF as PNG, to draw an area on (#114).
+pub async fn frame(
+    State(_): State<Arc<AppState>>,
+    axum::Json(request): axum::Json<FrameRequest>,
+) -> Response {
+    use base64::Engine as _;
+    let result = tokio::task::spawn_blocking(move || -> Result<FrameShown, Failure> {
+        let b64 = &base64::engine::general_purpose::STANDARD;
+        let gif = b64
+            .decode(&request.data)
+            .map_err(|e| Failure(StatusCode::BAD_REQUEST, e.to_string()))?;
+        if image_is_gif(&gif) {
+            let (png, frames) = gif_frame(&gif, request.frame)?;
+            Ok(FrameShown {
+                png: b64.encode(png),
+                frames,
+            })
+        } else {
+            Err(unprocessable("not a GIF"))
+        }
+    })
+    .await;
+    match result {
+        Ok(Ok(f)) => axum::Json(f).into_response(),
+        Ok(Err(failure)) => failure.into_response(),
+        Err(e) => api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}
+
+fn image_is_gif(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a")
 }
 
 /// `POST /api/cases/propose`: the rules a mark proposes, each tried on the

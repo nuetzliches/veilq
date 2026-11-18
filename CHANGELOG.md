@@ -13,6 +13,9 @@ Notable changes per release. The format follows
 - `[cases] excerpt_days` in the policy sets how many days a case keeps its
   encrypted excerpt and twin: 30 by default, at most 365, `0` for none. A
   shorter time also deletes what was kept longer (#114, ADR-0056).
+- An area can be marked on a GIF: "Mark an area" shows the redacted GIF
+  frame by frame, and the area drawn on a frame is filled there and in the
+  frames after it while its pixels stand still (#114, ADR-0057).
 
 ### Fixed
 

@@ -312,6 +312,9 @@ export function mockApi(): Api {
     async cases() {
       return { count: cases, key_store: false, excerpt_days: 30 };
     },
+    async frame() {
+      throw new ApiError(422, 'the mock shows no GIF frames');
+    },
     async propose(_source: Source, mark: Mark) {
       if (mark.kind !== 'missed' && mark.kind !== 'extra') throw new ApiError(422, 'an area holds no value a rule could name yet');
       const rule = mark.kind === 'missed' ? { kind: 'deny' as const, entity: mark.entity, value: mark.value } : { kind: 'allow' as const, value: mark.value };
