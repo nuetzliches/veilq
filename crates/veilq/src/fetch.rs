@@ -22,8 +22,18 @@ pub struct Progress {
     pub bytes: u64,
 }
 
+/// Whether `f` is installed in `dir` as this release pins it. A file taken
+/// whole is hashed again: an older one at the same path (a pin that kept
+/// its path, a restored cache) is fetched anew. A file taken from an archive
+/// is pinned by the archive's hash and kept at a path with its version.
+fn is_current(f: &models::PinnedFile, dir: &Path) -> bool {
+    let path = dir.join(f.file);
+    path.is_file() && (f.member.is_some() || models::sha256_of(&path).is_ok_and(|h| h == f.sha256))
+}
+
 /// Fetches and installs the files of `component` into `dir` that are not
-/// there yet; `progress` is called as the download grows.
+/// there yet or not as this release pins them; `progress` is called as the
+/// download grows.
 pub fn component(
     component: &str,
     dir: &Path,
@@ -36,7 +46,7 @@ pub fn component(
     let downloads = dir.join(".downloads");
     std::fs::create_dir_all(&downloads)?;
     for (i, f) in files.iter().enumerate() {
-        if dir.join(f.file).is_file() {
+        if is_current(f, dir) {
             continue;
         }
         let tmp = downloads.join(f.name);
@@ -83,4 +93,32 @@ pub fn component(
         result?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_file_at_its_path_counts_only_with_the_pinned_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let whole = models::pinned_for("face")
+            .into_iter()
+            .find(|f| f.member.is_none())
+            .unwrap();
+        assert!(!is_current(whole, dir.path()));
+        // An older model at the same path is fetched anew.
+        let path = dir.path().join(whole.file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"an older model").unwrap();
+        assert!(!is_current(whole, dir.path()));
+        // A file from an archive is pinned by the archive and kept by its
+        // path, which names its version.
+        if let Some(member) = models::PINNED.iter().find(|f| f.member.is_some()) {
+            let path = dir.path().join(member.file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, b"a runtime").unwrap();
+            assert!(is_current(member, dir.path()));
+        }
+    }
 }

@@ -41,11 +41,29 @@ Notable changes per release. The format follows
   `UNREAD_TEXT` (detector `ocr:cut-edge`), whatever `[picture]
   low_confidence` says (ADR-0059).
 - Photos are no longer filled as signatures: the signature detector is
-  veilq-signature-v2, trained again with web pages, photos and photographed
-  letters (ADR-0048). On a screenshot of a news page v1 put 19 boxes on the
-  photos, v2 none; on held-out letters it finds as many signatures as v1
-  with a tenth of the false boxes. An installed v1 no longer counts:
-  `veilq models fetch signature` fetches v2 (26 MB).
+  veilq-signature-v3, trained again with web pages, photos, photographed
+  letters and signatures written on photos (ADR-0048). On a screenshot of
+  a news page v1 put 19 boxes on the photos, v3 none; on held-out letters
+  it finds as many signatures as v1 with a tenth of the false boxes, and
+  it finds a signature on a photo now and then. An installed v1 no longer
+  counts: `veilq models fetch signature` fetches v3 (26 MB).
+- A value of a file's list (ADR-0059) written another way before it was
+  learned (`KD48213`, then `KD 48213`) is read again where it stood: the
+  run compared only its longest run of characters.
+- A file with many values (a list of a few thousand rows, each with its
+  own number) no longer takes minutes: the values are looked up as the
+  text is walked, not by one regex of them all rebuilt per row.
+- In a picture, a lowercase word one letter off a name of the file
+  (`richtet`, `Richter`) is no longer filled as the name read badly.
+- A firm under a party's label puts only its own name on the file's list,
+  not the words of its trade (`Hausverwaltung`, `Malerbetrieb`, `Söhne`).
+- An area marked as a face or a signature proposes no rule: what OCR read
+  in its box (the printed name below a signature) is no value of it.
+- A GIF that declares a screen of tens of thousands of pixels is an error,
+  not gigabytes of memory: its frames are decoded within the limits of a
+  still picture.
+- `veilq models fetch` hashes a model already at its path and fetches it
+  anew when it is not the pinned one.
 - A streamed run longer than a chunk counts each candidate the learned
   decider lifted once (#117): the reading that only places a chunk's cut
   counted it too, and the review reason said "lifted 2" for one.

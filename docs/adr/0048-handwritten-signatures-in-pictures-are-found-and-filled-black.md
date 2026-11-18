@@ -1,6 +1,6 @@
 # ADR-0048: Handwritten signatures in pictures are found and filled black
 
-- **Status:** Accepted (card in the conversation, points B1 to B6, approved by the owner 2026-11-13; the model changed after measuring, approved 2026-11-16; veilq-signature-v2 approved 2026-11-18); amends [ADR-0023](0023-pictures-are-read-with-ocr-and-redacted-with-black-boxes.md) and [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md); amended by [ADR-0053](0053-every-detector-reads-the-picture-before-anything-is-filled.md) (filled with the first reading's boxes, not before OCR)
+- **Status:** Accepted (card in the conversation, points B1 to B6, approved by the owner 2026-11-13; the model changed after measuring, approved 2026-11-16; veilq-signature-v2 and v3 approved 2026-11-18); amends [ADR-0023](0023-pictures-are-read-with-ocr-and-redacted-with-black-boxes.md) and [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md); amended by [ADR-0053](0053-every-detector-reads-the-picture-before-anything-is-filled.md) (filled with the first reading's boxes, not before OCR)
 - **Date:** 2026-11-16
 - **Deciders:** project owner
 - **Related:** [ADR-0038](0038-faces-in-pictures-are-found-and-filled-black.md), #80
@@ -82,6 +82,17 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
   measurement, 2026-11-18. A filter of boxes by their background (a box with
   little even background is a photo) was measured and not built: retraining
   was chosen over a rule beside the model.
+- **Before 0.5.1: veilq-signature-v3.** v2 found 1 of 16 signatures written
+  on a photo: their ink had been chosen at random, so white strokes lay on
+  a bright sky, labelled but not to be seen. The next training wrote them in
+  an ink that stands out from what lies under it, made them 14 % of the
+  pictures (6 %), signed now and then a photo card of a web page, and chose
+  the epoch on the mean recall over the kinds of picture with signatures.
+  Published as `nuetzliches/veilq-signature-v3`, pinned at
+  `signature/veilq-signature-v3/model.onnx`; v2 was never in a release. On
+  300 held-out pictures, against v2 read the same way: signatures on photos
+  15/40 (9/40), letters 120/125 (119/125), false boxes 10 (20); on the
+  reported screenshot and the corpus no box (v2: one weak one on the form).
 - **Found, never compared:** veilq finds where a signature is. It computes
   no features of it, compares none, keeps none, and nothing leaves the
   machine.
@@ -143,8 +154,8 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
   picture, so the next training takes form screenshots as background.
   veilq-signature-v2 puts none there over the five held-out seeds, and one
   small box (64 x 14 pixels) on the corpus' transfer screenshot.
-- veilq-signature-v2 mostly misses a signature written on a photo (an
-  autograph); v1 missed it too. The next training weighs that kind.
+- veilq-signature-v3 still misses more signatures written on a photo (an
+  autograph) than it finds; v1 and v2 missed nearly all.
 - 0.4.1 pins the model at a new path: an installed 0.4.0 model does not
   count, and pictures are refused until `veilq models fetch signature`;
   so does the release after 0.5.0 for an installed v1.

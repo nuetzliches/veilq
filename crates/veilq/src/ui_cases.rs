@@ -992,6 +992,12 @@ pub async fn propose(
     }
 }
 
+/// Whether an area marked as `entity` names text a rule can find: not a
+/// face or a signature, which only a picture's detectors find.
+fn area_names_text(entity: &EntityType) -> bool {
+    !matches!(entity.as_str(), "FACE" | "SIGNATURE")
+}
+
 fn propose_rule(state: &AppState, request: CaseRequest) -> Result<Proposal, Failure> {
     let (name, bytes) = source_bytes(state, request.source)?;
     let format = match &name {
@@ -1010,6 +1016,17 @@ fn propose_rule(state: &AppState, request: CaseRequest) -> Result<Proposal, Fail
         // rules are those of that value marked on text, tried on the picture.
         // Nothing read, nothing proposed rather than a guess.
         Mark::MissedArea { area, entity, .. } | Mark::ExtraArea { area, entity } => {
+            // A face or a signature is no text: what OCR reads in its box (a
+            // printed name below a signature) is no value to find or to
+            // allow, and a rule for it would be about that text.
+            if !area_names_text(entity) {
+                return Ok(Proposal {
+                    rules: Vec::new(),
+                    tried: 0,
+                    user_in_use: super::settings::is_user_in_use(state),
+                    read: None,
+                });
+            }
             let picture = area_picture(state, format, &bytes, area)?;
             let Some((line, range)) = plain.read_area(&picture, area).map_err(Failure::from)?
             else {
@@ -1167,6 +1184,15 @@ mod tests {
         assert_eq!(shape("Lena Albrecht"), r"\p{Lu}\p{Ll}+\s+\p{Lu}\p{Ll}+");
         assert_eq!(shape("+49 (0)30"), r"\+\d{2}\s\(\d\)\d{2}");
         assert_eq!(bounded("+49 30"), r"\+\d{2}\s\d{2}\b");
+    }
+
+    #[test]
+    fn a_face_or_a_signature_area_names_no_text() {
+        let e = |s: &str| EntityType::new(s).unwrap();
+        assert!(!area_names_text(&e("FACE")));
+        assert!(!area_names_text(&e("SIGNATURE")));
+        assert!(area_names_text(&e("PERSON")));
+        assert!(area_names_text(&e("IBAN_CODE")));
     }
 
     #[test]
