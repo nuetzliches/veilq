@@ -40,6 +40,12 @@ Notable changes per release. The format follows
   greeting stood unfilled. Read badly or not at all, it is filled whole as
   `UNREAD_TEXT` (detector `ocr:cut-edge`), whatever `[picture]
   low_confidence` says (ADR-0059).
+- Photos are no longer filled as signatures: the signature detector is
+  veilq-signature-v2, trained again with web pages, photos and photographed
+  letters (ADR-0048). On a screenshot of a news page v1 put 19 boxes on the
+  photos, v2 none; on held-out letters it finds as many signatures as v1
+  with a tenth of the false boxes. An installed v1 no longer counts:
+  `veilq models fetch signature` fetches v2 (26 MB).
 - A streamed run longer than a chunk counts each candidate the learned
   decider lifted once (#117): the reading that only places a chunk's cut
   counted it too, and the review reason said "lifted 2" for one.

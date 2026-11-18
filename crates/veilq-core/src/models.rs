@@ -66,11 +66,12 @@ const OCR_LATIN: &str = "https://huggingface.co/monkt/paddleocr-onnx/resolve/7b0
 /// publishes it on Hugging Face, at a fixed revision (ADR-0038).
 const FACE: &str = "https://huggingface.co/opencv/face_detection_yunet/resolve/3cc26e7f1014a5ee5d74a42acee58bafc9d0a310";
 
-/// veilq-signature-v1: YOLOS-tiny (`mdefrance/yolos-tiny-signature-detection`,
-/// Apache-2.0) fine-tuned by nuetzliches on synthetic letters to find
-/// handwritten signatures and leave watermarks, stamps and logos; Apache-2.0,
-/// published on Hugging Face, at a fixed revision (ADR-0048).
-const SIGNATURE: &str = "https://huggingface.co/nuetzliches/veilq-signature-v1/resolve/866a954ac0a371acee4f0633665cc5925c5e878d";
+/// veilq-signature-v2: YOLOS-tiny (`mdefrance/yolos-tiny-signature-detection`,
+/// Apache-2.0) fine-tuned by nuetzliches on synthetic letters, web pages and
+/// public-domain photos to find handwritten signatures and leave photos,
+/// watermarks, stamps and logos; Apache-2.0, published on Hugging Face, at a
+/// fixed revision (ADR-0048).
+const SIGNATURE: &str = "https://huggingface.co/nuetzliches/veilq-signature-v2/resolve/8096f4805f01200b22157ebe204cbc95bf331f30";
 
 /// PDFium (BSD-3-Clause, with the licences of its parts in the archive), as
 /// `bblanchon/pdfium-binaries` (MIT) builds it, at the version whose API
@@ -117,10 +118,10 @@ pub const PINNED: &[PinnedFile] = &[
     },
     PinnedFile {
         detector: "signature",
-        file: "signature/veilq-signature-v1/model.onnx",
+        file: "signature/veilq-signature-v2/model.onnx",
         base: SIGNATURE,
         name: "model.onnx",
-        sha256: "e251d5e5b5fe0f50dcf89642669e5f6624ed20d0ddbf61e23b94216cef68baf0",
+        sha256: "bf9a177aa93f98c4e1c02332c31e37d5dc12e310c0a19c0e3fa5fffe2878da9e",
         member: None,
         target: None,
     },
