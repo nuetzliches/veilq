@@ -1,6 +1,6 @@
 # ADR-0048: Handwritten signatures in pictures are found and filled black
 
-- **Status:** Accepted (card in the conversation, points B1 to B6, approved by the owner 2026-11-13; the model changed after measuring, approved 2026-11-16); amends [ADR-0023](0023-pictures-are-read-with-ocr-and-redacted-with-black-boxes.md) and [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md); amended by [ADR-0053](0053-every-detector-reads-the-picture-before-anything-is-filled.md) (filled with the first reading's boxes, not before OCR)
+- **Status:** Accepted (card in the conversation, points B1 to B6, approved by the owner 2026-11-13; the model changed after measuring, approved 2026-11-16; veilq-signature-v2 approved 2026-11-18); amends [ADR-0023](0023-pictures-are-read-with-ocr-and-redacted-with-black-boxes.md) and [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md); amended by [ADR-0053](0053-every-detector-reads-the-picture-before-anything-is-filled.md) (filled with the first reading's boxes, not before OCR)
 - **Date:** 2026-11-16
 - **Deciders:** project owner
 - **Related:** [ADR-0038](0038-faces-in-pictures-are-found-and-filled-black.md), #80
@@ -63,6 +63,25 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
   the reported preview the signature alone is filled. A rule that left
   boxes over three lines of printed text (#86) is not needed and was not
   merged: it would also have left a signature written across a name.
+- **After 0.5.0: veilq-signature-v2.** A reported screenshot of a news page
+  came back with 21 `SIGNATURE` boxes on its photos and none on a
+  signature: v1 had seen letters and grey windows only, and the base model
+  fills photos as well. nuetzliches trained the base model again (16 epochs,
+  the same settings) on 2,000 synthetic pictures: v1's letters, now also
+  beside a web page and photographed on a desk, and web pages of photo cards,
+  headlines and adverts and photos alone, without a signature; and photos
+  signed on their face, so that a photo is not learned as a sign of none.
+  The photos are 777 CC0 or public-domain pictures from Wikimedia Commons,
+  kept in the private training repository and not published. Published
+  under Apache-2.0 as `nuetzliches/veilq-signature-v2`, pinned at
+  `signature/veilq-signature-v2/model.onnx`. On 300 held-out pictures,
+  signatures found and false boxes against v1: letters 130/135 and 16 false
+  (v1 132/135, 138), letters photographed 12/12 and 2 (11/12, 14), web pages
+  2 false (290), photos 3 (55); a signature on a photo 1/16 (v1 0/16). On
+  the reported screenshot no box (v1 19). Approved by the owner after the
+  measurement, 2026-11-18. A filter of boxes by their background (a box with
+  little even background is a photo) was measured and not built: retraining
+  was chosen over a rule beside the model.
 - **Found, never compared:** veilq finds where a signature is. It computes
   no features of it, compares none, keeps none, and nothing leaves the
   machine.
@@ -122,8 +141,13 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
   pixels) as a signature, 17 boxes over the five held-out seeds; a floor
   for the height would drop them but also a signature in a scaled-down
   picture, so the next training takes form screenshots as background.
+  veilq-signature-v2 puts none there over the five held-out seeds, and one
+  small box (64 x 14 pixels) on the corpus' transfer screenshot.
+- veilq-signature-v2 mostly misses a signature written on a photo (an
+  autograph); v1 missed it too. The next training weighs that kind.
 - 0.4.1 pins the model at a new path: an installed 0.4.0 model does not
-  count, and pictures are refused until `veilq models fetch signature`.
+  count, and pictures are refused until `veilq models fetch signature`;
+  so does the release after 0.5.0 for an installed v1.
 - A signature's box takes a line below it as well when the strokes reach
   into it (the signer's printed name, a role).
 - The search adds about 0.1 s for a page and 0.5 s for a wide screenshot on
