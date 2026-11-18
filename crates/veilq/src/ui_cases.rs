@@ -216,13 +216,42 @@ fn area_case(
         Mark::ExtraArea { area, entity } => (Kind::Extra, area, entity, None),
         _ => unreachable!("an area mark"),
     };
+    let picture = area_picture(state, format, bytes, area)?;
+    let excerpt = crop(&picture, area)?;
+    let location = Location::Region {
+        part: None,
+        frame: area.frame,
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: area.height,
+    };
+    let mut case = Case::new(
+        kind,
+        entity.clone(),
+        format.name(),
+        location,
+        &state.policy().0,
+    );
+    case.label = label;
+    Ok((case, excerpt))
+}
+
+/// The picture `area` is drawn on: the image, the GIF's frame or the PDF's
+/// page it names.
+fn area_picture(
+    state: &AppState,
+    format: Format,
+    bytes: &[u8],
+    area: &Area,
+) -> Result<Vec<u8>, Failure> {
     if !takes_areas(format) {
         return Err(unprocessable(format!(
             "areas are marked on images and PDF pages, not on {}",
             format.name()
         )));
     }
-    let picture = if format == Format::Gif {
+    Ok(if format == Format::Gif {
         let frame = area
             .frame
             .filter(|f| *f >= 1)
@@ -243,25 +272,7 @@ fn area_case(
             .ok_or_else(|| unprocessable(format!("the PDF has no page {page}")))?
     } else {
         bytes.to_vec()
-    };
-    let excerpt = crop(&picture, area)?;
-    let location = Location::Region {
-        part: None,
-        frame: area.frame,
-        x: area.x,
-        y: area.y,
-        width: area.width,
-        height: area.height,
-    };
-    let mut case = Case::new(
-        kind,
-        entity.clone(),
-        format.name(),
-        location,
-        &state.policy().0,
-    );
-    case.label = label;
-    Ok((case, excerpt))
+    })
 }
 
 /// The picture around `area`, as PNG.
@@ -558,8 +569,8 @@ const SHAPE_CONFIDENCE: f32 = 0.95;
 
 impl Rule {
     /// The rules `mark` proposes, the cheapest first, from what veilq read
-    /// around it (`readings`, of the run without the mark). An area holds no
-    /// value a rule could name.
+    /// around it (`readings`, of the run without the mark). An area is
+    /// given here as the value OCR read inside it ([`propose_rule`]).
     fn of(mark: &Mark, readings: &[veilq_core::Reading]) -> Vec<Self> {
         let Some(value) = mark.value() else {
             return Vec::new();
@@ -852,32 +863,41 @@ fn with_rule(base: &Engine, rule: &Rule) -> Result<Engine, Failure> {
     base.with_policy(&policy).map_err(Failure::from)
 }
 
-/// The findings of `text` by `with` (an engine with a rule) and `without`,
-/// what the engine without it found there, compared by place.
-fn change(
-    without: &veilq_core::Redacted,
-    with: &Engine,
-    text: &str,
-    format: Format,
-) -> Result<Change, Failure> {
-    let with = with.redact_str(text, format).map_err(Failure::from)?;
-    let has = |r: &veilq_core::Redacted, l: &veilq_core::Location| {
-        r.report.findings.iter().any(|f| &f.location == l)
+/// What a rule is tried on: a text, or a picture (#114).
+enum Input<'a> {
+    Text(&'a str, Format),
+    Picture(&'a [u8], Format),
+}
+
+/// Where `engine` finds something in `input`, as a redaction does.
+fn found(engine: &Engine, input: &Input) -> Result<Vec<Location>, Failure> {
+    let findings = match input {
+        Input::Text(text, format) => {
+            engine
+                .redact_str(text, *format)
+                .map_err(Failure::from)?
+                .report
+                .findings
+        }
+        Input::Picture(bytes, format) => {
+            engine
+                .run_bytes(bytes, *format, true)
+                .map_err(Failure::from)?
+                .1
+                .report
+                .findings
+        }
     };
-    Ok(Change {
-        gained: with
-            .report
-            .findings
-            .iter()
-            .filter(|f| !has(without, &f.location))
-            .count(),
-        lost: without
-            .report
-            .findings
-            .iter()
-            .filter(|f| !has(&with, &f.location))
-            .count(),
-    })
+    Ok(findings.into_iter().map(|f| f.location).collect())
+}
+
+/// What `with` (found by an engine with a rule) changes on `without`
+/// (found without it), compared by place.
+fn change(without: &[Location], with: &[Location]) -> Change {
+    Change {
+        gained: with.iter().filter(|l| !without.contains(l)).count(),
+        lost: without.iter().filter(|l| !with.contains(l)).count(),
+    }
 }
 
 /// A rule proposed and what it changes.
@@ -902,6 +922,10 @@ pub struct Proposal {
     /// Whether the user's policy is the one in use: then a rule is saved
     /// there, else it is offered to copy.
     user_in_use: bool,
+    /// For an area: what OCR read inside it, the value the rules name;
+    /// absent when it read nothing there, and no rule is proposed (#114).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    read: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -969,32 +993,78 @@ pub async fn propose(
 }
 
 fn propose_rule(state: &AppState, request: CaseRequest) -> Result<Proposal, Failure> {
-    if request.mark.value().is_none() {
-        return Err(unprocessable(
-            "an area holds no value a rule could name yet",
-        ));
-    }
     let (name, bytes) = source_bytes(state, request.source)?;
     let format = match &name {
         Some(n) => Format::from_path(std::path::Path::new(n)).map_err(Failure::from)?,
         None => Format::Text,
     };
-    if format.is_container() {
-        return Err(unprocessable(format!(
-            "rules are tried on text for now, not on {}",
-            format.name()
-        )));
-    }
-    let input = String::from_utf8(bytes).map_err(|_| unprocessable("not UTF-8 text"))?;
     let plain = state.ready_engine()?;
     let base = plain
         .with_min_confidence(request.min_confidence)
         .map_err(Failure::from)?;
     let explanation = veilq_core::Explain::new();
-    base.with_explain(explanation.clone())
-        .redact_str(&input, format)
-        .map_err(Failure::from)?;
-    let rules = Rule::of(&request.mark, &explanation.take());
+    let explaining = base.with_explain(explanation.clone());
+    let text;
+    let (input, mark, read) = match &request.mark {
+        // An area names what OCR read inside it (#114, card point 4): the
+        // rules are those of that value marked on text, tried on the picture.
+        // Nothing read, nothing proposed rather than a guess.
+        Mark::MissedArea { area, entity, .. } | Mark::ExtraArea { area, entity } => {
+            let picture = area_picture(state, format, &bytes, area)?;
+            let Some((line, range)) = plain.read_area(&picture, area).map_err(Failure::from)?
+            else {
+                return Ok(Proposal {
+                    rules: Vec::new(),
+                    tried: 0,
+                    user_in_use: super::settings::is_user_in_use(state),
+                    read: None,
+                });
+            };
+            let value = line[range].to_owned();
+            let mark = match &request.mark {
+                Mark::MissedArea { .. } => Mark::Missed {
+                    value: value.clone(),
+                    entity: entity.clone(),
+                    label: None,
+                },
+                _ => Mark::Extra {
+                    value: value.clone(),
+                    entity: entity.clone(),
+                },
+            };
+            explaining
+                .run_bytes(&bytes, format, true)
+                .map_err(Failure::from)?;
+            (Input::Picture(&bytes, format), mark, Some((value, line)))
+        }
+        Mark::Missed { .. } | Mark::Extra { .. } => {
+            if format.is_container() {
+                return Err(unprocessable(format!(
+                    "rules are tried on text for now, not on {}",
+                    format.name()
+                )));
+            }
+            text = String::from_utf8(bytes.clone()).map_err(|_| unprocessable("not UTF-8 text"))?;
+            explaining
+                .redact_str(&text, format)
+                .map_err(Failure::from)?;
+            (Input::Text(&text, format), request.mark.clone(), None)
+        }
+    };
+    let mut readings = explanation.take();
+    // The line read inside the area last: a reading of the run that holds
+    // the value comes first, with its candidates; this one gives the word
+    // before it where the run read the line otherwise.
+    let read = read.map(|(value, line)| {
+        readings.push(veilq_core::Reading {
+            text: line,
+            context: String::new(),
+            verify: false,
+            candidates: Vec::new(),
+        });
+        value
+    });
+    let rules = Rule::of(&mark, &readings);
     // The earlier cases' texts: their excerpts where the key reads them,
     // else their twins.
     let store = store(state)?;
@@ -1019,11 +1089,11 @@ fn propose_rule(state: &AppState, request: CaseRequest) -> Result<Proposal, Fail
     }
     // What an engine without a rule finds on the document and on each
     // earlier case, read once for every rule tried with it (#117).
-    let baseline = |engine: &Engine| -> Result<Vec<veilq_core::Redacted>, Failure> {
-        std::iter::once((input.as_str(), format))
-            .chain(texts.iter().map(|t| (t.as_str(), Format::Text)))
-            .map(|(text, format)| engine.redact_str(text, format).map_err(Failure::from))
-            .collect()
+    let inputs: Vec<Input> = std::iter::once(input)
+        .chain(texts.iter().map(|t| Input::Text(t, Format::Text)))
+        .collect();
+    let baseline = |engine: &Engine| -> Result<Vec<Vec<Location>>, Failure> {
+        inputs.iter().map(|i| found(engine, i)).collect()
     };
     let (mut without_base, mut without_plain) = (None, None);
     let mut proposed = Vec::new();
@@ -1040,10 +1110,10 @@ fn propose_rule(state: &AppState, request: CaseRequest) -> Result<Proposal, Fail
         }
         let without = without.as_ref().expect("read above");
         let with = with_rule(base, &rule)?;
-        let document = change(&without[0], &with, &input, format)?;
+        let document = change(&without[0], &found(&with, &inputs[0])?);
         let mut cases = Change::default();
-        for (text, without) in texts.iter().zip(&without[1..]) {
-            cases.add(change(without, &with, text, Format::Text)?);
+        for (input, without) in inputs[1..].iter().zip(&without[1..]) {
+            cases.add(change(without, &found(&with, input)?));
         }
         proposed.push(Proposed {
             toml: rule.toml(),
@@ -1056,6 +1126,7 @@ fn propose_rule(state: &AppState, request: CaseRequest) -> Result<Proposal, Fail
         rules: proposed,
         tried: texts.len(),
         user_in_use: super::settings::is_user_in_use(state),
+        read,
     })
 }
 

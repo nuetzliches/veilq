@@ -316,7 +316,8 @@ export function mockApi(): Api {
       throw new ApiError(422, 'the mock shows no GIF frames');
     },
     async propose(_source: Source, mark: Mark) {
-      if (mark.kind !== 'missed' && mark.kind !== 'extra') throw new ApiError(422, 'an area holds no value a rule could name yet');
+      // The mock reads no pictures: OCR read nothing inside an area.
+      if (mark.kind !== 'missed' && mark.kind !== 'extra') return { rules: [], tried: 0, user_in_use: true };
       const rule = mark.kind === 'missed' ? { kind: 'deny' as const, entity: mark.entity, value: mark.value } : { kind: 'allow' as const, value: mark.value };
       return {
         rules: [

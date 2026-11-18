@@ -410,16 +410,17 @@ const chosenRule = ref(0);
 /** What became of the proposal: saved, copied, or why not. */
 const ruleNote = ref<string | null>(null);
 
-/** A mark on text proposes its rules; an area names no value a rule could take. */
+/** A mark proposes its rules: on text from its value, on an area from what OCR read inside it (#114). */
 async function offerRule(source: Source, mark: Mark) {
   proposal.value = null;
   ruleNote.value = null;
   chosenRule.value = 0;
-  if (mark.kind !== 'missed' && mark.kind !== 'extra') return;
+  const area = mark.kind === 'missed_area' || mark.kind === 'extra_area';
   try {
     const p = await api.propose(source, mark, threshold.value ?? undefined);
-    proposedFrom.value = mark.value.trim();
+    proposedFrom.value = area ? (p.read ?? '') : mark.value.trim();
     proposal.value = p.rules.length ? p : null;
+    if (area && p.read === undefined) ruleNote.value = t('rules.nothingRead');
   } catch {
     // No proposal is no fault of the mark: it acts all the same.
   }

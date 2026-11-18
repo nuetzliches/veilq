@@ -1502,7 +1502,8 @@ mod tests {
             .collect();
         assert_eq!(kinds, ["deny", "context"], "{body}");
         assert_eq!(body["rules"][1]["rule"]["word"], "Projekt");
-        // An area names no value a rule could take.
+        // An area on text is refused; on a picture it is read with OCR
+        // (#114), which a server without the model cannot (fail closed).
         let area = serde_json::json!({
             "kind": "missed_area", "area": { "x": 0, "y": 0, "width": 1, "height": 1 }, "entity": "PERSON"
         });
@@ -1515,6 +1516,18 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let picture =
+            serde_json::json!({ "kind": "upload", "name": "shot.png", "data": ONE_PIXEL_PNG });
+        let (status, body) = send(
+            app(),
+            json_post(
+                "/api/cases/propose",
+                serde_json::json!({ "source": picture, "mark": area }),
+            ),
+        )
+        .await;
+        assert!(status.is_client_error(), "{status}: {body}");
+        assert!(body.to_string().contains("OCR"), "{body}");
     }
 
     #[tokio::test]

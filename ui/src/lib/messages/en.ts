@@ -327,6 +327,7 @@ export const en = {
   'marks.keptNoExcerpt': 'Kept as a case on this computer, without the line around it (no key store).',
   'marks.notKept': 'The mark acts here, but was not kept as a case: {error}',
   'rules.proposeTitle': 'A rule from this mark',
+  'rules.nothingRead': 'Text recognition read nothing inside the frame: no rule proposed. The mark acts all the same.',
   'rules.proposeDeny': 'Rule: always find “{value}” as {type}.',
   'rules.proposeAllow': 'Rule: never find “{value}”.',
   'rules.proposeContext': 'Rule: find values like “{value}” after “{word}” as {type}.',

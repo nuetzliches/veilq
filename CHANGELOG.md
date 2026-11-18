@@ -16,6 +16,9 @@ Notable changes per release. The format follows
 - An area can be marked on a GIF: "Mark an area" shows the redacted GIF
   frame by frame, and the area drawn on a frame is filled there and in the
   frames after it while its pixels stand still (#114, ADR-0057).
+- An area marked on a picture proposes rules from the words OCR read inside
+  it, as a value marked on text does, tried on the picture and the earlier
+  cases; when OCR read nothing there, none is proposed (#114, ADR-0058).
 
 ### Fixed
 

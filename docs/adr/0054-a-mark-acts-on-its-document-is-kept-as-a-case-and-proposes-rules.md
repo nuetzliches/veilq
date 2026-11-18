@@ -97,8 +97,8 @@ ADR is the first two.
 - A proposed pattern is tried on few texts (the document and the cases): a
   shape rule can find more elsewhere than the counts show. The counts are
   a guide, not a guarantee.
-- Marks on Word and Excel, and rules from an area, come later; marks on
-  GIF frames came with ADR-0057.
+- Marks on Word and Excel come later; marks on GIF frames came with
+  ADR-0057, rules from an area with ADR-0058.
 
 ## Enforced by
 

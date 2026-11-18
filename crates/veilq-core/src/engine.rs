@@ -1109,6 +1109,24 @@ impl Engine {
         ))
     }
 
+    /// What OCR reads inside `area` of `picture` (an image, a GIF's frame or
+    /// a PDF's page as PNG): its line and the range read inside the area
+    /// (#114); `None` when nothing is; without OCR an error.
+    pub fn read_area(
+        &self,
+        picture: &[u8],
+        area: &Area,
+    ) -> Result<Option<(String, Range<usize>)>, Error> {
+        #[cfg(feature = "ocr")]
+        if let Some(ocr) = &self.ocr {
+            return crate::visual::read_area(ocr, picture, area);
+        }
+        let _ = (picture, area);
+        Err(Error::Format(
+            "reading an area needs OCR, which is not installed: `veilq models fetch ocr`".into(),
+        ))
+    }
+
     /// The first `max` pages of a PDF as PNG, as redaction reads them, and
     /// the number of pages; without PDFium an error.
     pub fn pdf_pages(&self, input: &[u8], max: usize) -> Result<(Vec<Vec<u8>>, usize), Error> {

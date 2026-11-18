@@ -988,6 +988,67 @@ pub fn gif_frame(bytes: &[u8], n: u64) -> Result<(Vec<u8>, u64), Error> {
     }
 }
 
+/// What OCR reads inside `area` of `picture` (a still image, or a GIF's
+/// frame or a PDF's page as PNG): the line it stands in and the byte range
+/// of the words inside the area, in the line that has the most of them
+/// (#114). `None` when no word lies inside.
+pub fn read_area(
+    ocr: &Ocr,
+    picture: &[u8],
+    area: &crate::Area,
+) -> Result<Option<(String, std::ops::Range<usize>)>, Error> {
+    let mut decoder = ImageReader::with_format(Cursor::new(picture), format_of(picture)?)
+        .into_decoder()
+        .map_err(error)?;
+    let orientation = decoder.orientation().map_err(error)?;
+    let mut img = DynamicImage::from_decoder(decoder).map_err(error)?;
+    img.apply_orientation(orientation);
+    let lines = ocr.read(&img.to_rgb8())?;
+    Ok(inside(&lines, &rect(area)))
+}
+
+/// The line of `lines` with the most letters inside `r`, and the range of
+/// its words inside: a word whose letters' centres lie in `r` at least half,
+/// as a frame drawn by hand cuts a word's edge or touches the next one. A
+/// word of no letter or digit at either end (`·`, `-`) is left out.
+fn inside(lines: &[Line], r: &Rect) -> Option<(String, std::ops::Range<usize>)> {
+    let within = |c: &Rect| {
+        let (x, y) = (c.x + c.w / 2, c.y + c.h / 2);
+        r.x <= x && x < r.right() && r.y <= y && y < r.bottom()
+    };
+    lines
+        .iter()
+        .filter_map(|l| {
+            let is_in = |at: usize| {
+                l.chars
+                    .iter()
+                    .any(|(s, e, c)| *s <= at && at < *e && within(c))
+            };
+            // The words, as byte ranges, with how many of their letters are in.
+            let mut words = Vec::new();
+            for (start, word) in l.text.split_whitespace().map(|w| {
+                let at = w.as_ptr() as usize - l.text.as_ptr() as usize;
+                (at, w)
+            }) {
+                let total = word.chars().count();
+                let n = word
+                    .char_indices()
+                    .filter(|(i, _)| is_in(start + i))
+                    .count();
+                let wordy = word.chars().any(char::is_alphanumeric);
+                if 2 * n >= total && n > 0 && wordy {
+                    words.push((start..start + word.len(), n));
+                }
+            }
+            let start = words.first()?.0.start;
+            let end = words.last()?.0.end;
+            let n: usize = words.iter().map(|(_, n)| n).sum();
+            Some((n, (l.text.clone(), start..end)))
+        })
+        .max_by_key(|(n, _)| *n)
+        .map(|(_, found)| found)
+}
+
 /// The format of an image file, from its bytes.
 fn format_of(bytes: &[u8]) -> Result<ImageFormat, Error> {
     image::guess_format(bytes).map_err(|_| error("not an image veilq reads (PNG, JPEG, WebP, GIF)"))
@@ -1948,6 +2009,33 @@ mod tests {
             let e = gif_frame(&gif, n).unwrap_err().to_string();
             assert!(e.contains("3 frames"), "{e}");
         }
+    }
+
+    #[test]
+    fn an_area_reads_the_words_inside_it_in_the_line_with_most_of_them() {
+        // Ten pixels per letter: `KD-48213` from x 140 to 220.
+        let lines = [
+            line("Kundennummer KD-48213", 10, 0),
+            line("Raum KG-30551", 10, 40),
+        ];
+        let area = |x, y, w, h| Rect { x, y, w, h };
+        let (text, r) = inside(&lines, &area(136, 2, 90, 16)).unwrap();
+        assert_eq!(&text[r], "KD-48213");
+        // A frame that cuts the word's first letters takes it whole, one that
+        // touches the word before at one letter does not; the line with most
+        // letters wins.
+        let (text, r) = inside(&lines, &area(160, 0, 100, 60)).unwrap();
+        assert_eq!(&text[r], "KD-48213");
+        let (text, r) = inside(&lines, &area(120, 0, 105, 60)).unwrap();
+        assert_eq!(&text[r], "KD-48213");
+        // A dot between words is no word.
+        let dotted = [line("Vorgang 2026-9081-4214 · Version 1.6", 0, 0)];
+        let (text, r) = inside(&dotted, &area(85, 0, 160, 20)).unwrap();
+        assert_eq!(&text[r], "2026-9081-4214");
+        assert!(
+            inside(&lines, &area(400, 0, 50, 50)).is_none(),
+            "nothing read there"
+        );
     }
 
     #[test]
