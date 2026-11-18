@@ -8,6 +8,12 @@ Notable changes per release. The format follows
 
 ### Fixed
 
+- A finding in a picture names the boxes that were filled, one finding
+  each, not one box around them all: a name read across lines (a tab's
+  label in a sidebar and a word at the page's far side) showed as a band
+  across the picture that was never filled, and releasing it in the UI
+  ("not personal: release here") released that whole band, and with it
+  whatever else lay in it.
 - A word that only starts like a context word no longer lifts a
   candidate: `Personalisieren`, a web page's button beside a game's title
   `Los Angeles`, made it a `PERSON`; `Steuerung`, `Bytes` and `Namespace`
