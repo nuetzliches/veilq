@@ -646,19 +646,11 @@ fn unmarked(text: &str) -> Option<String> {
     changed.then_some(out)
 }
 
-/// The length of an IBAN of the countries veilq's users bank in most; any
-/// other, and a country code read wrong, as Germany's.
+/// The length of an IBAN of `country` as the registry has it
+/// (`validate::iban_length`, #89); a country code read wrong as Germany's,
+/// where veilq's users bank in most.
 fn iban_length(country: &str) -> usize {
-    match country {
-        "AT" | "LU" => 20,
-        "BE" => 16,
-        "CH" | "LI" => 21,
-        "DK" | "NL" => 18,
-        "ES" => 24,
-        "FR" | "IT" | "MC" => 27,
-        "PL" => 28,
-        _ => 22,
-    }
+    crate::detect::validate::iban_length(country).unwrap_or(22)
 }
 
 /// `rects` of a candidate; for an IBAN read short (its checksum fails: OCR
@@ -671,9 +663,8 @@ fn with_rest(c: &crate::detect::Candidate, value: &str, mut rects: Vec<Rect>, w:
     if c.entity.as_str() != "IBAN_CODE" || crate::detect::validate::iban(value) {
         return rects;
     }
-    let read: Vec<char> = value.chars().filter(|c| !c.is_whitespace()).collect();
-    let country: String = read.iter().take(2).collect();
-    let lost = iban_length(&country).saturating_sub(read.len());
+    let read = crate::detect::validate::compact(value);
+    let lost = iban_length(&read[..read.len().min(2)]).saturating_sub(read.len());
     let (Some(first), Some(last)) = (
         rects.iter().map(|r| r.x).min(),
         rects.iter_mut().max_by_key(|r| r.right()),
@@ -1864,6 +1855,12 @@ mod tests {
         let found = iban(&whole);
         assert!(!found.is_empty());
         assert!(found.iter().all(|r| r.right() < 380), "{found:?}");
+        // A country with a longer IBAN than Germany's (#89): Portugal's 25
+        // characters, four lost; 22 would widen by one.
+        let portugal = [line("PT50 0002 0123 1234 5678 9", 100, 100)];
+        let found = iban(&portugal);
+        // Ten pixels a character: four lost, a space and one more past 360.
+        assert!(found.iter().any(|r| r.right() >= 420), "{found:?}");
     }
 
     /// With the real NER model (VEILQ_NER_DIR, VEILQ_ORT_DYLIB): a line

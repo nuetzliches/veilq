@@ -49,6 +49,10 @@ Notable changes per release. The format follows
 - A streamed run longer than a chunk counts each candidate the learned
   decider lifted once (#117): the reading that only places a chunk's cut
   counted it too, and the review reason said "lifted 2" for one.
+- An IBAN a picture's OCR read short is widened to its country's full
+  length for every country of the IBAN registry, not only about ten
+  (ADR-0049, #89): a Portuguese, Swedish, Greek, Hungarian or Maltese IBAN
+  left its last characters visible, widened as a German one.
 
 ### Changed
 
