@@ -343,6 +343,8 @@ export interface Proposal {
 export interface CaseCount {
   count: number;
   key_store: boolean;
+  /** How many days an excerpt is kept (`[cases] excerpt_days`); `0`: none. */
+  excerpt_days: number;
 }
 
 export interface Api {

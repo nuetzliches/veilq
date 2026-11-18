@@ -6,6 +6,14 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- An area drawn on a picture in the UI can be marked as a face or a
+  signature, not only as a type of text (#114, ADR-0056).
+- `[cases] excerpt_days` in the policy sets how many days a case keeps its
+  encrypted excerpt and twin: 30 by default, at most 365, `0` for none. A
+  shorter time also deletes what was kept longer (#114, ADR-0056).
+
 ### Fixed
 
 - A streamed run longer than a chunk counts each candidate the learned

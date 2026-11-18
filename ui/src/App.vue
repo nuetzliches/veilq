@@ -25,7 +25,7 @@ import WelcomeDialog from '@/components/WelcomeDialog.vue';
 import { copyablePicture, copyIsOurs, pngBlob } from '@/lib/clipboard';
 import { locale, plural, t } from '@/lib/i18n';
 import { actionLabel, entityLabel, missingModels } from '@/lib/labels';
-import { byteSlice, MARK_TYPES, markable } from '@/lib/marks';
+import { AREA_TYPES, byteSlice, MARK_TYPES, markable } from '@/lib/marks';
 import { pastedName } from '@/lib/paste';
 import { change, percent } from '@/lib/threshold';
 import {
@@ -94,6 +94,8 @@ const marks = ref<Mark[]>([]);
 /** A selection in the text output that can be marked as missed. */
 const selection = ref<string | null>(null);
 const markType = ref<string>('PERSON');
+/** The type of an area drawn: its own, since a face is no type a selection can take. */
+const areaType = ref<string>('PERSON');
 /** What became of the last mark's case. */
 const markNote = ref<string | null>(null);
 
@@ -496,7 +498,7 @@ function markArea() {
   if (!area) return;
   drawnArea.value = null;
   drawing.value = false;
-  void addMark({ kind: 'missed_area', area, entity: markType.value });
+  void addMark({ kind: 'missed_area', area, entity: areaType.value });
 }
 
 /**
@@ -1025,8 +1027,8 @@ onBeforeUnmount(() => {
           </div>
           <div v-else-if="drawnArea" class="markbar" role="group" :aria-label="t('marks.missedTitle')">
             <span class="what">{{ t('marks.areaMissed') }}</span>
-            <select v-model="markType" :aria-label="t('marks.missedTitle')">
-              <option v-for="e in MARK_TYPES" :key="e" :value="e">{{ entityLabel(e) }}</option>
+            <select v-model="areaType" :aria-label="t('marks.missedTitle')">
+              <option v-for="e in AREA_TYPES" :key="e" :value="e">{{ entityLabel(e) }}</option>
             </select>
             <button class="primary small" :disabled="busy" @click="markArea">{{ t('marks.mark') }}</button>
             <button class="small" :aria-label="t('common.close')" @click="drawnArea = null">×</button>

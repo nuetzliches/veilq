@@ -47,6 +47,20 @@
       },
       "type": "object"
     },
+    "CasesPolicy": {
+      "additionalProperties": false,
+      "description": "What the case store keeps of a mark (ADR-0054, #114).",
+      "properties": {
+        "excerpt_days": {
+          "default": 30,
+          "description": "How many days a case's encrypted excerpt and twin are kept, from\nwhen it was marked: 30 by default, at most 365. `0` keeps neither,\nonly the case. A shorter time also deletes what is older already.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "Context": {
       "additionalProperties": false,
       "description": "Words near a match that make it personal data: `geb.` before a date, the\ncolumn `email`, the key `iban` (ADR-0011).",
@@ -383,6 +397,10 @@
         "patterns": [],
         "values": []
       }
+    },
+    "cases": {
+      "$ref": "#/$defs/CasesPolicy",
+      "description": "The case store of the UI's marks (ADR-0054, #114)."
     },
     "costs": {
       "additionalProperties": false,

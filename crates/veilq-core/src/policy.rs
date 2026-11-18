@@ -81,6 +81,9 @@ pub struct Policy {
     /// The learned decider (#35).
     #[serde(default)]
     pub decider: DeciderPolicy,
+    /// The case store of the UI's marks (ADR-0054, #114).
+    #[serde(default, skip_serializing_if = "CasesPolicy::is_default")]
+    pub cases: CasesPolicy,
     /// Per entity type: what a miss and a false positive cost (ADR-0040),
     /// before the purposes' costs. Data for a learned decider; no
     /// threshold follows from them yet.
@@ -108,6 +111,38 @@ pub struct DeciderPolicy {
 impl Default for DeciderPolicy {
     fn default() -> Self {
         Self { enabled: true }
+    }
+}
+
+/// What the case store keeps of a mark (ADR-0054, #114).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CasesPolicy {
+    /// How many days a case's encrypted excerpt and twin are kept, from
+    /// when it was marked: 30 by default, at most 365. `0` keeps neither,
+    /// only the case. A shorter time also deletes what is older already.
+    #[serde(default = "default_excerpt_days")]
+    pub excerpt_days: u64,
+}
+
+/// The most days an excerpt can be kept.
+pub const MAX_EXCERPT_DAYS: u64 = 365;
+
+fn default_excerpt_days() -> u64 {
+    crate::cases::EXCERPT_DAYS
+}
+
+impl Default for CasesPolicy {
+    fn default() -> Self {
+        Self {
+            excerpt_days: default_excerpt_days(),
+        }
+    }
+}
+
+impl CasesPolicy {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
     }
 }
 
@@ -462,6 +497,7 @@ impl Default for Policy {
             names: Names::default(),
             markers: Markers::default(),
             decider: DeciderPolicy::default(),
+            cases: CasesPolicy::default(),
             purposes: default_purposes(),
             costs: BTreeMap::new(),
         }
@@ -583,6 +619,12 @@ impl Policy {
         }
         for p in &self.purposes {
             crate::purpose::purpose(p)?;
+        }
+        if self.cases.excerpt_days > MAX_EXCERPT_DAYS {
+            return Err(format!(
+                "`cases.excerpt_days` must be at most {MAX_EXCERPT_DAYS}, got {}",
+                self.cases.excerpt_days
+            ));
         }
         for (entity, c) in &self.costs {
             if !(c.miss > 0.0 && c.false_positive > 0.0) {
@@ -796,10 +838,21 @@ key_env = "VEILQ_KEY"
     }
 
     #[test]
+    fn the_case_store_keeps_excerpts_for_the_days_the_policy_says() {
+        assert_eq!(Policy::default().cases.excerpt_days, 30);
+        let p = Policy::parse("version = 1\n[cases]\nexcerpt_days = 0").unwrap();
+        assert_eq!(p.cases.excerpt_days, 0);
+        assert!(p.to_toml().unwrap().contains("excerpt_days = 0"));
+        // The default is not written: a policy's hash stays as it was.
+        assert!(!Policy::default().to_toml().unwrap().contains("[cases]"));
+    }
+
+    #[test]
     fn mistakes_are_errors() {
         let cases = [
             ("version = 2", "version 2"),
             ("version = 1\nverison = 1", "unknown field"),
+            ("version = 1\n[cases]\nexcerpt_days = 366", "at most 365"),
             (
                 "version = 1\n[defaults]\nmin_confidence = 1.5",
                 "between 0 and 1",

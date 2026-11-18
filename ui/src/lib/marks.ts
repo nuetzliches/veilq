@@ -20,6 +20,12 @@ export const MARK_TYPES = [
   'SECRET',
 ] as const;
 
+/**
+ * The types an area on a picture can be marked as (#114): a face and a signature too, which only
+ * the picture detectors report and no selected text can be.
+ */
+export const AREA_TYPES = ['PERSON', 'FACE', 'SIGNATURE', ...MARK_TYPES.slice(1)] as const;
+
 /** The longest selection a mark takes: a value, not a paragraph. */
 export const MAX_MARK = 200;
 
