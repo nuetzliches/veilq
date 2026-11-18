@@ -288,7 +288,7 @@ fn crop(_: &[u8], _: &Area) -> Result<Vec<u8>, Failure> {
 
 /// Pixels of the picture kept around a marked area in its excerpt.
 #[cfg_attr(not(feature = "ocr"), allow(dead_code))]
-const AREA_MARGIN: u32 = 24;
+pub(super) const AREA_MARGIN: u32 = 24;
 
 fn add_case(state: &AppState, request: CaseRequest) -> Result<CaseAdded, Failure> {
     let (name, bytes) = source_bytes(state, request.source.clone())?;

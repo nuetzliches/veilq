@@ -1387,8 +1387,22 @@ mod tests {
             veilq_core::Location::Region { frame: Some(2), .. }
         ));
         let crop = cases.excerpt(&case.id, &key).unwrap().unwrap();
-        let crop = image::load_from_memory(&crop).unwrap().to_rgba8();
-        assert_eq!(crop.get_pixel(0, 0).0, [0, 0, 0, 255], "frame 2 is black");
+        let gif = base64::engine::general_purpose::STANDARD
+            .decode(TWO_FRAME_GIF)
+            .unwrap();
+        let area = veilq_core::Area {
+            frame: Some(2),
+            x: 1,
+            y: 1,
+            width: 4,
+            height: 4,
+        };
+        let crop_of = |n| {
+            let (frame, _) = veilq_core::visual::gif_frame(&gif, n).unwrap();
+            veilq_core::visual::crop(&frame, &area, cases::AREA_MARGIN).unwrap()
+        };
+        assert_eq!(crop, crop_of(2), "frame 2's crop");
+        assert_ne!(crop, crop_of(1));
         // Without its frame, an area on a GIF is refused.
         let (status, _) = send(
             app(),
