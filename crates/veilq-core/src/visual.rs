@@ -830,7 +830,6 @@ fn settle(
             }) {
                 continue;
             }
-            let bound = rects.iter().skip(1).fold(rects[0], |a, r| a.union(r));
             if matches!(
                 engine.action_for(&c),
                 crate::Action::Pseudonymize | crate::Action::Fake
@@ -838,20 +837,29 @@ fn settle(
             {
                 out.review_reasons.push(BOXES_ONLY.into());
             }
-            out.findings.push(Finding {
-                entity: c.entity.clone(),
-                location: Location::Region {
-                    part: None,
-                    frame,
-                    x: bound.x,
-                    y: bound.y + band.top,
-                    width: bound.w,
-                    height: bound.h,
-                },
-                confidence: c.confidence,
-                detector: c.detector.clone(),
-                pseudonym: None,
-            });
+            // A finding per box filled: a candidate read across lines (a
+            // tab's label in a sidebar and a word at the page's far side)
+            // fills its words, and one box around them all would report a
+            // band across the picture that was never filled.
+            for r in rects
+                .iter()
+                .filter(|r| !covered(r, filled.iter().chain(regions).chain(&new)))
+            {
+                out.findings.push(Finding {
+                    entity: c.entity.clone(),
+                    location: Location::Region {
+                        part: None,
+                        frame,
+                        x: r.x,
+                        y: r.y + band.top,
+                        width: r.w,
+                        height: r.h,
+                    },
+                    confidence: c.confidence,
+                    detector: c.detector.clone(),
+                    pseudonym: None,
+                });
+            }
             new.extend(rects);
         }
         // Read badly where nothing is filled: on the first reading only, as
