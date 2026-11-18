@@ -68,4 +68,14 @@ ignore = [
     # veilq ships. cargo-deny lists their Linux dependencies once they are
     # in the graph for Windows.
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: gtk's macros, Linux side of tao/wry that veilq does not build" },
+    # Unmaintained, no safe upgrade; reached through pdfium-render (a PDF's
+    # dates), rmcp and schemars (a schema's date formats). veilq computes no
+    # time with it. Drop this once those move to jiff or time.
+    { id = "RUSTSEC-2026-0543", reason = "chrono: dates in pdfium-render, rmcp and schemars; veilq computes no time with it" },
+    # Unmaintained, no successor yet; zbus speaks D-Bus to the Secret Service
+    # for keyring on Linux, where the case store keeps its key (ADR-0054).
+    # Drop these once keyring's Secret Service store moves on.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: keyring's Secret Service store on Linux (zbus)" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: keyring's Secret Service store on Linux (zbus)" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: keyring's Secret Service store on Linux (zbus)" },
 ]
