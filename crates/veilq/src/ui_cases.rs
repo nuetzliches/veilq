@@ -821,10 +821,14 @@ fn with_rule(base: &Engine, rule: &Rule) -> Result<Engine, Failure> {
     base.with_policy(&policy).map_err(Failure::from)
 }
 
-/// The findings of `text` by `base` and by `with` (`base` with a rule),
-/// compared by place.
-fn change(base: &Engine, with: &Engine, text: &str, format: Format) -> Result<Change, Failure> {
-    let without = base.redact_str(text, format).map_err(Failure::from)?;
+/// The findings of `text` by `with` (an engine with a rule) and `without`,
+/// what the engine without it found there, compared by place.
+fn change(
+    without: &veilq_core::Redacted,
+    with: &Engine,
+    text: &str,
+    format: Format,
+) -> Result<Change, Failure> {
     let with = with.redact_str(text, format).map_err(Failure::from)?;
     let has = |r: &veilq_core::Redacted, l: &veilq_core::Location| {
         r.report.findings.iter().any(|f| &f.location == l)
@@ -834,7 +838,7 @@ fn change(base: &Engine, with: &Engine, text: &str, format: Format) -> Result<Ch
             .report
             .findings
             .iter()
-            .filter(|f| !has(&without, &f.location))
+            .filter(|f| !has(without, &f.location))
             .count(),
         lost: without
             .report
@@ -932,20 +936,33 @@ fn propose_rule(state: &AppState, request: CaseRequest) -> Result<Proposal, Fail
             texts.push(text);
         }
     }
+    // What an engine without a rule finds on the document and on each
+    // earlier case, read once for every rule tried with it (#117).
+    let baseline = |engine: &Engine| -> Result<Vec<veilq_core::Redacted>, Failure> {
+        std::iter::once((input.as_str(), format))
+            .chain(texts.iter().map(|t| (t.as_str(), Format::Text)))
+            .map(|(text, format)| engine.redact_str(text, format).map_err(Failure::from))
+            .collect()
+    };
+    let (mut without_base, mut without_plain) = (None, None);
     let mut proposed = Vec::new();
     for rule in rules {
         // A threshold is tried as the policy runs: the run's one threshold
         // would stand in its place (ADR-0046).
-        let base = if matches!(rule, Rule::Threshold { .. }) {
-            &plain
+        let (base, without) = if matches!(rule, Rule::Threshold { .. }) {
+            (&plain, &mut without_plain)
         } else {
-            &base
+            (&base, &mut without_base)
         };
+        if without.is_none() {
+            *without = Some(baseline(base)?);
+        }
+        let without = without.as_ref().expect("read above");
         let with = with_rule(base, &rule)?;
-        let document = change(base, &with, &input, format)?;
+        let document = change(&without[0], &with, &input, format)?;
         let mut cases = Change::default();
-        for text in &texts {
-            cases.add(change(base, &with, text, Format::Text)?);
+        for (text, without) in texts.iter().zip(&without[1..]) {
+            cases.add(change(without, &with, text, Format::Text)?);
         }
         proposed.push(Proposed {
             toml: rule.toml(),
