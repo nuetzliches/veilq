@@ -656,8 +656,11 @@ impl Engine {
             if starts.len() > CARRY_LINES {
                 cut = starts[starts.len() - CARRY_LINES];
                 // A finding across the cut goes whole into the next chunk.
-                for f in self.findings(chunk, "")? {
-                    if f.start < cut && f.end > cut {
+                // This reading only places the cut: a candidate it lifts is
+                // counted where it is written, not here too (#117).
+                for d in self.decisions(chunk, "", true, Source::Text, false)? {
+                    let f = &d.candidate;
+                    if d.verdict == Verdict::Kept && f.start < cut && f.end > cut {
                         cut = chunk[..f.start].rfind('\n').map_or(0, |i| i + 1);
                     }
                 }
@@ -1193,6 +1196,34 @@ impl Engine {
         source: Source,
         verify: bool,
     ) -> Result<Vec<Candidate>, Error> {
+        let decisions = self.decisions(text, context, placeholders, source, verify)?;
+        // A check's reading finds again what a reading before it lifted.
+        if let Some(lifted) = &self.lifted
+            && !verify
+        {
+            let n = decisions
+                .iter()
+                .filter(|d| d.lifted && d.verdict == Verdict::Kept)
+                .count();
+            lifted.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
+        }
+        Ok(decisions
+            .into_iter()
+            .filter(|d| d.verdict == Verdict::Kept)
+            .map(|d| d.candidate)
+            .collect())
+    }
+
+    /// [`decided`](Self::decided)'s decisions on every candidate, its
+    /// lifted ones not yet counted.
+    fn decisions(
+        &self,
+        text: &str,
+        context: &str,
+        placeholders: bool,
+        source: Source,
+        verify: bool,
+    ) -> Result<Vec<crate::detect::Decision>, Error> {
         static PLACEHOLDER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
             regex::Regex::new(r"\\?<[A-Z][A-Z0-9_]*\\?>|\[[A-Z][A-Z0-9_]*:[0-9a-f]{8}\]")
                 .expect("a valid regex")
@@ -1203,7 +1234,7 @@ impl Engine {
             if let Some(n) = names {
                 all.extend(n.candidates(text, source)?);
             }
-            let mut decisions = self.detector.resolve(text, all);
+            let mut decisions = self.detector.resolve(text, all, self.explain.is_some());
             if placeholders && text.contains(['<', '[']) {
                 let spans: Vec<Range<usize>> =
                     PLACEHOLDER.find_iter(text).map(|m| m.range()).collect();
@@ -1245,21 +1276,7 @@ impl Engine {
         if let Some(explain) = &self.explain {
             explain.record(text, context, &decisions, verify);
         }
-        // A check's reading finds again what a reading before it lifted.
-        if let Some(lifted) = &self.lifted
-            && !verify
-        {
-            let n = decisions
-                .iter()
-                .filter(|d| d.lifted && d.verdict == Verdict::Kept)
-                .count();
-            lifted.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
-        }
-        Ok(decisions
-            .into_iter()
-            .filter(|d| d.verdict == Verdict::Kept)
-            .map(|d| d.candidate)
-            .collect())
+        Ok(decisions)
     }
 
     /// `text` cut into pieces: what stays (`false`) and each finding's
@@ -2480,6 +2497,40 @@ mod tests {
             .with_decider(decider(crate::decider::tests::BESIDE_NAME));
         assert!(!off.has_decider());
         assert_eq!(values(&off), values(&plain));
+    }
+
+    #[test]
+    fn a_streamed_run_counts_each_lifted_candidate_once() {
+        // Longer than a chunk: one date in the chunk's first part, one in
+        // the lines it carries into the next (#117).
+        let line = "Termin mit Frau Lena Brandt am 03.12.2026 bestätigt.\n";
+        let filler = "Eine Zeile ohne Angaben.\n";
+        let mut text = String::from(line);
+        while text.len() + filler.len() < CHUNK {
+            text.push_str(filler);
+        }
+        text.push_str(line);
+        for _ in 0..10 {
+            text.push_str(filler);
+        }
+        let run = engine()
+            .with_decider(decider(crate::decider::tests::BESIDE_NAME))
+            .scan_str(&text, Format::Text)
+            .unwrap();
+        let dates = run
+            .report
+            .findings
+            .iter()
+            .filter(|f| f.entity.as_str() == "DATE_OF_BIRTH")
+            .count();
+        assert_eq!(dates, 2);
+        assert!(
+            run.report
+                .review_reasons
+                .contains(&crate::decider::lifted_reason(2)),
+            "{:?}",
+            run.report.review_reasons
+        );
     }
 
     #[test]

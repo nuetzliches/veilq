@@ -6,6 +6,18 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A streamed run longer than a chunk counts each candidate the learned
+  decider lifted once (#117): the reading that only places a chunk's cut
+  counted it too, and the review reason said "lifted 2" for one.
+
+### Changed
+
+- A run computes the decider's features only where the decider or
+  `--explain` reads them, and a rule proposal in the UI reads the document
+  and each earlier case without the rule once, not once per rule (#117).
+
 ## [0.5.0] - 2026-11-18
 
 ### Added

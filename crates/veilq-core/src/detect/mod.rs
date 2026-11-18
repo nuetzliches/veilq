@@ -390,7 +390,7 @@ impl Detector {
         source: Source,
     ) -> Result<Vec<Candidate>, Error> {
         Ok(self
-            .decide(text, context, source)?
+            .resolve(text, self.candidates(text, context, source)?, false)
             .into_iter()
             .filter(|d| d.verdict == Verdict::Kept)
             .map(|d| d.candidate)
@@ -406,13 +406,19 @@ impl Detector {
         context: &str,
         source: Source,
     ) -> Result<Vec<Decision>, Error> {
-        Ok(self.resolve(text, self.candidates(text, context, source)?))
+        Ok(self.resolve(text, self.candidates(text, context, source)?, true))
     }
 
     /// What [`decide`](Self::decide) makes of `candidates` in `text`: the
     /// candidates of the detectors, and those of a file's names (ADR-0047)
-    /// beside them.
-    pub(crate) fn resolve(&self, text: &str, candidates: Vec<Candidate>) -> Vec<Decision> {
+    /// beside them. Each decision's [`FEATURES`] with `features`, else only
+    /// those the learned decider reads (#117).
+    pub(crate) fn resolve(
+        &self,
+        text: &str,
+        candidates: Vec<Candidate>,
+        features: bool,
+    ) -> Vec<Decision> {
         let mut out = Vec::new();
         let mut kept = Vec::new();
         for c in candidates {
@@ -490,8 +496,12 @@ impl Detector {
             };
             out.push(self.decision(c, verdict, raised));
         }
+        // The decider reads a candidate below its threshold only.
+        let lifting = self.decider.is_some();
         for d in &mut out {
-            d.features = self.features(text, &d.candidate, &names);
+            if features || (lifting && d.verdict == Verdict::BelowThreshold) {
+                d.features = self.features(text, &d.candidate, &names);
+            }
         }
         // The learned decider (#35): only a candidate below its threshold,
         // never one the allow lists name or whose check failed; it claims
@@ -1394,7 +1404,7 @@ mod tests {
                 confidence: 0.84,
                 detector: "ner".into(),
             };
-            d.resolve(text, vec![c])
+            d.resolve(text, vec![c], false)
                 .into_iter()
                 .filter(|x| x.verdict == Verdict::Kept)
                 .map(|x| text[x.candidate.start..x.candidate.end].to_owned())
