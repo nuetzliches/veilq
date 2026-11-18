@@ -1059,7 +1059,7 @@ impl Engine {
                 area.width,
                 area.height,
                 area.frame
-                    .map(|p| format!(" on page {p}"))
+                    .map(|p| format!(" on page or frame {p}"))
                     .unwrap_or_default()
             ))),
             None => Ok(()),
@@ -1994,7 +1994,7 @@ mod tests {
         };
         // A PDF of two pages: the area on page 3 lies on none (#34).
         let err = e.every_area_marked(&[mark(Some(1))]).unwrap_err();
-        assert!(err.to_string().contains("on page 3"), "{err}");
+        assert!(err.to_string().contains("on page or frame 3"), "{err}");
         assert!(e.every_area_marked(&[mark(Some(1)), mark(Some(3))]).is_ok());
         assert!(engine().every_area_marked(&[]).is_ok(), "no marks");
     }

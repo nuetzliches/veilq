@@ -22,7 +22,8 @@
 //! is not visible for a frame because OCR missed it once. Unchanged frames
 //! are not read again; a frame that changed is read only in bands as wide
 //! as the frame around the rows that changed, and whole when those come to
-//! more than half of it (ADR-0030).
+//! more than half of it (ADR-0030). An area a user marked on a frame is
+//! filled there, changed or not, and stays like any box (#114).
 //!
 //! The output is encoded anew, so EXIF, XMP and text chunks are gone; when
 //! the input had EXIF (camera, time, often GPS), the report has a `METADATA`
@@ -966,6 +967,27 @@ pub fn crop(bytes: &[u8], area: &crate::Area, margin: u32) -> Result<Vec<u8>, Er
     encode(&part, ImageFormat::Png)
 }
 
+/// Frame `n` (from 1) of a GIF as PNG, as decoded, and how many frames it
+/// has: what an area is drawn on and cropped from (#114).
+pub fn gif_frame(bytes: &[u8], n: u64) -> Result<(Vec<u8>, u64), Error> {
+    let frames = GifDecoder::new(Cursor::new(bytes))
+        .map_err(error)?
+        .into_frames();
+    let mut picked = None;
+    let mut count = 0;
+    for frame in frames {
+        let frame = frame.map_err(error)?;
+        count += 1;
+        if count == n {
+            picked = Some(encode(&frame.into_buffer(), ImageFormat::Png)?);
+        }
+    }
+    match picked {
+        Some(png) => Ok((png, count)),
+        None => Err(error(format!("the GIF has no frame {n} ({count} frames)"))),
+    }
+}
+
 /// The format of an image file, from its bytes.
 fn format_of(bytes: &[u8]) -> Result<ImageFormat, Error> {
     image::guess_format(bytes).map_err(|_| error("not an image veilq reads (PNG, JPEG, WebP, GIF)"))
@@ -1062,7 +1084,10 @@ fn redact_changed(
     kept: &[Rect],
 ) -> Result<Vec<Rect>, Error> {
     let (w, h) = img.dimensions();
-    let mut boxes = faces(engine, img, frame, out, kept)?;
+    // An area marked on this frame, filled with the bands' first reading's
+    // boxes as on a whole picture (#114).
+    let mut boxes = marked(engine, img, frame, out);
+    boxes.extend(faces(engine, img, frame, out, kept)?);
     boxes.extend(signatures(engine, img, frame, out, kept)?);
     let margin = MARGIN.max(h / 20);
     let mut bands = changed_bands(before, after, margin);
@@ -1144,8 +1169,21 @@ fn gif(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Outcome,
         let frame = frame.map_err(error)?;
         let delay = frame.delay();
         let original = frame.into_buffer();
+        let n = Some(i as u64 + 1);
         let img = match &prev {
-            Some((before, done)) if *before == original => done.clone(),
+            // A frame like the one before keeps its boxes; an area marked on
+            // it is filled from here on, as a box found here would be (#114).
+            Some((before, done)) if *before == original => {
+                let mut img = done.clone();
+                let areas = marked(engine, &original, n, &mut out);
+                if apply {
+                    for r in &areas {
+                        fill(&mut img, r);
+                    }
+                }
+                boxes.extend(areas);
+                img
+            }
             _ => {
                 let mut img = original.clone();
                 // A box stays while its pixels stand still.
@@ -1159,7 +1197,6 @@ fn gif(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Outcome,
                         fill(&mut img, r);
                     }
                 }
-                let n = Some(i as u64 + 1);
                 let found = match &prev {
                     Some((before, _)) => redact_changed(
                         engine, ocr, before, &original, &mut img, n, apply, &mut out, &boxes,
@@ -1882,6 +1919,35 @@ mod tests {
             m.contains("PERSON at 97x24 at 142,228") && m.contains("--unverified"),
             "{m}"
         );
+    }
+
+    /// A GIF of `colours.len()` frames of 8x8 pixels, each one colour.
+    fn gif_of(colours: &[[u8; 3]]) -> Vec<u8> {
+        let mut buf = Vec::new();
+        {
+            let mut e = GifEncoder::new(&mut buf);
+            for c in colours {
+                let img = RgbaImage::from_pixel(8, 8, Rgba([c[0], c[1], c[2], 255]));
+                e.encode_frame(Frame::new(img)).unwrap();
+            }
+        }
+        buf
+    }
+
+    #[test]
+    fn a_gif_frame_is_given_as_png_with_the_number_of_frames() {
+        let gif = gif_of(&[[255, 255, 255], [0, 0, 0], [0, 0, 0]]);
+        let (png, n) = gif_frame(&gif, 2).unwrap();
+        assert_eq!(n, 3);
+        let img = image::load_from_memory(&png).unwrap().to_rgba8();
+        assert_eq!(img.get_pixel(4, 4).0, [0, 0, 0, 255]);
+        let (first, _) = gif_frame(&gif, 1).unwrap();
+        let first = image::load_from_memory(&first).unwrap().to_rgba8();
+        assert_eq!(first.get_pixel(4, 4).0, [255, 255, 255, 255]);
+        for n in [0, 4] {
+            let e = gif_frame(&gif, n).unwrap_err().to_string();
+            assert!(e.contains("3 frames"), "{e}");
+        }
     }
 
     #[test]

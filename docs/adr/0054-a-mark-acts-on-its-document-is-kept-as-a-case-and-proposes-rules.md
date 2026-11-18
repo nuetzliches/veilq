@@ -23,9 +23,10 @@ ADR is the first two.
   it, a box released is left; an area drawn on an image or a PDF page is
   filled and reported (detector `mark`), and what a detector finds inside a
   released box is left in every round of the check. No other file changes.
-  A value both marked and released is found (fail closed). An area on a
-  GIF's frames, on no page of the input or wholly outside its picture is an
-  error, not a mark left out.
+  A value both marked and released is found (fail closed). An area on no
+  page of the input or wholly outside its picture is an error, not a mark
+  left out; one on a GIF's frame came with
+  [ADR-0057](0057-an-area-is-marked-on-a-gifs-frame-and-stays-while-its-pixels-do.md).
 - **Every mark is a case** under the user's local data (`%LOCALAPPDATA%\veilq\cases`,
   in the MSIX package its own copy), in the format of
   `schema/case.schema.json`: format, place, kind (missed or extra), type,
@@ -96,7 +97,8 @@ ADR is the first two.
 - A proposed pattern is tried on few texts (the document and the cases): a
   shape rule can find more elsewhere than the counts show. The counts are
   a guide, not a guarantee.
-- Marks on Word, Excel and GIF frames, and rules from an area, come later.
+- Marks on Word and Excel, and rules from an area, come later; marks on
+  GIF frames came with ADR-0057.
 
 ## Enforced by
 

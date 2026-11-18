@@ -384,6 +384,7 @@ fn router(state: Arc<AppState>) -> Router {
             get(cases::count).post(cases::add).delete(cases::delete_all),
         )
         .route("/cases/propose", post(cases::propose))
+        .route("/frame", post(cases::frame))
         .route("/policy/rule", post(cases::adopt))
         .route("/folders", get(settings::folders))
         .route("/root", axum::routing::put(settings::set_root))
@@ -924,8 +925,8 @@ fn redact_source(
         Some(n) => Format::from_path(Path::new(n)).map_err(Failure::from)?,
         None => Format::Text,
     };
-    // Fail closed: an area marked where it cannot be applied (a GIF's
-    // frames, text) is an error, not a mark left out.
+    // Fail closed: an area marked where it cannot be applied (text, an
+    // Office file) is an error, not a mark left out.
     if engine.has_picture_marks() && !cases::takes_areas(format) {
         return Err(Failure(
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -1314,6 +1315,92 @@ mod tests {
         assert!(png.starts_with(b"\x89PNG"));
     }
 
+    /// A GIF of two 8x8 frames, white then black.
+    #[cfg(feature = "ocr")]
+    const TWO_FRAME_GIF: &str = "R0lGODlhCAAIAIEAAP///wAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAACAAIAAAIDwABCBxIsKDBgwgTKkwYEAAh+QQBCgABACwAAAAACAAIAIEAAAAAAAAAAAAAAAAIDwABCBxIsKDBgwgTKkwYEAA7";
+
+    #[cfg(feature = "ocr")]
+    #[tokio::test]
+    async fn a_gif_frame_is_shown_and_an_area_on_it_kept_with_its_frame() {
+        use base64::Engine as _;
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let key = age::x25519::Identity::generate();
+        let app = || cases_app(dir.path(), store.path(), Some(key.clone()));
+        // The frame an area is drawn on.
+        let (status, body) = send(
+            app(),
+            json_post(
+                "/api/frame",
+                serde_json::json!({ "data": TWO_FRAME_GIF, "frame": 2 }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["frames"], 2);
+        let png = base64::engine::general_purpose::STANDARD
+            .decode(body["png"].as_str().unwrap())
+            .unwrap();
+        assert!(png.starts_with(b"\x89PNG"));
+        let (status, _) = send(
+            app(),
+            json_post(
+                "/api/frame",
+                serde_json::json!({ "data": TWO_FRAME_GIF, "frame": 3 }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let (status, _) = send(
+            app(),
+            json_post(
+                "/api/frame",
+                serde_json::json!({ "data": ONE_PIXEL_PNG, "frame": 1 }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "not a GIF");
+        // An area on frame 2 is a case on frame 2, its excerpt that frame's.
+        let source =
+            serde_json::json!({ "kind": "upload", "name": "screen.gif", "data": TWO_FRAME_GIF });
+        let mark = |frame: Option<u64>| {
+            let mut area = serde_json::json!({ "x": 1, "y": 1, "width": 4, "height": 4 });
+            if let Some(f) = frame {
+                area["frame"] = f.into();
+            }
+            serde_json::json!({ "kind": "missed_area", "area": area, "entity": "PERSON" })
+        };
+        let (status, body) = send(
+            app(),
+            json_post(
+                "/api/cases",
+                serde_json::json!({ "source": source, "mark": mark(Some(2)) }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let cases = veilq_core::cases::Store::open(store.path()).unwrap();
+        let case = &cases.list().unwrap()[0];
+        assert_eq!(case.format, "gif");
+        assert!(matches!(
+            case.location,
+            veilq_core::Location::Region { frame: Some(2), .. }
+        ));
+        let crop = cases.excerpt(&case.id, &key).unwrap().unwrap();
+        let crop = image::load_from_memory(&crop).unwrap().to_rgba8();
+        assert_eq!(crop.get_pixel(0, 0).0, [0, 0, 0, 255], "frame 2 is black");
+        // Without its frame, an area on a GIF is refused.
+        let (status, _) = send(
+            app(),
+            json_post(
+                "/api/cases",
+                serde_json::json!({ "source": source, "mark": mark(None) }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
     #[tokio::test]
     async fn an_area_where_it_cannot_be_applied_is_refused() {
         let dir = tempfile::tempdir().unwrap();
@@ -1334,6 +1421,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        // An area on a GIF that names no frame.
         let gif =
             serde_json::json!({ "kind": "upload", "name": "clip.gif", "data": ONE_PIXEL_PNG });
         let (status, _) = send(

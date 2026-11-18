@@ -20,6 +20,8 @@ const props = defineProps<{
   anchor?: string;
   side: 'input' | 'output';
   page?: number;
+  /** A GIF's frame rather than a PDF's page: no "Page n" above it (#114). */
+  frame?: boolean;
   zoom?: 'fit' | number;
   /** A drag draws an area to mark (#34), in the picture's pixels. */
   drawing?: boolean;
@@ -134,7 +136,7 @@ const sketch = computed(() => {
 
 <template>
   <div class="pane-image" :class="[side, { fit: zoom === 'fit', scaled: typeof zoom === 'number' }]">
-    <p v-if="page" class="page">{{ t('pdf.page', { page }) }}</p>
+    <p v-if="page && !frame" class="page">{{ t('pdf.page', { page }) }}</p>
     <div
       ref="frame"
       class="frame"

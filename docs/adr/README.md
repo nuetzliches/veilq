@@ -96,3 +96,4 @@ keep it to about a page.
 | [0054](0054-a-mark-acts-on-its-document-is-kept-as-a-case-and-proposes-rules.md) | A mark acts on its document, is kept as a case, and proposes rules | Accepted |
 | [0055](0055-a-verify-round-learns-no-names-and-a-field-label-is-no-name.md) | A verify round learns no names, and a field label is no name | Accepted |
 | [0056](0056-an-area-takes-a-face-or-a-signature-and-the-policy-sets-how-long-excerpts-stay.md) | An area takes a face or a signature, and the policy sets how long excerpts stay | Accepted |
+| [0057](0057-an-area-is-marked-on-a-gifs-frame-and-stays-while-its-pixels-do.md) | An area is marked on a GIF's frame and stays while its pixels do | Accepted |
