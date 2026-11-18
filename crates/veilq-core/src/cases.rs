@@ -5,9 +5,10 @@
 //! One folder per case under [`case_dir`]: `case.json` in the format of
 //! `schema/case.schema.json`, which holds no value, and, where the OS has a
 //! key store, `excerpt.age`: the line, cell or picture crop around the mark,
-//! encrypted with age to the store's key. The excerpt goes after
-//! [`EXCERPT_DAYS`]; the case stays. Without a key the excerpt is never
-//! written, and an excerpt is never written unencrypted (fail closed).
+//! encrypted with age to the store's key, and `twin.age`, its synthetic twin,
+//! encrypted the same way. Both go after [`EXCERPT_DAYS`]; the case stays.
+//! Without a key neither is written, and neither is ever written
+//! unencrypted (fail closed).
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -24,7 +25,11 @@ pub const CASE_VERSION: u32 = 1;
 pub const EXCERPT_DAYS: u64 = 30;
 const CASE_FILE: &str = "case.json";
 const EXCERPT_FILE: &str = "excerpt.age";
-const TWIN_FILE: &str = "twin.txt";
+const TWIN_FILE: &str = "twin.age";
+/// How old a case folder without its `case.json` must be before it counts
+/// as a case whose writing broke, in seconds: a younger one may be a case
+/// another request is writing right now.
+const STALE: u64 = 3_600;
 
 /// What the user marked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -67,21 +72,24 @@ pub struct Case {
     /// The encrypted excerpt, while it is kept.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub excerpt: Option<Excerpt>,
-    /// The synthetic twin, in `twin.txt`, when one reproduces the mistake.
+    /// The synthetic twin, in `twin.age`, while it is kept.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub twin: Option<Twin>,
 }
 
-/// A case's synthetic twin (#34, card point 6): the excerpt with its values
-/// replaced by stand-ins, on which veilq makes the same mistake, holding none
-/// of the original values veilq or the user named. Kept in the clear: it is
-/// the regression set every later rule is tried on.
+/// A case's synthetic twin (#34, card point 6, ADR-0054): the line or cell
+/// around the mark with the values veilq found and the marked one replaced
+/// by stand-ins, on which veilq makes the same mistake. What veilq did not
+/// find stays in it, so it is kept as the excerpt is: encrypted, for
+/// [`EXCERPT_DAYS`]. It is what later rules are tried on.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Twin {
-    /// Byte offsets of the marked value's stand-in in `twin.txt`.
+    /// Byte offsets of the marked value's stand-in in the twin's text.
     pub start: usize,
     pub end: usize,
+    /// When it is deleted, in seconds since 1970 (UTC).
+    pub expires: u64,
 }
 
 /// A candidate at the mark, from [`crate::Explained`], without its value.
@@ -220,6 +228,15 @@ fn write_whole(path: &Path, bytes: &[u8]) -> Result<(), Error> {
     std::fs::rename(&tmp, path).map_err(io(path))
 }
 
+/// Whether `name` is a case id as [`new_id`] makes them: 16 lower-case hex
+/// digits.
+fn is_id(name: &str) -> bool {
+    name.len() == 16
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
 /// A fresh id: hex of a hash of the time, the process and a counter.
 fn new_id(now_nanos: u128) -> String {
     use sha2::Digest;
@@ -246,7 +263,7 @@ impl Store {
 
     fn folder(&self, id: &str) -> Result<PathBuf, Error> {
         // An id names a folder: hex only, so it cannot leave the store.
-        if id.is_empty() || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
+        if !is_id(id) {
             return Err(bad(format!("`{id}` is not a case id")));
         }
         Ok(self.dir.join(id))
@@ -284,12 +301,15 @@ impl Store {
     }
 
     /// Gives case `id` its twin: `text`, the marked value's stand-in at
-    /// `span`. Returns the case as stored.
+    /// `span`, encrypted to `key` and kept for [`EXCERPT_DAYS`] from `now`.
+    /// Returns the case as stored.
     pub fn set_twin(
         &self,
         id: &str,
         text: &str,
         span: std::ops::Range<usize>,
+        key: &age::x25519::Recipient,
+        now: u64,
     ) -> Result<Case, Error> {
         if text.get(span.clone()).is_none_or(str::is_empty) {
             return Err(bad("a twin's span is not in its text"));
@@ -300,22 +320,29 @@ impl Store {
             .find(|c| c.id == id)
             .ok_or_else(|| bad(format!("no case `{id}`")))?;
         let path = self.folder(id)?.join(TWIN_FILE);
-        write_whole(&path, text.as_bytes())?;
+        write_whole(&path, &encrypt(text.as_bytes(), key)?)?;
         case.twin = Some(Twin {
             start: span.start,
             end: span.end,
+            expires: now + EXCERPT_DAYS * 86_400,
         });
         self.write(&case)?;
         Ok(case)
     }
 
-    /// The twin of case `id`, if it has one.
-    pub fn twin(&self, id: &str) -> Result<Option<String>, Error> {
+    /// The twin of case `id`, decrypted with `identity`; `None` when it has
+    /// none or it is gone.
+    pub fn twin(
+        &self,
+        id: &str,
+        identity: &age::x25519::Identity,
+    ) -> Result<Option<String>, Error> {
         let path = self.folder(id)?.join(TWIN_FILE);
         if !path.exists() {
             return Ok(None);
         }
-        std::fs::read_to_string(&path).map(Some).map_err(io(&path))
+        let plain = decrypt(&std::fs::read(&path).map_err(io(&path))?, identity, &path)?;
+        String::from_utf8(plain).map(Some).map_err(bad)
     }
 
     fn write(&self, case: &Case) -> Result<(), Error> {
@@ -324,13 +351,16 @@ impl Store {
         write_whole(&path, &json)
     }
 
-    /// The case folders, and whether each holds its `case.json` (it is
-    /// written last: a folder without one is a case whose writing broke).
+    /// The case folders, named by a case id ([`is_id`]): nothing else in
+    /// the store's folder is the store's. With each, whether it holds its
+    /// `case.json` (it is written last: a folder without one is a case
+    /// being written, or one whose writing broke).
     fn folders(&self) -> Result<Vec<(PathBuf, bool)>, Error> {
         let mut out = Vec::new();
         for entry in std::fs::read_dir(&self.dir).map_err(io(&self.dir))? {
-            let path = entry.map_err(io(&self.dir))?.path();
-            if path.is_dir() {
+            let entry = entry.map_err(io(&self.dir))?;
+            let path = entry.path();
+            if path.is_dir() && entry.file_name().to_str().is_some_and(is_id) {
                 let complete = path.join(CASE_FILE).is_file();
                 out.push((path, complete));
             }
@@ -377,13 +407,7 @@ impl Store {
             return Ok(None);
         }
         let data = std::fs::read(&path).map_err(io(&path))?;
-        let decryptor = age::Decryptor::new(&data[..]).map_err(bad)?;
-        let mut reader = decryptor
-            .decrypt(std::iter::once(identity as &dyn age::Identity))
-            .map_err(bad)?;
-        let mut plain = Vec::new();
-        reader.read_to_end(&mut plain).map_err(io(&path))?;
-        Ok(Some(plain))
+        decrypt(&data, identity, &path).map(Some)
     }
 
     pub fn delete(&self, id: &str) -> Result<(), Error> {
@@ -402,27 +426,51 @@ impl Store {
     }
 
     /// Deletes the excerpts whose time is up (their cases stay) and the
-    /// cases whose writing broke. Returns how many excerpts went.
+    /// cases whose writing broke ([`STALE`]). Returns how many excerpts went.
     pub fn purge(&self, now: u64) -> Result<usize, Error> {
         for (folder, complete) in self.folders()? {
-            if !complete {
+            let made = std::fs::metadata(&folder)
+                .and_then(|m| m.modified())
+                .map_err(io(&folder))?
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs());
+            if !complete && made.saturating_add(STALE) <= now {
                 std::fs::remove_dir_all(&folder).map_err(io(&folder))?;
             }
         }
         let mut n = 0;
         for mut case in self.list()? {
-            if case.excerpt.as_ref().is_some_and(|e| e.expires <= now) {
-                let path = self.folder(&case.id)?.join(EXCERPT_FILE);
-                if path.exists() {
+            let excerpt = case.excerpt.as_ref().is_some_and(|e| e.expires <= now);
+            let twin = case.twin.as_ref().is_some_and(|t| t.expires <= now);
+            for (gone, file) in [(excerpt, EXCERPT_FILE), (twin, TWIN_FILE)] {
+                let path = self.folder(&case.id)?.join(file);
+                if gone && path.exists() {
                     std::fs::remove_file(&path).map_err(io(&path))?;
                 }
+            }
+            if excerpt {
                 case.excerpt = None;
-                self.write(&case)?;
                 n += 1;
+            }
+            if twin {
+                case.twin = None;
+            }
+            if excerpt || twin {
+                self.write(&case)?;
             }
         }
         Ok(n)
     }
+}
+
+fn decrypt(data: &[u8], identity: &age::x25519::Identity, path: &Path) -> Result<Vec<u8>, Error> {
+    let decryptor = age::Decryptor::new(data).map_err(bad)?;
+    let mut reader = decryptor
+        .decrypt(std::iter::once(identity as &dyn age::Identity))
+        .map_err(bad)?;
+    let mut plain = Vec::new();
+    reader.read_to_end(&mut plain).map_err(io(path))?;
+    Ok(plain)
 }
 
 fn encrypt(bytes: &[u8], key: &age::x25519::Recipient) -> Result<Vec<u8>, Error> {
@@ -555,34 +603,93 @@ mod tests {
     }
 
     #[test]
-    fn a_case_whose_writing_broke_is_skipped_and_purged() {
+    fn a_case_whose_writing_broke_is_skipped_and_purged_once_it_is_old() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).unwrap();
         store.add(case(), None, None, 1).unwrap();
-        // An excerpt written, the case file not: the writing broke.
-        std::fs::create_dir(dir.path().join("0123abcd")).unwrap();
-        std::fs::write(dir.path().join("0123abcd").join(EXCERPT_FILE), b"x").unwrap();
+        // An excerpt written, the case file not: the writing broke, or
+        // another request is writing it right now.
+        let broken = dir.path().join("0123456789abcdef");
+        std::fs::create_dir(&broken).unwrap();
+        std::fs::write(broken.join(EXCERPT_FILE), b"x").unwrap();
         assert_eq!(store.list().unwrap().len(), 1);
-        store.purge(2).unwrap();
-        assert!(!dir.path().join("0123abcd").exists());
+        let made = std::fs::metadata(&broken)
+            .unwrap()
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        store.purge(made).unwrap();
+        assert!(broken.exists(), "a case being written is left");
+        store.purge(made + STALE).unwrap();
+        assert!(!broken.exists());
         assert_eq!(store.list().unwrap().len(), 1);
     }
 
     #[test]
-    fn a_twin_is_kept_beside_its_case_and_goes_with_it() {
+    fn only_case_folders_are_the_stores() {
+        // A store in a folder that holds other things (`VEILQ_CASE_DIR`
+        // set to one): they are not cases, and nothing deletes them.
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).unwrap();
-        let stored = store.add(case(), None, None, 1).unwrap();
-        assert_eq!(store.twin(&stored.id).unwrap(), None);
-        let twin = "Termin mit Jonas Keller am Montag";
-        let with = store.set_twin(&stored.id, twin, 11..23).unwrap();
-        assert_eq!(with.twin, Some(Twin { start: 11, end: 23 }));
+        store.add(case(), None, None, 1).unwrap();
+        for other in ["Fotos", "deadbeef", "0123456789ABCDEF"] {
+            std::fs::create_dir(dir.path().join(other)).unwrap();
+            std::fs::write(dir.path().join(other).join("note.txt"), b"x").unwrap();
+        }
+        store.purge(u64::MAX / 2).unwrap();
+        assert_eq!(store.list().unwrap().len(), 1);
+        assert_eq!(store.delete_all().unwrap(), 1);
+        for other in ["Fotos", "deadbeef", "0123456789ABCDEF"] {
+            assert!(dir.path().join(other).join("note.txt").exists(), "{other}");
+        }
+    }
+
+    #[test]
+    fn a_twin_is_kept_encrypted_beside_its_case_and_goes_in_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let key = age::x25519::Identity::generate();
+        let stored = store.add(case(), None, None, 1_000).unwrap();
+        assert_eq!(store.twin(&stored.id, &key).unwrap(), None);
+        // What veilq did not find stays in a twin (`Brandt`): never in the
+        // clear (#34, ADR-0054).
+        let twin = "Termin mit Jonas Keller und Frau Brandt am Montag";
+        let with = store
+            .set_twin(&stored.id, twin, 11..23, &key.to_public(), 1_000)
+            .unwrap();
+        let expires = 1_000 + 30 * 86_400;
+        assert_eq!(
+            with.twin,
+            Some(Twin {
+                start: 11,
+                end: 23,
+                expires
+            })
+        );
         assert_eq!(store.list().unwrap()[0].twin, with.twin);
-        assert_eq!(store.twin(&stored.id).unwrap().as_deref(), Some(twin));
+        assert_eq!(store.twin(&stored.id, &key).unwrap().as_deref(), Some(twin));
+        for entry in walk(dir.path()) {
+            let bytes = std::fs::read(&entry).unwrap();
+            assert!(
+                !bytes.windows(6).any(|w| w == b"Brandt"),
+                "{} holds the twin in the clear",
+                entry.display()
+            );
+        }
         assert!(
-            store.set_twin(&stored.id, twin, 30..40).is_err(),
+            store
+                .set_twin(&stored.id, twin, 60..70, &key.to_public(), 1_000)
+                .is_err(),
             "outside the text"
         );
+        // Its time up, it goes; the case stays.
+        store.purge(expires - 1).unwrap();
+        assert!(store.twin(&stored.id, &key).unwrap().is_some());
+        store.purge(expires).unwrap();
+        assert_eq!(store.twin(&stored.id, &key).unwrap(), None);
+        assert_eq!(store.list().unwrap()[0].twin, None);
         assert_eq!(store.delete_all().unwrap(), 1);
         assert!(!dir.path().join(&stored.id).exists());
     }

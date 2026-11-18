@@ -1230,11 +1230,11 @@ mod tests {
         ));
         // The miss's twin: the text with stand-ins, the marked one at its span.
         let store_ = veilq_core::cases::Store::open(store.path()).unwrap();
-        let twin = store_.twin(&missed.id).unwrap().expect("a twin");
+        let twin = store_.twin(&missed.id, &key).unwrap().expect("a twin");
         let span = missed.twin.as_ref().unwrap();
         assert!(twin.starts_with("Projekt "), "{twin}");
         assert!(!twin[span.start..span.end].is_empty());
-        assert!(store_.twin(&extra.id).unwrap().is_none());
+        assert!(store_.twin(&extra.id, &key).unwrap().is_none());
         // No file of the store holds a value in the clear.
         let mut files = vec![store.path().to_owned()];
         while let Some(p) = files.pop() {
@@ -1519,6 +1519,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_case_keeps_the_line_of_its_mark_not_the_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let key = age::x25519::Identity::generate();
+        // The second line holds a value veilq does not find: neither the
+        // excerpt nor the twin keep it.
+        let text = "Projekt Falkenstein.\nRuf Paul Wiese an.";
+        let source = serde_json::json!({ "kind": "text", "text": text });
+        let mark =
+            serde_json::json!({ "kind": "missed", "value": "Falkenstein", "entity": "LOCATION" });
+        let (status, body) = send(
+            cases_app(dir.path(), store.path(), Some(key.clone())),
+            json_post(
+                "/api/cases",
+                serde_json::json!({ "source": source, "mark": mark }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let store = veilq_core::cases::Store::open(store.path()).unwrap();
+        let case = &store.list().unwrap()[0];
+        let excerpt = store.excerpt(&case.id, &key).unwrap().unwrap();
+        assert_eq!(excerpt, b"Projekt Falkenstein.");
+        if let Some(twin) = store.twin(&case.id, &key).unwrap() {
+            assert!(!twin.contains('\n'), "{twin}");
+        }
+    }
+
+    #[tokio::test]
     async fn without_a_key_store_a_case_keeps_no_excerpt() {
         let dir = tempfile::tempdir().unwrap();
         let store = tempfile::tempdir().unwrap();
@@ -1535,6 +1564,8 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["excerpt"], false);
+        // Nor a twin: it keeps what veilq did not find (ADR-0054).
+        assert_eq!(body["twin"], false, "{body}");
         // A mark on text that is not there is refused, and kept nowhere.
         let wrong =
             serde_json::json!({ "kind": "missed", "value": "Nirgendwo", "entity": "LOCATION" });

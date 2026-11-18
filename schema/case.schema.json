@@ -246,15 +246,21 @@
     },
     "Twin": {
       "additionalProperties": false,
-      "description": "A case's synthetic twin (#34, card point 6): the excerpt with its values\nreplaced by stand-ins, on which veilq makes the same mistake, holding none\nof the original values veilq or the user named. Kept in the clear: it is\nthe regression set every later rule is tried on.",
+      "description": "A case's synthetic twin (#34, card point 6, ADR-0054): the line or cell\naround the mark with the values veilq found and the marked one replaced\nby stand-ins, on which veilq makes the same mistake. What veilq did not\nfind stays in it, so it is kept as the excerpt is: encrypted, for\n[`EXCERPT_DAYS`]. It is what later rules are tried on.",
       "properties": {
         "end": {
           "format": "uint",
           "minimum": 0,
           "type": "integer"
         },
+        "expires": {
+          "description": "When it is deleted, in seconds since 1970 (UTC).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "start": {
-          "description": "Byte offsets of the marked value's stand-in in `twin.txt`.",
+          "description": "Byte offsets of the marked value's stand-in in the twin's text.",
           "format": "uint",
           "minimum": 0,
           "type": "integer"
@@ -262,7 +268,8 @@
       },
       "required": [
         "start",
-        "end"
+        "end",
+        "expires"
       ],
       "type": "object"
     }
@@ -334,7 +341,7 @@
           "type": "null"
         }
       ],
-      "description": "The synthetic twin, in `twin.txt`, when one reproduces the mistake."
+      "description": "The synthetic twin, in `twin.age`, while it is kept."
     },
     "veilq": {
       "description": "The veilq that made the mistake.",

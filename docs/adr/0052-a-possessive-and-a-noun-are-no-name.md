@@ -52,6 +52,9 @@ names of the file, so `Ihr` is never a finding.
 
 - `Ihre Nachricht`, `Ihr Anliegen`, `deine Anfrage` in a sentence are no
   longer filled, and their words no longer fill the rest of the file.
+- A sign-off on the greeting's line counts as alone too: the pair ending
+  its line after a comma (`Viele Grüße, Ihre Lena`) keeps the name (found
+  in the code review before 0.5.0).
 - A possessive and a single name inside a sentence (`Grüße an Ihre Lena`)
   is dropped. A cue before it, a whole name, or the name elsewhere in the
   file still finds it.

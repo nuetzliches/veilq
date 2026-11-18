@@ -201,11 +201,12 @@ context = { words = ["az", "aktenzeichen", "geschäftszeichen", "akte", "verfahr
 # The value after a word that names a file's number, whatever its shape, as
 # long as it holds a digit: `Aktenzeichen: 26431907720`, `Az. 12-345-6`,
 # `Geschäftszeichen KL-4471`. A dunning court's number has no slash, and a
-# firm's own has letters; `court-file` knows neither.
+# firm's own has letters; `court-file` knows neither. `Az` is a word of its
+# own, not the start of one (`Azure-VM1`).
 [[patterns]]
 name = "file-number-label"
 entity = "COURT_FILE_NUMBER"
-regex = '(?i:\b(?:aktenzeichen|az\.?|geschäftszeichen|geschäftsnummer|(?:unser|ihr)\s+zeichen))[ \t]*:?[ \t]*(?P<pii>\d(?:[\p{L}\d./\-]*[\p{L}\d])?|\p{L}[\p{L}./\-]*\d(?:[\p{L}\d./\-]*[\p{L}\d])?)'
+regex = '(?i:\b(?:aktenzeichen|az\b\.?|geschäftszeichen|geschäftsnummer|(?:unser|ihr)\s+zeichen))[ \t]*:?[ \t]*(?P<pii>\d(?:[\p{L}\d./\-]*[\p{L}\d])?|\p{L}[\p{L}./\-]*\d(?:[\p{L}\d./\-]*[\p{L}\d])?)'
 confidence = 0.8
 
 # A German dunning court's number: two digits of the year, seven, and two

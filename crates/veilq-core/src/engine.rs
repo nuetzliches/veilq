@@ -508,6 +508,7 @@ impl Engine {
             Format::Pdf => self.pdf(input, apply)?,
             _ => crate::office::process(self, input, apply)?,
         };
+        self.every_area_marked(&o.findings)?;
         let report = self.report(o.findings, o.review_reasons);
         Ok((
             o.output,
@@ -1011,14 +1012,12 @@ impl Engine {
         self.detector.has_decider()
     }
 
-    /// This engine writing pictures without the `veilq <version>` mark
-    /// (`--no-watermark`, ADR-0050) when `off`; with `false` as it was. A
-    /// policy that switched the mark off is not overridden.
     /// This engine with the areas a user marked on a picture (#34), for this
-    /// run: each `missed` area is filled and reported as its type before
-    /// the picture is read; what a detector finds inside a `released` area
-    /// is left, in every round of the check. A still image's area has no
-    /// frame, a PDF page's names its page.
+    /// run: each `missed` area is reported as its type and filled with the
+    /// picture's first reading (ADR-0053); what a detector finds inside a
+    /// `released` area is left, in every round of the check. A still
+    /// image's area has no frame, a PDF page's names its page; an area that
+    /// lies on no page or wholly outside its picture is an error.
     pub fn with_picture_marks(&self, missed: Vec<(Area, EntityType)>, released: Vec<Area>) -> Self {
         let mut engine = self.clone();
         engine.picture_marks = std::sync::Arc::new(PictureMarks { missed, released });
@@ -1035,6 +1034,38 @@ impl Engine {
         !self.picture_marks.missed.is_empty() || !self.picture_marks.released.is_empty()
     }
 
+    /// Fail closed: each area marked as missed was reported (detector
+    /// `mark`) by the run that made `findings`. One that was not lies on no
+    /// page of the input or wholly outside its picture, and would leave
+    /// what the user marked.
+    fn every_area_marked(&self, findings: &[Finding]) -> Result<(), Error> {
+        // Reported where it starts, on its frame (clipped at the far edges
+        // only).
+        let reported = |a: &Area| {
+            findings.iter().any(|f| {
+                f.detector == crate::finding::MARK_DETECTOR
+                    && matches!(f.location, Location::Region { frame, x, y, .. }
+                        if frame == a.frame && x == a.x && y == a.y)
+            })
+        };
+        match self.picture_marks.missed.iter().find(|(a, _)| !reported(a)) {
+            Some((area, _)) => Err(Error::Format(format!(
+                "an area marked at {},{} ({}x{}){} lies on no page of the input or outside its picture",
+                area.x,
+                area.y,
+                area.width,
+                area.height,
+                area.frame
+                    .map(|p| format!(" on page {p}"))
+                    .unwrap_or_default()
+            ))),
+            None => Ok(()),
+        }
+    }
+
+    /// This engine writing pictures without the `veilq <version>` mark
+    /// (`--no-watermark`, ADR-0050) when `off`; with `false` as it was. A
+    /// policy that switched the mark off is not overridden.
     pub fn without_watermark(&self, off: bool) -> Self {
         let mut engine = self.clone();
         engine.no_watermark |= off;
@@ -1911,6 +1942,44 @@ mod tests {
         let e = Engine::new(&off, None, b"seed", None).unwrap();
         let found = values(text, &e.scan_str(text, Format::Text).unwrap());
         assert!(!found.iter().any(|v| v == "Brandt"), "{found:?}");
+    }
+
+    #[test]
+    fn an_area_marked_where_nothing_is_is_an_error() {
+        let area = |frame, x| Area {
+            frame,
+            x,
+            y: 5,
+            width: 20,
+            height: 10,
+        };
+        let person = EntityType::new("PERSON").unwrap();
+        let e = engine().with_picture_marks(
+            vec![
+                (area(Some(1), 10), person.clone()),
+                (area(Some(3), 10), person),
+            ],
+            Vec::new(),
+        );
+        let mark = |frame| Finding {
+            entity: EntityType::new("PERSON").unwrap(),
+            location: Location::Region {
+                part: None,
+                frame,
+                x: 10,
+                y: 5,
+                width: 20,
+                height: 10,
+            },
+            confidence: 1.0,
+            detector: crate::finding::MARK_DETECTOR.into(),
+            pseudonym: None,
+        };
+        // A PDF of two pages: the area on page 3 lies on none (#34).
+        let err = e.every_area_marked(&[mark(Some(1))]).unwrap_err();
+        assert!(err.to_string().contains("on page 3"), "{err}");
+        assert!(e.every_area_marked(&[mark(Some(1)), mark(Some(3))]).is_ok());
+        assert!(engine().every_area_marked(&[]).is_ok(), "no marks");
     }
 
     #[test]
