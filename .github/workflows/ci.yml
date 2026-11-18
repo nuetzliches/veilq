@@ -104,6 +104,7 @@ jobs:
           # downloads only the files at a new path, and a host that is down
           # (an ONNX Runtime release gone 404) does not fail an unchanged one.
           restore-keys: veilq-models-${{ runner.os }}-
+      - name: build
         run: cargo build --release --locked -p veilq -p veilq-eval
       - name: fetch models
         if: steps.models.outputs.cache-hit != 'true'
