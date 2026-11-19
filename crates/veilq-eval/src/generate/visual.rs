@@ -17,6 +17,8 @@ use veilq_core::{EntityType, Location};
 use super::{Lookalikes, Person, Rng, Truth, iban_with_zeros};
 
 const FONT: &[u8] = include_bytes!("../../assets/NotoSans-Regular.ttf");
+/// The hand that fills a form in (#59).
+const HAND: &[u8] = include_bytes!("../../assets/IndieFlower-Regular.ttf");
 
 /// A picture being drawn, with the truth of what is drawn into it.
 struct Canvas {
@@ -37,6 +39,12 @@ impl Canvas {
             frame: None,
             truth: Vec::new(),
         }
+    }
+
+    /// Writes by hand from now on (`true`), or prints again.
+    fn hand(&mut self, on: bool) {
+        self.font =
+            FontRef::try_from_slice(if on { HAND } else { FONT }).expect("a font in assets/");
     }
 
     fn rect(&mut self, x: u32, y: u32, w: u32, h: u32, color: [u8; 3]) {
@@ -299,6 +307,48 @@ pub(super) fn form_jpeg(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
     }];
     truth.extend(c.truth);
     (with_exif(&jpeg(&c.img)), truth)
+}
+
+/// Blue ink of a ballpoint pen.
+const PEN: [u8; 3] = [24, 46, 128];
+/// How large a hand writes on a form's line.
+const HAND_SIZE: f32 = 34.0;
+
+/// A scanned paper form filled in by hand (#59): the labels printed, the
+/// values written in a hand (Caveat) on the lines beside them, each a little
+/// off the line as a hand writes it.
+pub(super) fn handwritten_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
+    let (p, x) = (Person::de(r), Lookalikes::new(r));
+    let mut c = Canvas::new(900, 520, [250, 249, 245]);
+    c.lit(40.0, 28.0, 22.0, "Rückmeldebogen", INK);
+    c.lit(
+        40.0,
+        62.0,
+        14.0,
+        &format!("Bitte in Druckbuchstaben ausfüllen · Vorgang {}", x.invoice),
+        MUTED,
+    );
+    let rows = [
+        (
+            "Name, Vorname",
+            "PERSON",
+            format!("{}, {}", p.last, p.first),
+        ),
+        ("Geburtsdatum", "DATE_OF_BIRTH", p.dob_de(r)),
+        ("Anschrift", "ADDRESS", format!("{}, {}", p.street, p.city)),
+        ("Telefon", "PHONE_NUMBER", p.phone.clone()),
+        ("IBAN", "IBAN_CODE", p.iban_spaced()),
+    ];
+    for (i, (label, entity, value)) in rows.iter().enumerate() {
+        let y = 110.0 + 70.0 * i as f32;
+        c.lit(40.0, y + 14.0, 15.0, label, MUTED);
+        c.rect(220, y as u32 + 44, 640, 1, [150, 150, 150]);
+        c.hand(true);
+        let off = r.below(7) as f32 - 3.0;
+        c.pii(entity, 228.0 + off, y + off, HAND_SIZE, value, PEN);
+        c.hand(false);
+    }
+    (png(&c.img), c.truth)
 }
 
 /// A screenshot of a transfer form: the sender's account in a drop-down,

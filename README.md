@@ -125,8 +125,9 @@ keeps them in the model directory (`veilq models list` shows where;
 | `face` | faces in images, GIF, PDF pages, filled black (found, never recognised) | YuNet 2023mar (OpenCV Zoo, `opencv/face_detection_yunet`), MIT | 0.2 MB |
 | `signature` | handwritten signatures in images, GIF, PDF pages, filled black (found, never compared) | veilq-signature-v3 (`nuetzliches/veilq-signature-v3`): YOLOS-tiny (`mdefrance/yolos-tiny-signature-detection`) fine-tuned by nuetzliches to leave photos, web pages, watermarks, stamps and logos, Apache-2.0 | 26 MB |
 | `pdf` | PDF (with `ocr`) | PDFium (`bblanchon/pdfium-binaries`), BSD-3-Clause | 7 MB |
+| `htr` | handwriting (with `ocr`): a line OCR reads badly is read again as handwriting | de-htr-web-v2 (`naeyn/de-htr-web-v2`), modern German handwriting, Apache-2.0 | 10 MB |
 
-`ner`, `ocr`, `face` and `signature` share ONNX Runtime (Microsoft, MIT, 33 MB), fetched with
+`ner`, `ocr`, `htr`, `face` and `signature` share ONNX Runtime (Microsoft, MIT, 33 MB), fetched with
 the first of them. ONNX Runtime and PDFium are pinned for Windows x86_64,
 Linux x86_64 and arm64, and macOS on Apple Silicon.
 
@@ -136,6 +137,7 @@ veilq models fetch ocr
 veilq models fetch face
 veilq models fetch signature
 veilq models fetch pdf
+veilq models fetch htr
 ```
 
 Without a network: `veilq models install <component> --from <dir>` takes
@@ -151,6 +153,11 @@ digits with low confidence and nothing was blacked out there, the report
 says `review_required` and where. `[picture] low_confidence = "box"` fills
 such a line black instead (as `UNREAD_TEXT`; the purpose `legal` does so),
 `"error"` stops the run.
+
+With `htr` installed, such a line is also read as handwriting, and what
+either reading finds is filled (ADR-0060); the report still asks for a
+review. On synthetic forms filled in by hand it covers about five values
+in six, not all: check the handwriting.
 
 Every picture veilq writes (an image, each GIF frame, each PDF page) carries
 a small `veilq <version>` mark at its bottom right, drawn after redaction.

@@ -893,6 +893,14 @@ impl Engine {
         false
     }
 
+    /// Whether a line OCR reads badly is read again as handwriting (#59).
+    pub fn has_htr(&self) -> bool {
+        #[cfg(feature = "ocr")]
+        return self.ocr.as_ref().is_some_and(|o| o.has_htr());
+        #[cfg(not(feature = "ocr"))]
+        false
+    }
+
     /// Whether the NER model runs.
     pub fn has_ner(&self) -> bool {
         self.detector.has_ner()

@@ -233,7 +233,9 @@ a Homebrew formula in `nuetzliches/homebrew-tap`, winget, the Microsoft Store
   redaction processor, so the same patterns guard telemetry at ingest.
 - O-5: which handwriting recogniser (TrOCR, Kraken models, a small vision
   language model): licence of the weights, quality on German forms, ONNX
-  export, size.
+  export, size. First answer in ADR-0060: `de-htr-web-v2`, a small CTC
+  model for modern German handwriting (Apache-2.0); fine-tuning on review-1
+  cases stays open (O-7).
 - O-6: which speech recogniser and runtime (Whisper in ONNX Runtime or
   whisper.cpp), and how audio is decoded and written: `symphonia` is
   MPL-2.0 and needs an exception in `deny.toml`, an external `ffmpeg` is

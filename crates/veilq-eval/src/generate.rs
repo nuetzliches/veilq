@@ -71,6 +71,9 @@ impl Rng {
 
 // ------------------------------------------------------------------ values
 
+/// The forms filled in by hand per corpus (#59).
+const HANDWRITTEN_FORMS: usize = 4;
+
 const FIRST_DE: &[&str] = &[
     "Lena", "Jonas", "Mira", "Tobias", "Ida", "Felix", "Hanna", "Lukas", "Sophie", "Paul",
     "Emilia", "Moritz", "Clara", "Jan", "Greta", "Niklas", "Frieda", "Malte", "Wiebke", "Hauke",
@@ -1062,6 +1065,18 @@ pub fn corpus(seed: u64) -> Vec<Doc> {
         content,
         truth,
     });
+    // Forms filled in by hand (#59), from a stream of their own, in a track
+    // of their own: `check` reads them only when asked (`--only
+    // handwriting`), against a gate of their own.
+    let mut r = Rng::new(seed ^ 0x4A2D_7000_0000_0000);
+    for i in 1..=HANDWRITTEN_FORMS {
+        let (content, truth) = visual::handwritten_png(&mut r);
+        docs.push(Doc {
+            path: format!("handwriting/de/png/form-{i}.png"),
+            content,
+            truth,
+        });
+    }
     // Hard negatives for a learned decider (#95), from a stream of their
     // own: minutes whose numbers and dates look like personal data beside
     // the real thing.
@@ -1490,10 +1505,18 @@ mod tests {
                 if t.entity.as_str() == "METADATA" || format.1 == 2 {
                     continue;
                 }
-                // Dark pixels in the box: the value was drawn there.
+                // Dark pixels in the box: the value was drawn there (in a
+                // pen's blue too, whose blue channel is light).
                 let ink = (y..y + height)
                     .flat_map(|yy| (x..x + width).map(move |xx| (xx, yy)))
-                    .filter(|&(xx, yy)| img.get_pixel(xx, yy).0.iter().all(|c| *c < 120))
+                    .filter(|&(xx, yy)| {
+                        img.get_pixel(xx, yy)
+                            .0
+                            .iter()
+                            .map(|c| u32::from(*c))
+                            .sum::<u32>()
+                            < 360
+                    })
                     .count();
                 assert!(ink > 0, "{} {t:?}", d.path);
             }

@@ -19,12 +19,13 @@ use crate::Error;
 /// The detectors a policy can name.
 pub const DETECTORS: &[&str] = &["pattern", "ner", "ocr", "face", "signature", "verifier"];
 
-/// What `veilq models` fetches: the detectors with a model, and `pdf`
-/// (PDFium, which renders a PDF's pages for OCR; ADR-0023).
-pub const COMPONENTS: &[&str] = &["ner", "ocr", "face", "signature", "pdf"];
+/// What `veilq models` fetches: the detectors with a model, `htr` (a second
+/// reading of lines OCR read badly, as handwriting; #59), and `pdf` (PDFium,
+/// which renders a PDF's pages for OCR; ADR-0023).
+pub const COMPONENTS: &[&str] = &["ner", "ocr", "htr", "face", "signature", "pdf"];
 
 /// The detectors that run in ONNX Runtime.
-const ON_RUNTIME: &[&str] = &["ner", "ocr", "face", "signature"];
+const ON_RUNTIME: &[&str] = &["ner", "ocr", "htr", "face", "signature"];
 
 /// A file a detector needs, as compiled into the binary.
 #[derive(Debug)]
@@ -61,6 +62,13 @@ const NER_ONNX: &str = "https://huggingface.co/onnx-community/gliner_multi_pii-v
 /// Face, at a fixed revision (ADR-0023).
 const OCR_DET: &str = "https://huggingface.co/monkt/paddleocr-onnx/resolve/7b02d0a30a07ba2b92ad1ff5a8941ae2c633de65/detection/v3";
 const OCR_LATIN: &str = "https://huggingface.co/monkt/paddleocr-onnx/resolve/7b02d0a30a07ba2b92ad1ff5a8941ae2c633de65/languages/latin";
+
+/// `naeyn/de-htr-web-v2` (Apache-2.0; trained on the ScaDS.AI German
+/// handwriting lines, CC BY 4.0, and `fhswf/german_handwriting`, AFL-3.0, as
+/// its `NOTICE-training-data.md` says): a CTC recogniser of modern German
+/// handwriting, int8, at a fixed revision (#59).
+const HTR: &str =
+    "https://huggingface.co/naeyn/de-htr-web-v2/resolve/6241c1ff0fd42725e0dc46fcd3217469cac851bb";
 
 /// YuNet 2023mar (MIT), the face detector of the OpenCV Zoo, as `opencv`
 /// publishes it on Hugging Face, at a fixed revision (ADR-0038).
@@ -104,6 +112,24 @@ pub const PINNED: &[PinnedFile] = &[
         base: OCR_LATIN,
         name: "dict.txt",
         sha256: "3c0a8a79b612653c25f765271714f71281e4e955962c153e272b7b8c1d2b13ff",
+        member: None,
+        target: None,
+    },
+    PinnedFile {
+        detector: "htr",
+        file: "htr/de-htr-web-v2/model.onnx",
+        base: HTR,
+        name: "model.onnx",
+        sha256: "b576a0a1281b9be46b2574028b75575e041b7d7cb650f063886e733467cc1499",
+        member: None,
+        target: None,
+    },
+    PinnedFile {
+        detector: "htr",
+        file: "htr/de-htr-web-v2/config.json",
+        base: HTR,
+        name: "config.json",
+        sha256: "4ebd69d9d27b398ea3997b031318accc13123f6a8950def1fedc6e364cb758fa",
         member: None,
         target: None,
     },
@@ -287,6 +313,27 @@ pub fn ocr_files(model_dir: &Path) -> Option<(PathBuf, PathBuf, PathBuf, PathBuf
         find("rec.onnx")?,
         find("dict.txt")?,
         runtime,
+    ))
+}
+
+/// The installed files of the handwriting recogniser: model, its
+/// configuration, runtime.
+pub fn htr_files(model_dir: &Path) -> Option<(PathBuf, PathBuf, PathBuf)> {
+    if !installed("htr", model_dir) {
+        return None;
+    }
+    let files = pinned_for("htr");
+    let find = |suffix: &str| {
+        files
+            .iter()
+            .find(|f| f.detector == "htr" && f.file.ends_with(suffix))
+            .map(|f| model_dir.join(f.file))
+    };
+    let runtime = files.iter().find(|f| f.detector == "runtime")?;
+    Some((
+        find("model.onnx")?,
+        find("config.json")?,
+        model_dir.join(runtime.file),
     ))
 }
 

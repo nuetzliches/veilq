@@ -114,6 +114,9 @@ fn about(component: &str) -> &'static str {
         "ocr" => {
             "Text in images, GIFs and PDF pages; without it they are refused. PaddleOCR in ONNX (Apache-2.0), with ONNX Runtime (MIT). About 45 MB."
         }
+        "htr" => {
+            "Handwriting in images, GIFs and PDF pages (needs OCR too): a line OCR reads badly is read again as handwriting, and what either reading finds is filled. Modern German handwriting. de-htr-web-v2 (Apache-2.0), with ONNX Runtime (MIT). About 10 MB."
+        }
         "face" => {
             "Faces in images, GIFs and PDF pages, filled black; found, never recognised. Without it pictures are refused unless the policy keeps faces. YuNet (MIT), with ONNX Runtime (MIT). Under 1 MB."
         }
@@ -141,6 +144,7 @@ pub async fn models(State(state): State<Arc<AppState>>) -> axum::Json<Models> {
                 active: match name {
                     "ner" => engine.has_ner(),
                     "ocr" => engine.has_ocr(),
+                    "htr" => engine.has_htr(),
                     "face" => engine.has_faces(),
                     "signature" => engine.has_signatures(),
                     "pdf" => engine.has_pdf(),

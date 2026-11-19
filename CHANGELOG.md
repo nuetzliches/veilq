@@ -6,7 +6,20 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Handwriting, a first step (#59, ADR-0060): with the new component `htr`
+  (`veilq models fetch htr`, or in the UI's setup; `de-htr-web-v2`,
+  Apache-2.0, about 10 MB), a line OCR reads badly is read a second time
+  as handwriting, from the same box, and what either reading finds is
+  filled. The report asks for a review when it did. Without the component
+  nothing changes.
+
 ### Fixed
+
+- A box filled over text in a picture grows up and down while its edge
+  cuts ink (#59): a hand's loops and tails reached past the line's box OCR
+  found, and the rows of them left unfilled showed part of the value.
 
 - A finding in a picture names the boxes that were filled, one finding
   each, not one box around them all: a name read across lines (a tab's

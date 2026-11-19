@@ -99,3 +99,4 @@ keep it to about a page.
 | [0057](0057-an-area-is-marked-on-a-gifs-frame-and-stays-while-its-pixels-do.md) | An area is marked on a GIF's frame and stays while its pixels do | Accepted |
 | [0058](0058-a-rule-from-an-area-names-the-words-ocr-read-inside-it.md) | A rule from an area names the words OCR read inside it | Accepted |
 | [0059](0059-a-files-values-firms-as-parties-and-lines-cut-by-the-edge.md) | A file's values, firms as parties, and lines cut by the edge | Accepted |
+| [0060](0060-a-line-read-badly-is-read-again-as-handwriting.md) | A line read badly is read again as handwriting | Accepted |

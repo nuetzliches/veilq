@@ -108,7 +108,7 @@ jobs:
         run: cargo build --release --locked -p veilq -p veilq-eval
       - name: fetch models
         if: steps.models.outputs.cache-hit != 'true'
-        run: for m in ner ocr face signature pdf; do target/release/veilq models fetch "$m"; done
+        run: for m in ner ocr htr face signature pdf; do target/release/veilq models fetch "$m"; done
       - name: save models
         if: steps.models.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' && matrix.seeds == '7005'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -124,6 +124,10 @@ jobs:
       # (ADR-0053).
       - name: gate (redaction)
         run: target/release/veilq-eval check eval --ner --ocr --redact --gate eval/gate-ner.toml --held-out ${{ matrix.seeds }} --list 20
+      # The forms filled in by hand (#59, ADR-0060), a track of their own
+      # with a gate of their own.
+      - name: gate (handwriting)
+        run: target/release/veilq-eval check eval --ner --ocr --only handwriting --gate eval/gate-handwriting.toml --held-out ${{ matrix.seeds }} --list 20
 
   eval-models:
     # The check the branch protection names: all parts passed.
