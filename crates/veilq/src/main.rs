@@ -269,7 +269,7 @@ enum ModelsCommand {
     /// Download a detector's files from their pinned URLs (with `curl`) and
     /// install what matches its SHA-256.
     Fetch {
-        /// `ner`, `ocr` or `pdf`.
+        /// `ner`, `ocr`, `htr`, `face`, `signature` or `pdf`.
         detector: String,
     },
     /// Install a detector's files from a directory that holds the downloads
@@ -562,6 +562,16 @@ fn engine(policy: &Policy, action: Option<Action>) -> anyhow::Result<Engine> {
             dict: &dict,
             runtime: &runtime,
         })?;
+        let ocr = match models::htr_files(&dir) {
+            Some((model, config, runtime)) => {
+                ocr.with_htr(veilq_core::ocr::Htr::load(&veilq_core::ocr::HtrFiles {
+                    model: &model,
+                    config: &config,
+                    runtime: &runtime,
+                })?)
+            }
+            None => ocr,
+        };
         engine = engine.with_ocr(std::sync::Arc::new(ocr));
     }
     #[cfg(feature = "ocr")]

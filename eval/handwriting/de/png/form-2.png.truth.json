@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "x": 228,
+        "y": 116,
+        "width": 137,
+        "height": 23
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "region",
+        "x": 231,
+        "y": 191,
+        "width": 93,
+        "height": 15
+      }
+    },
+    {
+      "entity": "ADDRESS",
+      "location": {
+        "kind": "region",
+        "x": 229,
+        "y": 256,
+        "width": 286,
+        "height": 30
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "region",
+        "x": 231,
+        "y": 330,
+        "width": 126,
+        "height": 17
+      }
+    },
+    {
+      "entity": "IBAN_CODE",
+      "location": {
+        "kind": "region",
+        "x": 227,
+        "y": 397,
+        "width": 254,
+        "height": 17
+      }
+    }
+  ]
+}

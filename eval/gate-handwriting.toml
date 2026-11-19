@@ -1,0 +1,18 @@
+# The gate of the forms filled in by hand (#59, ADR-0060): `veilq-eval
+# check eval --ner --ocr --only handwriting --gate eval/gate-handwriting.toml`,
+# on a machine where `veilq models fetch htr` ran beside NER and OCR.
+#
+# A hand is read far worse than print. The values are the worst of seed 1
+# and the held-out seeds 7001 to 7005 when this gate was set (four forms,
+# 20 values each; 101 of 120 covered with the recogniser, 94 without it):
+# raised as veilq gets better, never lowered by a tuning run (ADR-0014).
+[recall]
+default = 0.75
+
+[recall.entities]
+# The street, postcode and town on one line: OCR splits or misreads a part.
+ADDRESS = 0.25
+PHONE_NUMBER = 0.5
+
+[precision]
+min = 0.97

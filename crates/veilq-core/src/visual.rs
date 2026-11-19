@@ -48,6 +48,8 @@ const PAD: u32 = 2;
 
 /// Said when a policy asks for `pseudonymize` or `fake` in a picture.
 pub const BOXES_ONLY: &str = "in a picture every action is a black box: a pseudonym or a stand-in cannot be written into pixels faithfully";
+/// Said when lines read badly were read again as handwriting (#59).
+pub const HANDWRITING: &str = "lines read badly were read again as handwriting, and what either reading found was filled; a word misread in both stays: check the handwriting";
 /// Said when faces were filled: what the detector missed stays.
 pub const FACES_FOUND: &str = "faces were found and filled black; the face detector can miss a face (in profile, small, covered, drawn): check the picture";
 /// Said when signatures were filled: what the detector missed stays, and
@@ -696,7 +698,10 @@ fn candidates(
             engine.ocr_findings(text, context)
         }
     };
-    let p = page(lines);
+    // The page of the first readings: a line read again as handwriting
+    // stands in its box beside it, and is read as a line of its own below.
+    let first: Vec<Line> = lines.iter().filter(|l| !l.handwriting).cloned().collect();
+    let p = page(&first);
     let mut out = Vec::new();
     // The names the page holds: a line read alone does not know them, and
     // `Brandts Kapuze` there is cut to `Brandts` by them.
@@ -800,6 +805,13 @@ fn settle(
         }) {
             return Ok(None);
         }
+        // The machine's reading of handwriting is no transcript a person
+        // confirmed (#59): the report says it was read so.
+        if lines.iter().any(|l| l.handwriting)
+            && !out.review_reasons.iter().any(|r| r == HANDWRITING)
+        {
+            out.review_reasons.push(HANDWRITING.into());
+        }
         // A line the edge cuts that could not be read holds no text to
         // detect in; it is filled whole below (ADR-0059).
         let read: Vec<Line> = lines
@@ -810,6 +822,7 @@ fn settle(
         let candidates = candidates(engine, &read, w, h, round > 1)?;
         let mut new: Vec<Rect> = Vec::new();
         for (c, rects) in candidates {
+            let rects: Vec<Rect> = rects.into_iter().map(|r| to_ink(&rgb, r)).collect();
             // Found twice (page and line), inside a box already filled, or
             // inside a region.
             if rects.is_empty()
@@ -907,6 +920,59 @@ fn settle(
     Ok(Some(filled))
 }
 
+/// How far a pixel's channels lie from the background's for it to be ink.
+const INK: u8 = 60;
+
+/// `r` grown up and down while its top or bottom row cuts ink: a hand's
+/// loops and tails reach past the line's box that OCR found, and the rows
+/// of them left unfilled showed part of the value (#59). Printed text has
+/// background at its box's edges and keeps its box. At most half the box's
+/// height each way, and never past an empty row.
+fn to_ink(img: &image::RgbImage, r: Rect) -> Rect {
+    let (w, h) = img.dimensions();
+    let (x0, x1) = (r.x.min(w), r.right().min(w));
+    if x0 >= x1 || r.y >= h || r.h == 0 {
+        return r;
+    }
+    // The background: the colour most pixels of the box have.
+    let mut counts: std::collections::HashMap<[u8; 3], usize> = std::collections::HashMap::new();
+    for y in r.y..r.bottom().min(h) {
+        for x in x0..x1 {
+            *counts.entry(img.get_pixel(x, y).0).or_default() += 1;
+        }
+    }
+    let Some(bg) = counts
+        .into_iter()
+        .max_by_key(|(c, n)| (*n, *c))
+        .map(|(c, _)| c)
+    else {
+        return r;
+    };
+    let ink = |y: u32| {
+        (x0..x1).any(|x| {
+            img.get_pixel(x, y)
+                .0
+                .iter()
+                .zip(bg)
+                .any(|(p, b)| p.abs_diff(b) > INK)
+        })
+    };
+    let limit = r.h / 2;
+    let mut top = r.y;
+    while top > 0 && r.y - top < limit && ink(top) {
+        top -= 1;
+    }
+    let mut bottom = r.bottom().min(h);
+    while bottom < h && bottom - r.bottom().min(h) < limit && ink(bottom - 1) {
+        bottom += 1;
+    }
+    Rect {
+        y: top,
+        h: bottom - top,
+        ..r
+    }
+}
+
 /// The lines OCR read badly where nothing in `new` covers them, as the
 /// policy says (ADR-0045): `review` notes each for the report's reason,
 /// `box` reports each as `UNREAD_TEXT` and returns its box to fill, `error`
@@ -924,7 +990,9 @@ fn unread(
 ) -> Result<Vec<Rect>, Error> {
     let low = engine.policy().picture.low_confidence.unwrap_or_default();
     let mut boxes = Vec::new();
-    for l in lines {
+    // A reading as handwriting is of a line read badly already: that line
+    // stands for both.
+    for l in lines.iter().filter(|l| !l.handwriting) {
         let weak = l.weak().any(|r| !covered(r, new.iter()));
         let cut = l.cut && (weak || (l.text.trim().is_empty() && !covered(&l.rect, new.iter())));
         if !weak && !cut {
@@ -1434,6 +1502,7 @@ mod tests {
             chars,
             score: 1.0,
             cut: false,
+            handwriting: false,
         }
     }
 
@@ -1863,6 +1932,56 @@ mod tests {
         assert!(found.iter().any(|r| r.y < 110 && r.x >= 590), "{found:?}");
         assert!(found.iter().any(|r| r.y >= 110 && r.x >= 590), "{found:?}");
         assert!(found.iter().all(|r| r.x >= 590), "{found:?}");
+    }
+
+    #[test]
+    fn a_value_read_only_as_handwriting_is_filled() {
+        // OCR made words of a hand-filled IBAN, past what a reading of OCR
+        // forgives (ADR-0037); the reading as handwriting, beside it in the
+        // same box, has it (#59).
+        let engine = Engine::new(&crate::Policy::default(), None, b"test", None).unwrap();
+        let misread = line("Dass Bezug oder Zahlweise", 200, 100);
+        let hand = Line {
+            handwriting: true,
+            ..line("DE38 3253 0528 2447 0698 76", 200, 100)
+        };
+        let ibans = |lines: &[Line]| -> Vec<Rect> {
+            candidates(&engine, lines, 2000, 300, false)
+                .unwrap()
+                .into_iter()
+                .filter(|(c, _)| c.entity.as_str() == "IBAN_CODE")
+                .flat_map(|(_, rects)| rects)
+                .collect()
+        };
+        assert!(ibans(std::slice::from_ref(&misread)).is_empty());
+        let found = ibans(&[misread.clone(), hand]);
+        assert!(!found.is_empty());
+        // In the line's box, padded.
+        assert!(found.iter().all(|r| r.y >= 95 && r.x >= 195), "{found:?}");
+    }
+
+    #[test]
+    fn a_box_that_cuts_ink_grows_until_the_ink_ends() {
+        // A hand's tail two rows below the box, and a form's rule further
+        // down, past an empty row (#59).
+        let mut img = image::RgbImage::from_pixel(100, 60, image::Rgb([250, 250, 250]));
+        for y in 20..32 {
+            img.put_pixel(30, y, image::Rgb([20, 40, 130]));
+        }
+        for x in 0..100 {
+            img.put_pixel(x, 40, image::Rgb([150, 150, 150]));
+        }
+        let r = Rect {
+            x: 10,
+            y: 18,
+            w: 50,
+            h: 12,
+        };
+        let grown = to_ink(&img, r);
+        assert_eq!((grown.y, grown.bottom()), (18, 33));
+        // Printed text with background at its edges keeps its box.
+        let clear = Rect { y: 10, h: 8, ..r };
+        assert_eq!(to_ink(&img, clear), clear);
     }
 
     #[test]

@@ -172,6 +172,9 @@ pub struct Line {
     /// Cut by the picture's top or bottom edge, found only with a margin
     /// added there (ADR-0059); its text may be empty: none could be read.
     pub cut: bool,
+    /// Read as handwriting ([`Htr`]): a second reading of a line read
+    /// badly, beside it.
+    pub handwriting: bool,
 }
 
 impl Line {
@@ -194,6 +197,8 @@ pub struct Ocr {
     rec: Mutex<Session>,
     /// Index 0 is the blank; the last, a space.
     alphabet: Vec<String>,
+    /// Reads a line read badly again, as handwriting (#59).
+    htr: Option<Htr>,
 }
 
 /// The files of an installed OCR.
@@ -222,11 +227,25 @@ impl Ocr {
             det: Mutex::new(session(files.det)?),
             rec: Mutex::new(session(files.rec)?),
             alphabet,
+            htr: None,
         })
     }
 
+    /// This OCR with a handwriting recogniser: a line read badly is read
+    /// again by it (#59).
+    pub fn with_htr(mut self, htr: Htr) -> Self {
+        self.htr = Some(htr);
+        self
+    }
+
+    /// Whether lines read badly are read again as handwriting.
+    pub fn has_htr(&self) -> bool {
+        self.htr.is_some()
+    }
+
     /// The lines of text in `img`, top to bottom, left to right; with them
-    /// the lines its top and bottom edge cut ([`Line::cut`]).
+    /// the lines its top and bottom edge cut ([`Line::cut`]), and beside a
+    /// line read badly its reading as handwriting ([`Line::handwriting`]).
     pub fn read(&self, img: &RgbImage) -> Result<Vec<Line>, Error> {
         self.read_edges(img, true, true)
     }
@@ -255,6 +274,29 @@ impl Ocr {
                     cut.push(l);
                 }
             }
+        }
+        // A line read badly is read again as handwriting, from the same box,
+        // and both readings are kept: a finding in either is filled (#59).
+        // The scores of the two models are not alike; neither replaces the
+        // other.
+        if let Some(htr) = &self.htr {
+            let mut second = Vec::new();
+            // At most so many per reading: a picture of thin, wide noise
+            // made thousands of calls (security review before 0.7.0). The
+            // lines past them stay read badly, as the policy says.
+            for l in lines
+                .iter()
+                .filter(|l| l.weak().next().is_some())
+                .take(HTR_LINES)
+            {
+                if let Some(h) = htr.recognise(img, l.rect)?
+                    && !h.text.trim().is_empty()
+                    && h.text != l.text
+                {
+                    second.push(h);
+                }
+            }
+            lines.extend(second);
         }
         lines.extend(cut);
         lines.sort_by_key(|l| (l.rect.y + l.rect.h / 2, l.rect.x));
@@ -340,6 +382,7 @@ impl Ocr {
                         .map(|(s, e, r)| (s, e, place(r)))
                         .collect(),
                     cut: true,
+                    handwriting: false,
                     ..l
                 },
                 _ => Line {
@@ -349,6 +392,7 @@ impl Ocr {
                     score: 0.0,
                     scores: Vec::new(),
                     cut: true,
+                    handwriting: false,
                 },
             });
         }
@@ -420,65 +464,263 @@ impl Ocr {
                 self.alphabet.len()
             )));
         }
-        // Greedy CTC: per step the best class; a run of one class is one
-        // character, a blank ends a run.
-        let mut runs: Vec<(usize, usize, usize, f32)> = Vec::new(); // class, first, last, score
-        let mut prev = 0;
-        for t in 0..steps {
-            let row = &probs[t * classes..(t + 1) * classes];
-            let (best, p) =
-                row.iter().enumerate().fold(
-                    (0, f32::MIN),
-                    |a, (i, v)| if *v > a.1 { (i, *v) } else { a },
-                );
-            if best != 0 {
-                if best == prev
-                    && let Some(last) = runs.last_mut()
-                {
-                    last.2 = t;
-                    last.3 = last.3.max(p);
-                } else {
-                    runs.push((best, t, t, p));
+        Ok(decode(probs, steps, classes, &self.alphabet, rect))
+    }
+}
+
+/// The line read from `rect`: greedy CTC over `probs`, `steps` rows of
+/// `classes` probabilities, class 0 the blank and class `i` the
+/// `alphabet`'s `i`th. Per step the best class; a run of one class is one
+/// character, a blank ends a run. `None` when nothing was read.
+fn decode(
+    probs: &[f32],
+    steps: usize,
+    classes: usize,
+    alphabet: &[String],
+    rect: Rect,
+) -> Option<Line> {
+    let mut runs: Vec<(usize, usize, usize, f32)> = Vec::new(); // class, first, last, score
+    let mut prev = 0;
+    for t in 0..steps {
+        let row = &probs[t * classes..(t + 1) * classes];
+        let (best, p) =
+            row.iter().enumerate().fold(
+                (0, f32::MIN),
+                |a, (i, v)| if *v > a.1 { (i, *v) } else { a },
+            );
+        if best != 0 {
+            if best == prev
+                && let Some(last) = runs.last_mut()
+            {
+                last.2 = t;
+                last.3 = last.3.max(p);
+            } else {
+                runs.push((best, t, t, p));
+            }
+        }
+        prev = best;
+    }
+    if runs.is_empty() {
+        return None;
+    }
+    let step = rect.w as f32 / steps as f32;
+    let mut text = String::new();
+    let mut chars = Vec::new();
+    for (k, (class, first, _, _)) in runs.iter().enumerate() {
+        // A character reaches from its first step to the next one's.
+        let end_step = runs.get(k + 1).map_or(steps, |n| n.1);
+        // A step more on each side: CTC places a character's first step
+        // after its left edge, and a box must not leave a stroke.
+        let x0 = rect.x + ((*first as f32 - 1.0).max(0.0) * step) as u32;
+        let x1 = (rect.x + ((end_step as f32 + 1.0) * step).ceil() as u32).min(rect.right());
+        let start = text.len();
+        text.push_str(&alphabet[*class]);
+        chars.push((
+            start,
+            text.len(),
+            Rect {
+                x: x0,
+                y: rect.y,
+                w: (x1 - x0).max(1),
+                h: rect.h,
+            },
+        ));
+    }
+    let score = runs.iter().map(|r| r.3).sum::<f32>() / runs.len() as f32;
+    Some(Line {
+        text,
+        rect,
+        chars,
+        score,
+        scores: runs.iter().map(|r| r.3).collect(),
+        cut: false,
+        handwriting: false,
+    })
+}
+
+/// A recogniser of handwritten lines (#59, M5): `naeyn/de-htr-web-v2`, a
+/// CTC model for modern German handwriting (ResNet18 and BiLSTM, int8,
+/// Apache-2.0). It reads a line PaddleOCR read badly a second time, from
+/// the same box: grey, [`HTR_HEIGHT`] high, white padding, at most
+/// [`HTR_WIDTH`] wide per piece; each step covers [`HTR_STRIDE`] columns.
+pub struct Htr {
+    session: Mutex<Session>,
+    /// Index 0 is the blank.
+    alphabet: Vec<String>,
+}
+
+/// The files of an installed handwriting recogniser.
+pub struct HtrFiles<'a> {
+    pub model: &'a Path,
+    /// Its `config.json`, which holds the alphabet.
+    pub config: &'a Path,
+    pub runtime: &'a Path,
+}
+
+const HTR_HEIGHT: u32 = 64;
+/// The lines read badly that one reading of a picture reads again as
+/// handwriting: a hand-filled form has a few dozen.
+const HTR_LINES: usize = 64;
+const HTR_WIDTH: u32 = 1024;
+const HTR_STRIDE: u32 = 4;
+
+impl Htr {
+    pub fn load(files: &HtrFiles) -> Result<Self, Error> {
+        let env = crate::runtime::env(files.runtime)?;
+        let session = Session::builder(env)
+            .map_err(error)?
+            .commit_from_file(files.model)
+            .map_err(|e| error(format!("{}: {e}", files.model.display())))?;
+        let config = std::fs::read_to_string(files.config)
+            .map_err(|e| error(format!("{}: {e}", files.config.display())))?;
+        let config: serde_json::Value = serde_json::from_str(&config)
+            .map_err(|e| error(format!("{}: {e}", files.config.display())))?;
+        let shape = |k: &str| config.get(k).and_then(serde_json::Value::as_u64);
+        if (
+            shape("image_height"),
+            shape("output_stride"),
+            shape("blank_index"),
+        ) != (
+            Some(u64::from(HTR_HEIGHT)),
+            Some(u64::from(HTR_STRIDE)),
+            Some(0),
+        ) {
+            return Err(error(format!(
+                "{}: not the handwriting recogniser veilq reads",
+                files.config.display()
+            )));
+        }
+        let alphabet = config
+            .get("alphabet")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| error(format!("{}: no alphabet", files.config.display())))?;
+        let mut letters = vec![String::new()];
+        letters.extend(alphabet.chars().map(String::from));
+        Ok(Self {
+            session: Mutex::new(session),
+            alphabet: letters,
+        })
+    }
+
+    /// The line in `rect` of `img` read as handwriting; `None` when nothing
+    /// was read. A line wider than [`HTR_WIDTH`] at this height is read in
+    /// pieces, put together again.
+    pub fn recognise(&self, img: &RgbImage, rect: Rect) -> Result<Option<Line>, Error> {
+        let crop = imageops::crop_imm(img, rect.x, rect.y, rect.w, rect.h).to_image();
+        let width = ((HTR_HEIGHT as f32 * rect.w as f32 / rect.h.max(1) as f32).ceil() as u32)
+            .clamp(HTR_STRIDE, 16 * HTR_WIDTH);
+        let grey = imageops::grayscale(&imageops::resize(
+            &crop,
+            width,
+            HTR_HEIGHT,
+            imageops::FilterType::Triangle,
+        ));
+        let mut out: Option<Line> = None;
+        let mut x = 0;
+        // Whether the piece before ended in a blank column.
+        let mut gap = false;
+        while x < width {
+            let (piece, blank) = cut(&grey, x, width);
+            let padded = piece.div_ceil(HTR_STRIDE) * HTR_STRIDE;
+            let plane = (padded * HTR_HEIGHT) as usize;
+            let mut data = vec![1f32; plane];
+            for y in 0..HTR_HEIGHT {
+                for i in 0..piece {
+                    data[(y * padded + i) as usize] =
+                        f32::from(grey.get_pixel(x + i, y)[0]) / 255.0;
                 }
             }
-            prev = best;
+            let input =
+                Tensor::from_array(([1usize, 1, HTR_HEIGHT as usize, padded as usize], data))
+                    .map_err(error)?;
+            let mut session = self
+                .session
+                .lock()
+                .map_err(|_| error("a poisoned session"))?;
+            let outputs = session.run(ort::inputs![input]).map_err(error)?;
+            let (shape, logits) = outputs[0].try_extract_tensor::<f32>().map_err(error)?;
+            // [1, steps, classes], or [steps, 1, classes].
+            let (steps, classes) = match shape.iter().map(|d| *d as usize).collect::<Vec<_>>()[..] {
+                [1, s, c] | [s, 1, c] => (s, c),
+                _ => return Err(error(format!("the handwriting recogniser gives {shape:?}"))),
+            };
+            if steps == 0 || classes != self.alphabet.len() {
+                return Err(error(format!(
+                    "the handwriting recogniser gives {classes} classes, its alphabet {}",
+                    self.alphabet.len()
+                )));
+            }
+            let probs = softmax(logits, classes);
+            // The piece's box in the picture: its columns of the line.
+            let scale = rect.w as f32 / width as f32;
+            let x0 = rect.x + (x as f32 * scale) as u32;
+            let x1 = (rect.x + ((x + padded) as f32 * scale).ceil() as u32).min(rect.right());
+            let part = Rect {
+                x: x0,
+                w: (x1 - x0).max(1),
+                ..rect
+            };
+            if let Some(line) = decode(&probs, steps, classes, &self.alphabet, part) {
+                out = Some(match out {
+                    None => line,
+                    Some(mut all) => {
+                        // Cut where the line was blank: a gap between words.
+                        if gap && !all.text.ends_with(' ') && !line.text.starts_with(' ') {
+                            all.text.push(' ');
+                        }
+                        let base = all.text.len();
+                        all.text.push_str(&line.text);
+                        all.chars.extend(
+                            line.chars
+                                .into_iter()
+                                .map(|(s, e, r)| (s + base, e + base, r)),
+                        );
+                        all.scores.extend(line.scores);
+                        all.score = all.scores.iter().sum::<f32>() / all.scores.len() as f32;
+                        all
+                    }
+                });
+            }
+            x += piece;
+            gap = blank;
         }
-        if runs.is_empty() {
-            return Ok(None);
-        }
-        let step = rect.w as f32 / steps as f32;
-        let mut text = String::new();
-        let mut chars = Vec::new();
-        for (k, (class, first, _, _)) in runs.iter().enumerate() {
-            // A character reaches from its first step to the next one's.
-            let end_step = runs.get(k + 1).map_or(steps, |n| n.1);
-            // A step more on each side: CTC places a character's first step
-            // after its left edge, and a box must not leave a stroke.
-            let x0 = rect.x + ((*first as f32 - 1.0).max(0.0) * step) as u32;
-            let x1 = (rect.x + ((end_step as f32 + 1.0) * step).ceil() as u32).min(rect.right());
-            let start = text.len();
-            text.push_str(&self.alphabet[*class]);
-            chars.push((
-                start,
-                text.len(),
-                Rect {
-                    x: x0,
-                    y: rect.y,
-                    w: (x1 - x0).max(1),
-                    h: rect.h,
-                },
-            ));
-        }
-        let score = runs.iter().map(|r| r.3).sum::<f32>() / runs.len() as f32;
-        Ok(Some(Line {
-            text,
+        Ok(out.map(|l| Line {
             rect,
-            chars,
-            score,
-            scores: runs.iter().map(|r| r.3).collect(),
-            cut: false,
+            handwriting: true,
+            ..l
         }))
     }
+}
+
+/// Lighter than this, a column of the grey line holds no ink.
+const BLANK: u8 = 200;
+
+/// How many columns of `grey` from `x` on, up to `width`, are read as one
+/// piece: all that is left when it fits [`HTR_WIDTH`], else up to the last
+/// blank column in its last quarter, so that no character is cut in two
+/// (#137 review); a line without one there is cut at the limit. Whether the
+/// cut lies in a blank column.
+fn cut(grey: &image::GrayImage, x: u32, width: u32) -> (u32, bool) {
+    if width - x <= HTR_WIDTH {
+        return (width - x, false);
+    }
+    let blank = |c: u32| (0..grey.height()).all(|y| grey.get_pixel(x + c, y)[0] >= BLANK);
+    match (HTR_WIDTH * 3 / 4..HTR_WIDTH).rev().find(|&c| blank(c)) {
+        Some(c) => (c + 1, true),
+        None => (HTR_WIDTH, false),
+    }
+}
+
+/// Each row of `classes` logits as probabilities.
+fn softmax(logits: &[f32], classes: usize) -> Vec<f32> {
+    let mut out = Vec::with_capacity(logits.len());
+    for row in logits.chunks(classes) {
+        let max = row.iter().copied().fold(f32::MIN, f32::max);
+        let exp: Vec<f32> = row.iter().map(|v| (v - max).exp()).collect();
+        let sum: f32 = exp.iter().sum();
+        out.extend(exp.into_iter().map(|e| e / sum));
+    }
+    out
 }
 
 /// The size the detector reads an image of `w` x `h` at: its longer side
@@ -651,6 +893,82 @@ mod tests {
         for e in expect.split('|') {
             assert!(all.contains(e), "{e:?} not in {all:?}");
         }
+    }
+
+    #[test]
+    fn a_long_line_is_cut_in_a_blank_column() {
+        // Ink everywhere but one blank column in the piece's last quarter.
+        let w = HTR_WIDTH + 300;
+        let mut grey = image::GrayImage::from_pixel(w, HTR_HEIGHT, image::Luma([20]));
+        for y in 0..HTR_HEIGHT {
+            grey.put_pixel(900, y, image::Luma([250]));
+        }
+        assert_eq!(cut(&grey, 0, w), (901, true));
+        // None there: at the limit; what fits, whole.
+        assert_eq!(cut(&grey, 901, w), (w - 901, false));
+        let full = image::GrayImage::from_pixel(w, HTR_HEIGHT, image::Luma([20]));
+        assert_eq!(cut(&full, 0, w), (HTR_WIDTH, false));
+    }
+
+    #[test]
+    fn logits_become_probabilities_per_step() {
+        let p = softmax(&[0.0, 0.0, 2.0, 1.0, 1.0, 1.0], 3);
+        assert!((p[0] - p[1]).abs() < 1e-6 && p[2] > 0.7);
+        assert!((p[3..].iter().sum::<f32>() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_ctc_path_gives_characters_with_their_columns() {
+        // Steps of three classes (blank, `a`, `b`) over a box 40 wide.
+        let alphabet: Vec<String> = ["", "a", "b"].map(String::from).to_vec();
+        let steps = [
+            [0.1, 0.8, 0.1],
+            [0.1, 0.8, 0.1],
+            [0.9, 0.05, 0.05],
+            [0.1, 0.1, 0.8],
+        ];
+        let probs: Vec<f32> = steps.iter().flatten().copied().collect();
+        let rect = Rect {
+            x: 100,
+            y: 10,
+            w: 40,
+            h: 20,
+        };
+        let line = decode(&probs, 4, 3, &alphabet, rect).unwrap();
+        assert_eq!(line.text, "ab");
+        assert_eq!(line.chars.len(), 2);
+        assert!(line.chars[0].2.x >= 100 && line.chars[1].2.right() <= 140);
+        assert!(!line.handwriting);
+    }
+
+    /// The real recogniser, when installed: VEILQ_HTR_DIR (model.onnx,
+    /// config.json), VEILQ_ORT_DYLIB, and a picture of one handwritten line
+    /// VEILQ_HTR_IMAGE that reads VEILQ_HTR_EXPECT.
+    #[test]
+    fn the_handwriting_recogniser_reads_a_line() {
+        let (Ok(dir), Ok(dylib), Ok(image), Ok(expect)) = (
+            std::env::var("VEILQ_HTR_DIR"),
+            std::env::var("VEILQ_ORT_DYLIB"),
+            std::env::var("VEILQ_HTR_IMAGE"),
+            std::env::var("VEILQ_HTR_EXPECT"),
+        ) else {
+            return;
+        };
+        let dir = Path::new(&dir);
+        let htr = Htr::load(&HtrFiles {
+            model: &dir.join("model.onnx"),
+            config: &dir.join("config.json"),
+            runtime: Path::new(&dylib),
+        })
+        .unwrap();
+        let img = image::open(image).unwrap().to_rgb8();
+        let (w, h) = img.dimensions();
+        let line = htr
+            .recognise(&img, Rect { x: 0, y: 0, w, h })
+            .unwrap()
+            .unwrap();
+        assert!(line.handwriting);
+        assert!(line.text.contains(&expect), "{:?}", line.text);
     }
 
     #[test]

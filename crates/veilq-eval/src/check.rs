@@ -209,15 +209,28 @@ fn describe(location: &Location) -> String {
     }
 }
 
+/// The track of the forms filled in by hand (#59), under the corpus.
+pub const HANDWRITING: &str = "handwriting";
+
 /// The documents under `dir` (their truth beside them), sorted, those under
 /// `only` (a path prefix like `de/csv`) if given.
 pub fn documents(dir: &Path, only: Option<&str>) -> anyhow::Result<Vec<PathBuf>> {
-    fn walk(d: &Path, out: &mut Vec<PathBuf>) -> anyhow::Result<()> {
+    // The forms filled in by hand (#59) are a track of their own, with a
+    // gate of their own: read only when `only` names them.
+    let handwriting = only.is_some_and(|o| o.starts_with(HANDWRITING));
+    fn walk(
+        root: &Path,
+        d: &Path,
+        handwriting: bool,
+        out: &mut Vec<PathBuf>,
+    ) -> anyhow::Result<()> {
         for e in std::fs::read_dir(d)? {
             let p = e?.path();
             if p.is_dir() {
-                if p.file_name().is_some_and(|n| n != "golden") {
-                    walk(&p, out)?;
+                let skip = p.file_name().is_some_and(|n| n == "golden")
+                    || (!handwriting && p == root.join(HANDWRITING));
+                if !skip {
+                    walk(root, &p, handwriting, out)?;
                 }
             } else if truth_path(&p).is_file() {
                 out.push(p);
@@ -226,7 +239,7 @@ pub fn documents(dir: &Path, only: Option<&str>) -> anyhow::Result<Vec<PathBuf>>
         Ok(())
     }
     let mut out = Vec::new();
-    walk(dir, &mut out)?;
+    walk(dir, dir, handwriting, &mut out)?;
     out.sort();
     if let Some(prefix) = only {
         out.retain(|p| relative(dir, p).starts_with(prefix));
@@ -271,6 +284,17 @@ pub fn engine_for(ner: bool, ocr: bool) -> anyhow::Result<Engine> {
             dict: &dict,
             runtime: &runtime,
         })?;
+        // Handwriting is read where its recogniser is installed (#59).
+        let ocr = match veilq_core::models::htr_files(&dir) {
+            Some((model, config, runtime)) => {
+                ocr.with_htr(veilq_core::ocr::Htr::load(&veilq_core::ocr::HtrFiles {
+                    model: &model,
+                    config: &config,
+                    runtime: &runtime,
+                })?)
+            }
+            None => ocr,
+        };
         let (model, runtime) = veilq_core::models::face_files(&dir).ok_or_else(|| {
             anyhow::anyhow!("the face detector is not installed in {}", dir.display())
         })?;

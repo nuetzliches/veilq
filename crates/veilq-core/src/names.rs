@@ -105,6 +105,11 @@ const TRADE_WORDS: &[&str] = &[
 ];
 /// Characters a value needs to go on the list, its spaces left out.
 const MIN_VALUE: usize = 5;
+/// Characters a value may have to go on the list: each start of a value is
+/// kept, so a value of `n` characters costs `n²/2` bytes, and a mail address
+/// of 64,000 characters took 2 GB (security review before 0.7.0). Longer
+/// values are still found where a detector finds them, only not repeated.
+const MAX_VALUE: usize = 128;
 /// Letters a name's word needs to be found in a word read one edit off.
 const MIN_SIMILAR: usize = 6;
 /// The share of its word's confidence a word read one edit off has.
@@ -310,7 +315,11 @@ impl Names {
                 continue;
             }
             let mut walked = String::new();
-            let mut longest = None;
+            // Every value that ends on the way: the longest that stands
+            // whole is taken, a shorter one when the longer runs on into a
+            // letter or a digit (`KD-48213` in `KD-48213-AB` beside a learned
+            // `KD-48213-A`).
+            let mut ends = Vec::new();
             let mut j = i;
             while j < chars.len() {
                 let (at, c) = chars[j];
@@ -327,12 +336,16 @@ impl Names {
                     break;
                 }
                 if inner.values.contains_key(&walked) {
-                    longest = Some((at + c.len_utf8(), j, walked.clone()));
+                    ends.push((at + c.len_utf8(), j, walked.clone()));
                 }
                 j += 1;
             }
-            match longest {
-                Some((end, last, k)) if !alnum(text[end..].chars().next()) => {
+            let whole = ends
+                .into_iter()
+                .rev()
+                .find(|(end, _, _)| !alnum(text[*end..].chars().next()));
+            match whole {
+                Some((end, last, k)) => {
                     let v = &inner.values[&k];
                     out.push(Candidate {
                         start,
@@ -540,7 +553,8 @@ fn value_key(v: &str) -> String {
 /// Whether a value (its key) goes on the list: five characters or more, one
 /// of them a digit or an `@`. A word alone is a name's to learn, or none.
 fn value_learnable(k: &str) -> bool {
-    k.chars().count() >= MIN_VALUE && k.chars().any(|c| c.is_numeric() || c == '@')
+    (MIN_VALUE..=MAX_VALUE).contains(&k.chars().count())
+        && k.chars().any(|c| c.is_numeric() || c == '@')
 }
 
 /// The confidence of a word read one edit off a name's word of
@@ -906,8 +920,23 @@ mod tests {
         assert_eq!((c.confidence, c.detector.as_str()), (0.8, VALUES_DETECTOR));
         // Whole only: not inside a longer number or word.
         assert!(typed(&names, "B073119 und XB07311").is_empty());
-        // A short value, and one without a digit, stays off the list.
+        // A longer value on the list that runs on into a letter leaves the
+        // shorter one whole before it.
+        learn_value(&names, "Kunde B07311-A", "B07311-A", "CUSTOMER_NUMBER");
+        assert_eq!(
+            typed(&names, "Notiz B07311-AB"),
+            [("B07311".to_owned(), "COURT_FILE_NUMBER".to_owned())]
+        );
+        // A short value, a very long one, and one without a digit, stays
+        // off the list.
         assert!(!learn_value(&names, "Nr. 4711", "4711", "ACCOUNT_NUMBER"));
+        let long = format!("{}@beispiel.de", "x1".repeat(100));
+        assert!(!learn_value(
+            &names,
+            &format!("Kontakt: {long}"),
+            &long,
+            "EMAIL_ADDRESS"
+        ));
         assert!(!learn_value(&names, "in Bremen", "Bremen", "LOCATION"));
         // Off with `[names] values = false`.
         let off = Names::new(false, true);
