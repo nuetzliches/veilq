@@ -6,6 +6,8 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-19
+
 ### Added
 
 - Handwriting, a first step (#59, ADR-0060): with the new component `htr`
@@ -20,7 +22,14 @@ Notable changes per release. The format follows
 - A box filled over text in a picture grows up and down while its edge
   cuts ink (#59): a hand's loops and tails reached past the line's box OCR
   found, and the rows of them left unfilled showed part of the value.
-
+- A value of more than 128 characters no longer goes on a file's list
+  (ADR-0059): each of its starts was kept, and one mail address of 64,000
+  characters took 2 GB and 9 seconds (review before 0.7.0). A detector
+  still finds it where it stands.
+- A shorter value on a file's list is found whole where a longer one that
+  starts like it runs on into a letter or a digit (review before 0.7.0).
+- A page of the UI left open from a server before no longer gets another
+  GIF's frame to draw on: the GIF shown is named by a random number.
 - A finding in a picture names the boxes that were filled, one finding
   each, not one box around them all: a name read across lines (a tab's
   label in a sidebar and a word at the page's far side) showed as a band
