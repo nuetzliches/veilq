@@ -1223,20 +1223,42 @@ impl Engine {
     ) -> Result<Vec<Candidate>, Error> {
         let decisions = self.decisions(text, context, placeholders, source, verify)?;
         // A check's reading finds again what a reading before it lifted.
-        if let Some(lifted) = &self.lifted
-            && !verify
-        {
-            let n = decisions
-                .iter()
-                .filter(|d| d.lifted && d.verdict == Verdict::Kept)
-                .count();
-            lifted.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
+        if !verify {
+            self.count_lifted(
+                decisions
+                    .iter()
+                    .filter(|d| d.lifted && d.verdict == Verdict::Kept)
+                    .count(),
+            );
         }
         Ok(decisions
             .into_iter()
             .filter(|d| d.verdict == Verdict::Kept)
             .map(|d| d.candidate)
             .collect())
+    }
+
+    /// [`findings`](Self::findings) with whether the learned decider lifted
+    /// each, not yet counted: for a text read under several contexts, whose
+    /// written findings are counted once by the caller (#129).
+    pub(crate) fn findings_uncounted(
+        &self,
+        text: &str,
+        context: &str,
+    ) -> Result<Vec<(Candidate, bool)>, Error> {
+        Ok(self
+            .decisions(text, context, true, Source::Text, false)?
+            .into_iter()
+            .filter(|d| d.verdict == Verdict::Kept)
+            .map(|d| (d.candidate, d.lifted))
+            .collect())
+    }
+
+    /// Adds `n` lifted candidates to the run's count.
+    pub(crate) fn count_lifted(&self, n: usize) {
+        if let Some(lifted) = &self.lifted {
+            lifted.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     /// [`decided`](Self::decided)'s decisions on every candidate, its
@@ -1322,7 +1344,7 @@ impl Engine {
                     .map(|d| (d.candidate.start, d.candidate.end))
                     .collect()
             };
-            if names.read(text, &persons, &values, &spans(&decisions)) {
+            if names.read(text, source, &persons, &values, &spans(&decisions)) {
                 decisions = decide(Some(names))?;
             }
         }

@@ -901,14 +901,16 @@ impl Workbook {
             // file's names (ADR-0047) find in it without one. Of two alike,
             // the one a detector found itself, not the file's list
             // repeating it (ADR-0059).
-            let mut every: Vec<Candidate> = Vec::new();
+            // A candidate the decider lifts counts once, where it is
+            // written, not once per reading (#129).
+            let mut every: Vec<(Candidate, bool)> = Vec::new();
             for ctx in &contexts {
-                every.extend(engine.findings(&text, ctx)?);
+                every.extend(engine.findings_uncounted(&text, ctx)?);
             }
             let listed = |c: &Candidate| {
                 c.detector == crate::names::DETECTOR || c.detector == crate::names::VALUES_DETECTOR
             };
-            every.sort_by(|a, b| {
+            every.sort_by(|(a, _), (b, _)| {
                 (b.end - b.start)
                     .cmp(&(a.end - a.start))
                     .then(b.confidence.total_cmp(&a.confidence))
@@ -916,11 +918,14 @@ impl Workbook {
                     .then(a.start.cmp(&b.start))
             });
             let mut all: Vec<Candidate> = Vec::new();
-            for c in every {
+            let mut lifted = 0;
+            for (c, l) in every {
                 if all.iter().all(|a| c.end <= a.start || c.start >= a.end) {
+                    lifted += usize::from(l);
                     all.push(c);
                 }
             }
+            engine.count_lifted(lifted);
             if all.is_empty() {
                 continue;
             }
@@ -1211,6 +1216,43 @@ mod tests {
         assert!(r.findings.iter().any(
             |f| matches!(&f.location, Location::Cell { sheet: Some(s), .. } if s == "Intern")
         ));
+    }
+
+    #[test]
+    fn a_shared_string_counts_its_lifted_candidate_once() {
+        // Read under its column and without one: two readings, one finding,
+        // one lifted candidate (#129).
+        let wb = r#"<workbook xmlns:r="r"><sheets><sheet name="Termine" sheetId="1" r:id="rId1"/></sheets></workbook>"#;
+        let rels = r#"<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>"#;
+        let sst = r#"<sst><si><t>notiz</t></si><si><t>Termin mit Frau Lena Brandt am 03.12.2026 bestätigt.</t></si></sst>"#;
+        let s1 = r#"<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row><row r="2"><c r="A2" t="s"><v>1</v></c></row></sheetData></worksheet>"#;
+        let input = zip(&[
+            ("xl/workbook.xml", wb.as_bytes()),
+            ("xl/_rels/workbook.xml.rels", rels.as_bytes()),
+            ("xl/sharedStrings.xml", sst.as_bytes()),
+            ("xl/worksheets/sheet1.xml", s1.as_bytes()),
+        ]);
+        let decider = std::sync::Arc::new(
+            crate::decider::Decider::from_json(crate::decider::tests::BESIDE_NAME).unwrap(),
+        );
+        let (_, run) = default_engine()
+            .with_decider(decider)
+            .run_bytes(&input, crate::Format::Xlsx, false)
+            .unwrap();
+        let dates = run
+            .report
+            .findings
+            .iter()
+            .filter(|f| f.entity.as_str() == "DATE_OF_BIRTH")
+            .count();
+        assert_eq!(dates, 1);
+        assert!(
+            run.report
+                .review_reasons
+                .contains(&crate::decider::lifted_reason(1)),
+            "{:?}",
+            run.report.review_reasons
+        );
     }
 
     #[test]

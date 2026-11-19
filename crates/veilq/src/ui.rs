@@ -124,6 +124,8 @@ struct AppState {
     loading: (Mutex<ModelState>, std::sync::Condvar),
     /// Where marks are kept as cases (#34).
     cases: cases::Cases,
+    /// The GIF whose frames an area is drawn on (#129).
+    gif: Mutex<Option<cases::ShownGif>>,
 }
 
 pub fn run(options: Options) -> anyhow::Result<()> {
@@ -272,6 +274,7 @@ impl AppState {
             jobs: Mutex::new(HashMap::new()),
             batch: Mutex::new(None),
             loading: (Mutex::new(ModelState::Ready), std::sync::Condvar::new()),
+            gif: Mutex::new(None),
             // A test never writes to the user's cases or key store.
             #[cfg(not(test))]
             cases: cases::Cases::user(),
@@ -1342,6 +1345,43 @@ mod tests {
             .decode(body["png"].as_str().unwrap())
             .unwrap();
         assert!(png.starts_with(b"\x89PNG"));
+        // The next frames by the GIF's name, not sent again (#129).
+        let shown = app();
+        let (status, first) = send(
+            shown.clone(),
+            json_post(
+                "/api/frame",
+                serde_json::json!({ "data": TWO_FRAME_GIF, "frame": 2 }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{first}");
+        let (status, again) = send(
+            shown.clone(),
+            json_post(
+                "/api/frame",
+                serde_json::json!({ "gif": first["gif"], "frame": 2 }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{again}");
+        assert_eq!(
+            (&again["png"], &again["frames"]),
+            (&body["png"], &body["frames"])
+        );
+        for (request, expected) in [
+            (
+                serde_json::json!({ "gif": first["gif"], "frame": 3 }),
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+            (
+                serde_json::json!({ "gif": 99, "frame": 1 }),
+                StatusCode::CONFLICT,
+            ),
+        ] {
+            let (status, _) = send(shown.clone(), json_post("/api/frame", request)).await;
+            assert_eq!(status, expected);
+        }
         let (status, _) = send(
             app(),
             json_post(

@@ -492,14 +492,21 @@ const drawing = ref(false);
 /** The area drawn, while it is offered as a mark; `frame` names a PDF's page or a GIF's frame. */
 const drawnArea = ref<Area | null>(null);
 /** The GIF frame shown to draw on, while drawing: its number (from 1), as PNG, and how many there are. */
-const gifFrame = ref<{ n: number; png: string; frames: number } | null>(null);
+const gifFrame = ref<{ n: number; png: string; frames: number; gif: number; data: string } | null>(null);
 
 async function showFrame(n: number) {
   const data = image.value?.output_base64;
   if (!data) return;
   try {
-    const shown = await api.frame(data, n);
-    gifFrame.value = { n, png: shown.png, frames: shown.frames };
+    // The GIF is sent with its first frame; the next ones name it (#129). Sent anew if the server forgot it.
+    const shown =
+      gifFrame.value?.data === data
+        ? await api.frame(gifFrame.value.gif, n).catch((e) => {
+            if (e instanceof ApiError && e.status === 409) return api.frame(data, n);
+            throw e;
+          })
+        : await api.frame(data, n);
+    gifFrame.value = { n, png: shown.png, frames: shown.frames, gif: shown.gif, data };
     drawnArea.value = null;
   } catch (e) {
     drawing.value = false;

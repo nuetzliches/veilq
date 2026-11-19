@@ -77,8 +77,11 @@ export function httpApi(token: string): Api {
         method: 'POST',
         body: JSON.stringify({ source, mark, min_confidence: minConfidence }),
       }),
-    frame: (data, frame) =>
-      call<{ png: string; frames: number }>('/frame', { method: 'POST', body: JSON.stringify({ data, frame }) }),
+    frame: (gif, frame) =>
+      call<{ png: string; frames: number; gif: number }>('/frame', {
+        method: 'POST',
+        body: JSON.stringify(typeof gif === 'string' ? { data: gif, frame } : { gif, frame }),
+      }),
     adoptRule: (rule) =>
       call<{ path: string; in_use: boolean }>('/policy/rule', { method: 'POST', body: JSON.stringify(rule) }),
     deleteCases: () => call<{ deleted: number }>('/cases', { method: 'DELETE' }),
