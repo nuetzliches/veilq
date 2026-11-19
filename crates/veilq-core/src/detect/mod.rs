@@ -1538,6 +1538,28 @@ mod tests {
                 findings(text, "")
             );
         }
+        // A country before the postcode, as a bank's booking text writes it.
+        for (text, value) in [
+            (
+                "Gutschrift Mira Albers Kelterweg 8 DE 36251 Ebersfeld  Ref",
+                "Kelterweg 8 DE 36251 Ebersfeld",
+            ),
+            (
+                "Kelterweg 8, D-36251 Ebersfeld",
+                "Kelterweg 8, D-36251 Ebersfeld",
+            ),
+            ("Am Anger 7, DE-15938 Lindau", "Am Anger 7, DE-15938 Lindau"),
+            (
+                "lindenstraße 12, D 28195 Bremen",
+                "lindenstraße 12, D 28195 Bremen",
+            ),
+        ] {
+            assert!(
+                found(text, "ADDRESS", value),
+                "{text}: {:?}",
+                findings(text, "")
+            );
+        }
         // A short word before the number is not a street.
         for text in ["Seite 3 von 4, 15938 Lindau", "bis 4, 15938 Lindau"] {
             assert!(
@@ -1562,6 +1584,12 @@ mod tests {
             "ADDRESS",
             "Am Anger 7a\n28195 Bremen"
         ));
+        let abroad = "Frau\nMira Albers\nAm Anger 7a\nD-28195 Bremen";
+        assert!(
+            found(abroad, "ADDRESS", "Am Anger 7a\nD-28195 Bremen"),
+            "{:?}",
+            findings(abroad, "")
+        );
         // A line with more than the street, or a number without a town, is
         // not a block.
         for text in [
@@ -2034,6 +2062,10 @@ values = ["Mira Albers"]
             (
                 "Pia Sommer  Im Grün  5  77855  Achern",
                 "Im Grün  5  77855  Achern",
+            ),
+            (
+                "Pia Sommer  Im Grün  5  D-77855  Achern",
+                "Im Grün  5  D-77855  Achern",
             ),
             // OCR reads a number's letter as another sign, and a cut
             // town's dots as one.
