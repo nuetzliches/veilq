@@ -790,7 +790,10 @@ fn settle(
     for round in 1..=ROUNDS {
         let before = out.findings.len();
         let rgb = DynamicImage::ImageRgba8(img.clone()).to_rgb8();
-        let lines = ocr.read(&rgb)?;
+        // A band's open edge is no edge of the picture: a line cut there is
+        // read when the band grows, and looked for there it made the band
+        // grow toward the whole frame (#129).
+        let lines = ocr.read_edges(&rgb, !band.open_above, !band.open_below)?;
         if lines.iter().any(|l| {
             (band.open_above && l.rect.y <= EDGE)
                 || (band.open_below && l.rect.bottom() + EDGE >= h)
@@ -1015,6 +1018,20 @@ pub fn gif_frame(bytes: &[u8], n: u64) -> Result<(Vec<u8>, u64), Error> {
         Some(png) => Ok((png, count)),
         None => Err(error(format!("the GIF has no frame {n} ({count} frames)"))),
     }
+}
+
+/// Frame `n` (from 1) of a GIF as PNG, as [`gif_frame`], the frames after
+/// it not decoded: where their count is known already (#129).
+pub fn gif_frame_at(bytes: &[u8], n: u64) -> Result<Vec<u8>, Error> {
+    let mut count = 0;
+    for frame in gif_decoder(bytes)?.into_frames() {
+        let frame = frame.map_err(error)?;
+        count += 1;
+        if count == n {
+            return encode(&frame.into_buffer(), ImageFormat::Png);
+        }
+    }
+    Err(error(format!("the GIF has no frame {n} ({count} frames)")))
 }
 
 /// What OCR reads inside `area` of `picture` (a still image, or a GIF's
@@ -2082,6 +2099,9 @@ mod tests {
             let e = gif_frame(&gif, n).unwrap_err().to_string();
             assert!(e.contains("3 frames"), "{e}");
         }
+        // Without counting the frames after it, the same frame.
+        assert_eq!(gif_frame_at(&gif, 2).unwrap(), png);
+        assert!(gif_frame_at(&gif, 4).is_err());
     }
 
     #[test]

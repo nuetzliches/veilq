@@ -22,6 +22,19 @@ Notable changes per release. The format follows
   a bank's booking text writes `Kelterweg 8 DE 36251 Ebersfeld`, a letter
   abroad `D-36251 Ebersfeld`, and no address pattern took the country, so
   street, postcode and town stayed visible.
+- A candidate the learned decider lifts in a spreadsheet's shared string
+  is counted once, not once per reading of the string under its column and
+  without one (#129).
+
+### Changed
+
+- Run time from the review before 0.5.1 (#129): a band of a GIF frame no
+  longer looks for lines cut at its open edges, where it made the band grow
+  toward the whole frame; a name learned late is compared one edit off only
+  with words seen in OCR text, and the list's words are no longer copied
+  for each text; a rule proposed from an area reads the picture once less;
+  drawing on a GIF sends it once and decodes only the frames up to the one
+  shown.
 
 ## [0.6.0] - 2026-11-18
 

@@ -137,7 +137,9 @@ struct Value {
 struct Inner {
     /// Each word as its key ([`key`]), with the highest confidence it was
     /// found at.
-    words: HashMap<String, f32>,
+    /// Shared with a reading in progress, copied only when one is learned
+    /// meanwhile, not per text (#129).
+    words: std::sync::Arc<HashMap<String, f32>>,
     /// The words in the order they were learned, as written.
     order: Vec<String>,
     /// Each value as its key ([`value_key`]).
@@ -148,6 +150,9 @@ struct Inner {
     texts: usize,
     /// Per word ([`key`]), the first text it stood in unfound.
     seen: HashMap<String, usize>,
+    /// [`seen`](Self::seen) in OCR text only, the one text where a word one
+    /// edit off a name's is found.
+    seen_ocr: HashMap<String, usize>,
     /// Per run of letters and digits ([`key`]), the first text it stood in
     /// unfound.
     seen_tokens: HashMap<String, usize>,
@@ -351,6 +356,7 @@ impl Names {
     pub(crate) fn read(
         &self,
         text: &str,
+        source: Source,
         found: &[(usize, usize, f32)],
         values: &[(usize, usize, &EntityType, f32)],
         kept: &[(usize, usize)],
@@ -403,22 +409,26 @@ impl Names {
                     continue;
                 }
                 let k = key(w);
-                match inner.words.get_mut(&k) {
-                    Some(c) => *c = c.max(confidence),
+                match inner.words.get(&k).copied() {
+                    Some(c) => {
+                        if confidence > c {
+                            std::sync::Arc::make_mut(&mut inner.words).insert(k, confidence);
+                        }
+                    }
                     None => {
                         // Late too when a word one edit off stood unfound
-                        // before: OCR text would find it there.
-                        let off = |s: &String| {
-                            self.similar && k.chars().count() >= MIN_SIMILAR && one_edit(&k, s)
-                        };
-                        if inner
-                            .seen
-                            .iter()
-                            .any(|(s, &first)| first < now && (*s == k || off(s)))
-                        {
+                        // before in OCR text: it would be found there. Only
+                        // those are compared, not every word seen (#129).
+                        let off = self.similar
+                            && k.chars().count() >= MIN_SIMILAR
+                            && inner
+                                .seen_ocr
+                                .iter()
+                                .any(|(s, &first)| first < now && one_edit(&k, s));
+                        if off || inner.seen.get(&k).is_some_and(|&first| first < now) {
                             inner.late = true;
                         }
-                        inner.words.insert(k, confidence);
+                        std::sync::Arc::make_mut(&mut inner.words).insert(k, confidence);
                         inner.order.push(w.to_owned());
                         new = true;
                     }
@@ -429,7 +439,16 @@ impl Names {
             if w.chars().count() < MIN_WORD || kept.iter().any(|&(s, e)| s <= start && start < e) {
                 continue;
             }
-            inner.seen.entry(key(w)).or_insert(now);
+            let k = key(w);
+            // As `similar_confidence` would find it.
+            if source == Source::Ocr
+                && self.similar
+                && k.chars().count() + 1 >= MIN_SIMILAR
+                && starts_upper(w)
+            {
+                inner.seen_ocr.entry(k.clone()).or_insert(now);
+            }
+            inner.seen.entry(k).or_insert(now);
         }
         if self.values {
             for (start, t) in tokens_at(text) {
@@ -664,7 +683,13 @@ mod tests {
     fn learn(names: &Names, text: &str, name: &str) -> bool {
         let start = text.find(name).unwrap();
         let end = start + name.len();
-        names.read(text, &[(start, end, 0.9)], &[], &[(start, end)])
+        names.read(
+            text,
+            Source::Text,
+            &[(start, end, 0.9)],
+            &[],
+            &[(start, end)],
+        )
     }
 
     #[test]
@@ -790,14 +815,20 @@ mod tests {
     #[test]
     fn a_name_learned_after_it_stood_unfound_is_late() {
         let names = Names::default();
-        names.read("Brandt ruft an", &[], &[], &[]);
+        names.read("Brandt ruft an", Source::Text, &[], &[], &[]);
         assert!(!names.late());
         learn(&names, "Jonas Brandt", "Jonas Brandt");
         assert!(names.late());
         // Seeded, a second reading knows it from the start.
         let again = names.seeded();
         assert_eq!(found(&again, "Brandt ruft an", Source::Text), ["Brandt"]);
-        again.read("Brandt ruft an", &[(0, 6, 0.9)], &[], &[(0, 6)]);
+        again.read(
+            "Brandt ruft an",
+            Source::Text,
+            &[(0, 6, 0.9)],
+            &[],
+            &[(0, 6)],
+        );
         assert!(!again.late());
         // Found where it stood is not late.
         let names = Names::default();
@@ -806,11 +837,31 @@ mod tests {
         assert!(!names.late());
     }
 
+    #[test]
+    fn a_word_one_edit_off_is_late_in_ocr_text_only() {
+        // Outside OCR no word one edit off is found: a second reading would
+        // find nothing new there (#129).
+        let names = Names::default();
+        names.read("Wendlch ruft an", Source::Text, &[], &[], &[]);
+        learn(&names, "Jonas Wendich", "Jonas Wendich");
+        assert!(!names.late());
+        let names = Names::default();
+        names.read("Wendlch ruft an", Source::Ocr, &[], &[], &[]);
+        learn(&names, "Jonas Wendich", "Jonas Wendich");
+        assert!(names.late());
+    }
+
     fn learn_value(names: &Names, text: &str, value: &str, entity: &str) -> bool {
         let start = text.find(value).unwrap();
         let end = start + value.len();
         let entity = EntityType::new(entity).unwrap();
-        names.read(text, &[], &[(start, end, &entity, 0.8)], &[(start, end)])
+        names.read(
+            text,
+            Source::Text,
+            &[],
+            &[(start, end, &entity, 0.8)],
+            &[(start, end)],
+        )
     }
 
     fn typed(names: &Names, text: &str) -> Vec<(String, String)> {
@@ -894,7 +945,7 @@ mod tests {
     #[test]
     fn a_value_learned_after_it_stood_unfound_is_late() {
         let names = Names::default();
-        names.read("Journal B07311 offen", &[], &[], &[]);
+        names.read("Journal B07311 offen", Source::Text, &[], &[], &[]);
         assert!(!names.late());
         learn_value(
             &names,
@@ -907,11 +958,11 @@ mod tests {
         assert_eq!(typed(&again, "Journal B07311 offen").len(), 1);
         // Written another way before: glued, or spaced into short runs.
         let glued = Names::default();
-        glued.read("Notiz KD48213", &[], &[], &[]);
+        glued.read("Notiz KD48213", Source::Text, &[], &[], &[]);
         learn_value(&glued, "Kundennummer: KD 48213", "KD 48213", "ID");
         assert!(glued.late());
         let spaced = Names::default();
-        spaced.read("Notiz 12 34 56 78", &[], &[], &[]);
+        spaced.read("Notiz 12 34 56 78", Source::Text, &[], &[], &[]);
         learn_value(
             &spaced,
             "Telefon: 12 34 56 78",

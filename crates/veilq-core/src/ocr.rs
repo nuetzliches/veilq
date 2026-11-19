@@ -228,6 +228,13 @@ impl Ocr {
     /// The lines of text in `img`, top to bottom, left to right; with them
     /// the lines its top and bottom edge cut ([`Line::cut`]).
     pub fn read(&self, img: &RgbImage) -> Result<Vec<Line>, Error> {
+        self.read_edges(img, true, true)
+    }
+
+    /// [`read`](Self::read), the lines cut looked for at the `top` and the
+    /// `bottom` edge only: those that are the picture's, not a band's open
+    /// edge (#129).
+    pub fn read_edges(&self, img: &RgbImage, top: bool, bottom: bool) -> Result<Vec<Line>, Error> {
         let mut lines = Vec::new();
         for rect in self.detect(img)? {
             if let Some(line) = self.recognise(img, rect)?
@@ -241,7 +248,8 @@ impl Ocr {
         // one cut line each other.
         let mut cut = Vec::new();
         let read: Vec<Rect> = lines.iter().map(|l| l.rect).collect();
-        for bottom in [false, true] {
+        let edges = [(false, top), (true, bottom)];
+        for bottom in edges.into_iter().filter(|e| e.1).map(|e| e.0) {
             for l in self.cut_lines(img, bottom, &read)? {
                 if !lines.iter().any(|o| holds(&o.rect, &l.rect)) {
                     cut.push(l);

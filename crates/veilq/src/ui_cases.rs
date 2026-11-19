@@ -256,7 +256,7 @@ fn area_picture(
             .frame
             .filter(|f| *f >= 1)
             .ok_or_else(|| unprocessable("an area on a GIF names its frame"))?;
-        gif_frame(bytes, frame)?.0
+        gif_frame(bytes, frame, false)?.0
     } else if format == Format::Pdf {
         let page = area
             .frame
@@ -281,14 +281,24 @@ fn crop(picture: &[u8], area: &Area) -> Result<Vec<u8>, Failure> {
     veilq_core::visual::crop(picture, area, AREA_MARGIN).map_err(|e| unprocessable(e.to_string()))
 }
 
-/// Frame `n` of a GIF as PNG, and how many frames it has.
+/// Frame `n` of a GIF as PNG; with `count`, how many frames it has, else
+/// the frames after `n` are not decoded (#129).
 #[cfg(feature = "ocr")]
-pub fn gif_frame(gif: &[u8], n: u64) -> Result<(Vec<u8>, u64), Failure> {
-    veilq_core::visual::gif_frame(gif, n).map_err(|e| unprocessable(e.to_string()))
+pub fn gif_frame(gif: &[u8], n: u64, count: bool) -> Result<(Vec<u8>, Option<u64>), Failure> {
+    let failed = |e: veilq_core::Error| unprocessable(e.to_string());
+    if count {
+        veilq_core::visual::gif_frame(gif, n)
+            .map(|(png, frames)| (png, Some(frames)))
+            .map_err(failed)
+    } else {
+        veilq_core::visual::gif_frame_at(gif, n)
+            .map(|png| (png, None))
+            .map_err(failed)
+    }
 }
 
 #[cfg(not(feature = "ocr"))]
-pub fn gif_frame(_: &[u8], _: u64) -> Result<(Vec<u8>, u64), Failure> {
+pub fn gif_frame(_: &[u8], _: u64, _: bool) -> Result<(Vec<u8>, Option<u64>), Failure> {
     Err(unprocessable("this build reads no pictures"))
 }
 
@@ -931,8 +941,13 @@ pub struct Proposal {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FrameRequest {
-    /// The GIF, base64: the run's output, on which an area is drawn.
-    data: String,
+    /// The GIF, base64: the run's output, on which an area is drawn. Sent
+    /// with the first frame asked for; after it, `gif` names it.
+    #[serde(default)]
+    data: Option<String>,
+    /// The GIF a request with `data` was answered for (#129).
+    #[serde(default)]
+    gif: Option<u64>,
     /// From 1.
     frame: u64,
 }
@@ -943,28 +958,71 @@ pub struct FrameShown {
     png: String,
     /// How many frames the GIF has.
     frames: u64,
+    /// Names the GIF for the next frames, sent without it.
+    gif: u64,
+}
+
+/// The GIF whose frames are shown: sent once, its frames counted once.
+pub struct ShownGif {
+    id: u64,
+    bytes: Arc<Vec<u8>>,
+    frames: u64,
 }
 
 /// `POST /api/frame`: one frame of a GIF as PNG, to draw an area on (#114).
 pub async fn frame(
-    State(_): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     axum::Json(request): axum::Json<FrameRequest>,
 ) -> Response {
     use base64::Engine as _;
     let result = tokio::task::spawn_blocking(move || -> Result<FrameShown, Failure> {
         let b64 = &base64::engine::general_purpose::STANDARD;
-        let gif = b64
-            .decode(&request.data)
-            .map_err(|e| Failure(StatusCode::BAD_REQUEST, e.to_string()))?;
-        if image_is_gif(&gif) {
-            let (png, frames) = gif_frame(&gif, request.frame)?;
-            Ok(FrameShown {
-                png: b64.encode(png),
-                frames,
-            })
-        } else {
-            Err(unprocessable("not a GIF"))
+        let shown = |s: &Option<ShownGif>| s.as_ref().map(|g| (g.id, g.bytes.clone(), g.frames));
+        let (id, gif, frames) = match (&request.data, request.gif) {
+            (Some(data), _) => {
+                let gif = b64
+                    .decode(data)
+                    .map_err(|e| Failure(StatusCode::BAD_REQUEST, e.to_string()))?;
+                if !image_is_gif(&gif) {
+                    return Err(unprocessable("not a GIF"));
+                }
+                let (png, frames) = gif_frame(&gif, request.frame, true)?;
+                let frames = frames.expect("counted");
+                let mut kept = state.gif.lock().unwrap_or_else(|e| e.into_inner());
+                let id = kept.as_ref().map_or(1, |g| g.id + 1);
+                *kept = Some(ShownGif {
+                    id,
+                    bytes: Arc::new(gif),
+                    frames,
+                });
+                return Ok(FrameShown {
+                    png: b64.encode(png),
+                    frames,
+                    gif: id,
+                });
+            }
+            (None, Some(id)) => shown(&state.gif.lock().unwrap_or_else(|e| e.into_inner()))
+                .filter(|g| g.0 == id)
+                .ok_or_else(|| Failure(StatusCode::CONFLICT, "send the GIF again".to_owned()))?,
+            (None, None) => {
+                return Err(Failure(
+                    StatusCode::BAD_REQUEST,
+                    "a GIF or the GIF shown".to_owned(),
+                ));
+            }
+        };
+        if request.frame == 0 || request.frame > frames {
+            return Err(unprocessable(format!(
+                "the GIF has no frame {} ({frames} frames)",
+                request.frame
+            )));
         }
+        let (png, _) = gif_frame(&gif, request.frame, false)?;
+        Ok(FrameShown {
+            png: b64.encode(png),
+            frames,
+            gif: id,
+        })
     })
     .await;
     match result {
@@ -1011,7 +1069,7 @@ fn propose_rule(state: &AppState, request: CaseRequest) -> Result<Proposal, Fail
     let explanation = veilq_core::Explain::new();
     let explaining = base.with_explain(explanation.clone());
     let text;
-    let (input, mark, read) = match &request.mark {
+    let (input, mark, read, findings) = match &request.mark {
         // An area names what OCR read inside it (#114, card point 4): the
         // rules are those of that value marked on text, tried on the picture.
         // Nothing read, nothing proposed rather than a guess.
@@ -1049,10 +1107,18 @@ fn propose_rule(state: &AppState, request: CaseRequest) -> Result<Proposal, Fail
                     entity: entity.clone(),
                 },
             };
-            explaining
+            let findings = explaining
                 .run_bytes(&bytes, format, true)
-                .map_err(Failure::from)?;
-            (Input::Picture(&bytes, format), mark, Some((value, line)))
+                .map_err(Failure::from)?
+                .1
+                .report
+                .findings;
+            (
+                Input::Picture(&bytes, format),
+                mark,
+                Some((value, line)),
+                findings,
+            )
         }
         Mark::Missed { .. } | Mark::Extra { .. } => {
             if format.is_container() {
@@ -1062,12 +1128,22 @@ fn propose_rule(state: &AppState, request: CaseRequest) -> Result<Proposal, Fail
                 )));
             }
             text = String::from_utf8(bytes.clone()).map_err(|_| unprocessable("not UTF-8 text"))?;
-            explaining
+            let findings = explaining
                 .redact_str(&text, format)
-                .map_err(Failure::from)?;
-            (Input::Text(&text, format), request.mark.clone(), None)
+                .map_err(Failure::from)?
+                .report
+                .findings;
+            (
+                Input::Text(&text, format),
+                request.mark.clone(),
+                None,
+                findings,
+            )
         }
     };
+    // The explained run is the engine without a rule on the document: its
+    // findings stand for that reading, not a second one (#129).
+    let document: Vec<Location> = findings.into_iter().map(|f| f.location).collect();
     let mut readings = explanation.take();
     // The line read inside the area last: a reading of the run that holds
     // the value comes first, with its candidates; this one gives the word
@@ -1109,21 +1185,29 @@ fn propose_rule(state: &AppState, request: CaseRequest) -> Result<Proposal, Fail
     let inputs: Vec<Input> = std::iter::once(input)
         .chain(texts.iter().map(|t| Input::Text(t, Format::Text)))
         .collect();
-    let baseline = |engine: &Engine| -> Result<Vec<Vec<Location>>, Failure> {
-        inputs.iter().map(|i| found(engine, i)).collect()
+    let baseline = |engine: &Engine, document: Option<&Vec<Location>>| {
+        let mut out = vec![match document {
+            Some(d) => d.clone(),
+            None => found(engine, &inputs[0])?,
+        }];
+        for i in &inputs[1..] {
+            out.push(found(engine, i)?);
+        }
+        Ok::<_, Failure>(out)
     };
     let (mut without_base, mut without_plain) = (None, None);
     let mut proposed = Vec::new();
     for rule in rules {
         // A threshold is tried as the policy runs: the run's one threshold
         // would stand in its place (ADR-0046).
-        let (base, without) = if matches!(rule, Rule::Threshold { .. }) {
+        let threshold = matches!(rule, Rule::Threshold { .. });
+        let (base, without) = if threshold {
             (&plain, &mut without_plain)
         } else {
             (&base, &mut without_base)
         };
         if without.is_none() {
-            *without = Some(baseline(base)?);
+            *without = Some(baseline(base, (!threshold).then_some(&document))?);
         }
         let without = without.as_ref().expect("read above");
         let with = with_rule(base, &rule)?;
