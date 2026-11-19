@@ -18,6 +18,10 @@ Notable changes per release. The format follows
   candidate: `Personalisieren`, a web page's button beside a game's title
   `Los Angeles`, made it a `PERSON`; `Steuerung`, `Bytes` and `Namespace`
   counted as `steuer`, `by` and `name` the same way.
+- A German address with the country before its postcode is an address:
+  a bank's booking text writes `Kelterweg 8 DE 36251 Ebersfeld`, a letter
+  abroad `D-36251 Ebersfeld`, and no address pattern took the country, so
+  street, postcode and town stayed visible.
 
 ## [0.6.0] - 2026-11-18
 

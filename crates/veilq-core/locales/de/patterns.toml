@@ -67,10 +67,13 @@ confidence = 0.8
 
 # Street, number, postcode and place: `Lindenweg 12, 28195 Bremen`. The
 # street word may be a word of its own: `Trebuser Str. 3d 15517 Fürstenwalde`.
+# The postcode may carry the country before it, as a bank's booking text or
+# a letter abroad writes it (`DE 36251`, `D-36251`); so in every pattern
+# below.
 [[patterns]]
 name = "address"
 entity = "ADDRESS"
-regex = '\b\p{Lu}[\p{L}.\-]*?(?:straße|strasse|str\.|weg|gasse|platz|allee|ring|damm|ufer|steig|pfad|chaussee|markt|graben|wall|hof|berg|feld|garten| (?:Straße|Strasse|Str\.|Weg|Gasse|Platz|Allee|Ring|Damm|Ufer|Chaussee|Markt|Graben|Wall))\s+\d{1,4}\s?[a-zA-Z]?(?:\s?-\s?\d{1,4})?(?:,\s*|[ \t]*\r?\n[ \t]*|\s+)\d{5}\s+\p{Lu}[\p{L}\-]+(?:\s+(?:an der|am|im|in der)\s+\p{Lu}\p{L}+)?(?: \p{Lu}[\p{L}\-]+){0,2}'
+regex = '\b\p{Lu}[\p{L}.\-]*?(?:straße|strasse|str\.|weg|gasse|platz|allee|ring|damm|ufer|steig|pfad|chaussee|markt|graben|wall|hof|berg|feld|garten| (?:Straße|Strasse|Str\.|Weg|Gasse|Platz|Allee|Ring|Damm|Ufer|Chaussee|Markt|Graben|Wall))\s+\d{1,4}\s?[a-zA-Z]?(?:\s?-\s?\d{1,4})?(?:,\s*|[ \t]*\r?\n[ \t]*|\s+)(?:DE?[ -]?)?\d{5}\s+\p{Lu}[\p{L}\-]+(?:\s+(?:an der|am|im|in der)\s+\p{Lu}\p{L}+)?(?: \p{Lu}[\p{L}\-]+){0,2}'
 confidence = 0.9
 
 # A street without a street word (`Alte Mühle 3`, `Am Markt 4`, `Auf der
@@ -81,7 +84,7 @@ confidence = 0.9
 [[patterns]]
 name = "address-postcode"
 entity = "ADDRESS"
-regex = '\b\p{Lu}[\p{L}.\-]*(?: (?:\p{Lu}[\p{L}.\-]*|an|am|auf|aus|bei|beim|der|die|das|den|dem|des|im|in|hinter|über|unter|vor|vom|von|zu|zum|zur)){0,3} \d{1,4} ?[a-zA-Z]?, ?\d{5} \p{Lu}[\p{L}\-]+(?: \p{Lu}[\p{L}\-]+){0,2}'
+regex = '\b\p{Lu}[\p{L}.\-]*(?: (?:\p{Lu}[\p{L}.\-]*|an|am|auf|aus|bei|beim|der|die|das|den|dem|des|im|in|hinter|über|unter|vor|vom|von|zu|zum|zur)){0,3} \d{1,4} ?[a-zA-Z]?, ?(?:DE?[ -]?)?\d{5} \p{Lu}[\p{L}\-]+(?: \p{Lu}[\p{L}\-]+){0,2}'
 confidence = 0.85
 
 # The same with the street in lower case: OCR of small text loses a capital
@@ -91,7 +94,7 @@ confidence = 0.85
 [[patterns]]
 name = "address-postcode-lower"
 entity = "ADDRESS"
-regex = '\b\p{Ll}[\p{L}.\-]{3,} \d{1,4} ?[a-zA-Z]?, ?\d{5} \p{Lu}[\p{L}\-]+(?: \p{Lu}[\p{L}\-]+){0,2}'
+regex = '\b\p{Ll}[\p{L}.\-]{3,} \d{1,4} ?[a-zA-Z]?, ?(?:DE?[ -]?)?\d{5} \p{Lu}[\p{L}\-]+(?: \p{Lu}[\p{L}\-]+){0,2}'
 confidence = 0.8
 
 # A letter's address block: the street and number on a line of their own,
@@ -101,7 +104,7 @@ confidence = 0.8
 [[patterns]]
 name = "address-lines"
 entity = "ADDRESS"
-regex = '(?m)^[ \t]*(?P<pii>\p{Lu}[\p{L}.\-]*(?: (?:\p{Lu}[\p{L}.\-]*|an|am|auf|aus|bei|beim|der|die|das|den|dem|des|im|in|hinter|über|unter|vor|vom|von|zu|zum|zur)){0,3} \d{1,4} ?[a-zA-Z]?(?: ?- ?\d{1,4})?[ \t]*\r?\n[ \t]*\d{5} \p{Lu}[\p{L}\-]+(?: (?:an der|am|im|in der) \p{Lu}\p{L}+)?(?: \p{Lu}[\p{L}\-]+){0,2})[ \t]*\r?$'
+regex = '(?m)^[ \t]*(?P<pii>\p{Lu}[\p{L}.\-]*(?: (?:\p{Lu}[\p{L}.\-]*|an|am|auf|aus|bei|beim|der|die|das|den|dem|des|im|in|hinter|über|unter|vor|vom|von|zu|zum|zur)){0,3} \d{1,4} ?[a-zA-Z]?(?: ?- ?\d{1,4})?[ \t]*\r?\n[ \t]*(?:DE?[ -]?)?\d{5} \p{Lu}[\p{L}\-]+(?: (?:an der|am|im|in der) \p{Lu}\p{L}+)?(?: \p{Lu}[\p{L}\-]+){0,2})[ \t]*\r?$'
 confidence = 0.85
 
 # A street and number alone, when the text says it is an address.
@@ -122,7 +125,7 @@ context = { words = ["anschrift", "adresse", "wohnhaft", "wohnt", "straße", "st
 [[patterns]]
 name = "address-columns"
 entity = "ADDRESS"
-regex = '\b\p{Lu}[\p{L}.\-]*(?: [\p{L}.\-]+){0,3}(?: {1,3}\(? ?(?:\.{2,3}|…)\.?)? {2,}\d{1,4} ?[^\s\d]? {2,}\d{5} {2,}\p{Lu}[\p{L}\-]+(?: [\p{L}\-]+){0,2}(?: {0,3}(?:\.{1,3}|…)\.?){0,2}'
+regex = '\b\p{Lu}[\p{L}.\-]*(?: [\p{L}.\-]+){0,3}(?: {1,3}\(? ?(?:\.{2,3}|…)\.?)? {2,}\d{1,4} ?[^\s\d]? {2,}(?:DE?(?:-| {1,3}))?\d{5} {2,}\p{Lu}[\p{L}\-]+(?: [\p{L}\-]+){0,2}(?: {0,3}(?:\.{1,3}|…)\.?){0,2}'
 confidence = 0.85
 
 # A whole value under a column that names a street (`Straße`, `Anschrift`):
