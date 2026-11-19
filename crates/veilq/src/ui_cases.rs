@@ -988,8 +988,17 @@ pub async fn frame(
                 }
                 let (png, frames) = gif_frame(&gif, request.frame, true)?;
                 let frames = frames.expect("counted");
+                // A random name: a page still open from a server before
+                // must not get another GIF's frame by a number it holds.
+                let mut bytes = [0u8; 8];
+                getrandom::fill(&mut bytes).map_err(|e| {
+                    Failure(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("no randomness: {e}"),
+                    )
+                })?;
+                let id = u64::from_le_bytes(bytes) >> 11;
                 let mut kept = state.gif.lock().unwrap_or_else(|e| e.into_inner());
-                let id = kept.as_ref().map_or(1, |g| g.id + 1);
                 *kept = Some(ShownGif {
                     id,
                     bytes: Arc::new(gif),

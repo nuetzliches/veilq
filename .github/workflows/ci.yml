@@ -126,8 +126,11 @@ jobs:
         run: target/release/veilq-eval check eval --ner --ocr --redact --gate eval/gate-ner.toml --held-out ${{ matrix.seeds }} --list 20
       # The forms filled in by hand (#59, ADR-0060), a track of their own
       # with a gate of their own.
+      # Without the recogniser the track passes too: it must be installed.
       - name: gate (handwriting)
-        run: target/release/veilq-eval check eval --ner --ocr --only handwriting --gate eval/gate-handwriting.toml --held-out ${{ matrix.seeds }} --list 20
+        run: |
+          target/release/veilq models list | grep -q '^htr: installed'
+          target/release/veilq-eval check eval --ner --ocr --only handwriting --gate eval/gate-handwriting.toml --held-out ${{ matrix.seeds }} --list 20
 
   eval-models:
     # The check the branch protection names: all parts passed.

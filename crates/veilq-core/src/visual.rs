@@ -807,8 +807,7 @@ fn settle(
         }
         // The machine's reading of handwriting is no transcript a person
         // confirmed (#59): the report says it was read so.
-        if round == 1
-            && lines.iter().any(|l| l.handwriting)
+        if lines.iter().any(|l| l.handwriting)
             && !out.review_reasons.iter().any(|r| r == HANDWRITING)
         {
             out.review_reasons.push(HANDWRITING.into());

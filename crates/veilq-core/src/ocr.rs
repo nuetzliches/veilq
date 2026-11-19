@@ -281,7 +281,14 @@ impl Ocr {
         // other.
         if let Some(htr) = &self.htr {
             let mut second = Vec::new();
-            for l in lines.iter().filter(|l| l.weak().next().is_some()) {
+            // At most so many per reading: a picture of thin, wide noise
+            // made thousands of calls (security review before 0.7.0). The
+            // lines past them stay read badly, as the policy says.
+            for l in lines
+                .iter()
+                .filter(|l| l.weak().next().is_some())
+                .take(HTR_LINES)
+            {
                 if let Some(h) = htr.recognise(img, l.rect)?
                     && !h.text.trim().is_empty()
                     && h.text != l.text
@@ -551,6 +558,9 @@ pub struct HtrFiles<'a> {
 }
 
 const HTR_HEIGHT: u32 = 64;
+/// The lines read badly that one reading of a picture reads again as
+/// handwriting: a hand-filled form has a few dozen.
+const HTR_LINES: usize = 64;
 const HTR_WIDTH: u32 = 1024;
 const HTR_STRIDE: u32 = 4;
 
@@ -607,8 +617,10 @@ impl Htr {
         ));
         let mut out: Option<Line> = None;
         let mut x = 0;
+        // Whether the piece before ended in a blank column.
+        let mut gap = false;
         while x < width {
-            let piece = (width - x).min(HTR_WIDTH);
+            let (piece, blank) = cut(&grey, x, width);
             let padded = piece.div_ceil(HTR_STRIDE) * HTR_STRIDE;
             let plane = (padded * HTR_HEIGHT) as usize;
             let mut data = vec![1f32; plane];
@@ -652,6 +664,10 @@ impl Htr {
                 out = Some(match out {
                     None => line,
                     Some(mut all) => {
+                        // Cut where the line was blank: a gap between words.
+                        if gap && !all.text.ends_with(' ') && !line.text.starts_with(' ') {
+                            all.text.push(' ');
+                        }
                         let base = all.text.len();
                         all.text.push_str(&line.text);
                         all.chars.extend(
@@ -666,12 +682,32 @@ impl Htr {
                 });
             }
             x += piece;
+            gap = blank;
         }
         Ok(out.map(|l| Line {
             rect,
             handwriting: true,
             ..l
         }))
+    }
+}
+
+/// Lighter than this, a column of the grey line holds no ink.
+const BLANK: u8 = 200;
+
+/// How many columns of `grey` from `x` on, up to `width`, are read as one
+/// piece: all that is left when it fits [`HTR_WIDTH`], else up to the last
+/// blank column in its last quarter, so that no character is cut in two
+/// (#137 review); a line without one there is cut at the limit. Whether the
+/// cut lies in a blank column.
+fn cut(grey: &image::GrayImage, x: u32, width: u32) -> (u32, bool) {
+    if width - x <= HTR_WIDTH {
+        return (width - x, false);
+    }
+    let blank = |c: u32| (0..grey.height()).all(|y| grey.get_pixel(x + c, y)[0] >= BLANK);
+    match (HTR_WIDTH * 3 / 4..HTR_WIDTH).rev().find(|&c| blank(c)) {
+        Some(c) => (c + 1, true),
+        None => (HTR_WIDTH, false),
     }
 }
 
@@ -857,6 +893,21 @@ mod tests {
         for e in expect.split('|') {
             assert!(all.contains(e), "{e:?} not in {all:?}");
         }
+    }
+
+    #[test]
+    fn a_long_line_is_cut_in_a_blank_column() {
+        // Ink everywhere but one blank column in the piece's last quarter.
+        let w = HTR_WIDTH + 300;
+        let mut grey = image::GrayImage::from_pixel(w, HTR_HEIGHT, image::Luma([20]));
+        for y in 0..HTR_HEIGHT {
+            grey.put_pixel(900, y, image::Luma([250]));
+        }
+        assert_eq!(cut(&grey, 0, w), (901, true));
+        // None there: at the limit; what fits, whole.
+        assert_eq!(cut(&grey, 901, w), (w - 901, false));
+        let full = image::GrayImage::from_pixel(w, HTR_HEIGHT, image::Luma([20]));
+        assert_eq!(cut(&full, 0, w), (HTR_WIDTH, false));
     }
 
     #[test]
