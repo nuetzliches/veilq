@@ -6,6 +6,15 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A name broken across two lines in a picture is filled whole (ADR-0061):
+  a headline broken after a given name, with more room between its lines
+  than a table's cell, left the surname at the start of the next line.
+- A kin word (`Vater`, `Mutter`, `Zwillinge`, `father`, ...) is no name
+  alone and never goes on a file's list, and a saint (`Sankt Martin`, a
+  book's title) is no person (ADR-0061).
+
 ## [0.7.0] - 2026-11-19
 
 ### Added
