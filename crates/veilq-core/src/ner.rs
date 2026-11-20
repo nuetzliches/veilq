@@ -32,6 +32,12 @@ const LABELS: [&str; 3] = ["person", "organization", "location"];
 /// Words per window, and the words two windows share.
 const WINDOW: usize = 200;
 const OVERLAP: usize = 40;
+/// Characters a word may have to be read: no name is longer, and one word of
+/// 16,000 characters made ONNX Runtime allocate tens of gigabytes (#138).
+const MAX_WORD: usize = 64;
+/// Tokens a window may have, its prompt included: a window over it is read
+/// in halves.
+const MAX_TOKENS: usize = 1024;
 /// The model's own threshold: spans below it are no candidates.
 pub const MIN_SCORE: f32 = 0.3;
 /// Texts whose candidates are kept; the cache is emptied when it is full.
@@ -103,11 +109,7 @@ impl Ner {
     }
 
     fn read(&self, text: &str) -> Result<Vec<Candidate>, Error> {
-        let words: Vec<(usize, usize)> = self
-            .words
-            .find_iter(text)
-            .map(|m| (m.start(), m.end()))
-            .collect();
+        let words = read_words(&self.words, text);
         if words
             .iter()
             .filter(|(s, e)| text[*s..*e].chars().any(char::is_alphabetic))
@@ -120,7 +122,13 @@ impl Ner {
         let mut start = 0;
         while start < words.len() {
             let end = (start + WINDOW).min(words.len());
-            for (s, e, score) in self.window(text, &words[start..end])? {
+            let window = &words[start..end];
+            let count = |r: std::ops::Range<usize>| Ok(self.inputs(text, &window[r])?.ids.len());
+            let mut spans = Vec::new();
+            for part in bounded(0..window.len(), &count, MAX_TOKENS)? {
+                spans.extend(self.window(text, &window[part])?);
+            }
+            for (s, e, score) in spans {
                 let c = Candidate {
                     start: s,
                     end: e,
@@ -232,6 +240,38 @@ fn words_regex() -> Regex {
     Regex::new(r"\w+(?:[-_]\w+)*|\S").expect("a valid regex")
 }
 
+/// The words of `text` the model reads: as [`words_regex`] splits them,
+/// none longer than [`MAX_WORD`].
+fn read_words(re: &Regex, text: &str) -> Vec<(usize, usize)> {
+    re.find_iter(text)
+        .filter(|m| m.as_str().chars().count() <= MAX_WORD)
+        .map(|m| (m.start(), m.end()))
+        .collect()
+}
+
+/// `range` of words, in parts of at most `max` tokens each as `count` has
+/// them; a single word over it is left out.
+fn bounded(
+    range: std::ops::Range<usize>,
+    count: &impl Fn(std::ops::Range<usize>) -> Result<usize, Error>,
+    max: usize,
+) -> Result<Vec<std::ops::Range<usize>>, Error> {
+    if range.is_empty() || count(range.clone())? <= max {
+        return Ok(if range.is_empty() {
+            vec![]
+        } else {
+            vec![range]
+        });
+    }
+    if range.len() == 1 {
+        return Ok(Vec::new());
+    }
+    let mid = range.start + range.len() / 2;
+    let mut parts = bounded(range.start..mid, count, max)?;
+    parts.extend(bounded(mid..range.end, count, max)?);
+    Ok(parts)
+}
+
 /// A model score above [`MIN_SCORE`] as a confidence the default threshold
 /// (0.7) lets through: 0.3 -> 0.79, 1.0 -> 1.0.
 fn confidence(score: f32) -> f32 {
@@ -332,6 +372,36 @@ mod tests {
         let words: Vec<&str> = words_regex().find_iter(text).map(|m| m.as_str()).collect();
         assert_eq!(words.len(), 19, "{words:?}");
         assert_eq!(&words[..6], ["Beim", "Termin", "am", "3", ".", "4"]);
+    }
+
+    #[test]
+    fn a_word_too_long_for_a_name_is_not_read() {
+        // One word of 16,000 characters made ONNX Runtime allocate tens of
+        // gigabytes (#138); no name is that long.
+        let long = "x".repeat(16_000);
+        let text = format!("Lena Vogt schrieb {long} und ging");
+        let words: Vec<&str> = read_words(&words_regex(), &text)
+            .into_iter()
+            .map(|(s, e)| &text[s..e])
+            .collect();
+        assert_eq!(words, ["Lena", "Vogt", "schrieb", "und", "ging"]);
+        let edge = "y".repeat(MAX_WORD);
+        assert_eq!(read_words(&words_regex(), &edge), [(0, MAX_WORD)]);
+    }
+
+    #[test]
+    fn a_window_of_too_many_tokens_is_halved() {
+        // A token per character: windows of words of 64 characters each.
+        let count = |r: std::ops::Range<usize>| Ok::<_, Error>(r.len() * 64);
+        assert_eq!(bounded(0..10, &count, 1024).unwrap(), vec![0..10]);
+        let parts = bounded(0..200, &count, 1024).unwrap();
+        assert!(parts.iter().all(|r| r.len() * 64 <= 1024), "{parts:?}");
+        // Every word is in exactly one part, in order.
+        let joined: Vec<usize> = parts.iter().flat_map(|r| r.clone()).collect();
+        assert_eq!(joined, (0..200).collect::<Vec<_>>());
+        // A single word over the bound is left out, not read.
+        let huge = |r: std::ops::Range<usize>| Ok::<_, Error>(r.len() * 2000);
+        assert!(bounded(0..1, &huge, 1024).unwrap().is_empty());
     }
 
     #[test]
@@ -473,6 +543,19 @@ mod tests {
             .map(|c| &text[c.start..c.end])
             .collect();
         assert_eq!(found, ["Lena Vogt"]);
+        // A word too long for a name, and a window of words of 64 characters
+        // each, are read within the token bound (#138).
+        let long = format!("{} {}", "x".repeat(16_000), text);
+        let many = format!("{} {}", vec!["q7".repeat(32); 200].join(" "), text);
+        for text in [&long, &many] {
+            let found: Vec<&str> = ner
+                .candidates(text)
+                .unwrap()
+                .iter()
+                .map(|c| &text[c.start..c.end])
+                .collect();
+            assert_eq!(found, ["Lena Vogt"]);
+        }
         // One word has no context: no guess.
         assert!(ner.candidates("Name").unwrap().is_empty());
         assert!(ner.candidates("Mira").unwrap().is_empty());

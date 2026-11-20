@@ -40,6 +40,10 @@ const NAMES_LATE: &str = "a name found late in the file also stands earlier, whe
 /// The review reason of a streamed run that learned a name late.
 const NAMES_LATE_STREAMED: &str = "a name found further on also stands earlier in the input, which was streamed and not read again: look for it there";
 
+/// The review reason when OCR read a word in lower case one letter off a
+/// name of the file (#138): not filled, since the text may hold that word.
+const NAMES_DOUBTFUL: &str = "a word read off a picture in lower case is one letter off a name of the file and was not filled: look whether it is that name";
+
 /// Adds `reason` to `report` once and asks for a review.
 fn review(report: &mut Report, reason: &str) {
     if !report.review_reasons.iter().any(|r| r == reason) {
@@ -461,6 +465,10 @@ impl Engine {
                 lifted.store(0, std::sync::atomic::Ordering::Relaxed);
             }
             let mut out = once(&engine)?;
+            let last = !names.late() || pass == NAME_PASSES;
+            if last && names.doubtful() {
+                review(report(&mut out), NAMES_DOUBTFUL);
+            }
             if !names.late() {
                 return Ok(out);
             }
@@ -2042,6 +2050,38 @@ mod tests {
         let e = Engine::new(&off, None, b"seed", None).unwrap();
         let found = values(text, &e.scan_str(text, Format::Text).unwrap());
         assert!(!found.iter().any(|v| v == "Brandt"), "{found:?}");
+    }
+
+    #[test]
+    fn a_name_read_in_lower_case_one_letter_off_asks_for_a_review() {
+        // A picture's OCR text that holds a learned name without its
+        // capital and one letter off (#138).
+        let run = |ocr: &'static str| {
+            engine()
+                .whole(
+                    |e| {
+                        e.findings("Mandant: Corvin Albrecht", "")?;
+                        e.ocr_findings(ocr, "")?;
+                        e.scan_str("", Format::Text)
+                    },
+                    |r| &mut r.report,
+                )
+                .unwrap()
+                .report
+        };
+        let doubtful = run("Kopie an aibrecht");
+        assert!(doubtful.review_required);
+        assert!(
+            doubtful.review_reasons.iter().any(|r| r == NAMES_DOUBTFUL),
+            "{:?}",
+            doubtful.review_reasons
+        );
+        let clean = run("Kopie an Aibrecht");
+        assert!(
+            !clean.review_reasons.iter().any(|r| r == NAMES_DOUBTFUL),
+            "{:?}",
+            clean.review_reasons
+        );
     }
 
     #[test]

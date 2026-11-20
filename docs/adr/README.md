@@ -101,3 +101,4 @@ keep it to about a page.
 | [0059](0059-a-files-values-firms-as-parties-and-lines-cut-by-the-edge.md) | A file's values, firms as parties, and lines cut by the edge | Accepted |
 | [0060](0060-a-line-read-badly-is-read-again-as-handwriting.md) | A line read badly is read again as handwriting | Accepted |
 | [0061](0061-a-name-broken-across-lines-kin-words-and-saints.md) | A name broken across lines, kin words and saints | Accepted |
+| [0062](0062-points-from-the-review-before-0-7-0.md) | Points from the review before 0.7.0 | Accepted |
