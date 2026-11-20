@@ -196,6 +196,19 @@ fn below(above: &Line, l: &Line) -> bool {
     close && size && aligned(a, b)
 }
 
+/// Whether `l` is the next line of `above` in a paragraph set with more room
+/// between its lines than [`below`] allows (a headline): under it with a
+/// gap of at most a line and a half (OCR's box holds the ink, so a line
+/// set at 1.6 times its type size leaves more than a box's height), in the
+/// same type size, left aligned.
+fn under(above: &Line, l: &Line) -> bool {
+    let (a, b) = (&above.rect, &l.rect);
+    let h = a.h.min(b.h);
+    let close = b.y + h / 4 >= a.bottom() && b.y <= a.bottom() + h * 3 / 2;
+    let size = 3 * a.h.max(b.h) <= 4 * h;
+    close && size && a.x.abs_diff(b.x) <= h
+}
+
 /// Whether two boxes stand in one column: aligned on the left, the middle
 /// or the right, within a line's height.
 fn aligned(a: &Rect, b: &Rect) -> bool {
@@ -717,6 +730,9 @@ fn candidates(
         }
     }
     let heads = heads(lines);
+    // The lines that end in a person's name: its surname may stand at the
+    // start of the line below.
+    let mut ends_in_name = vec![false; lines.len()];
     for (i, line) in lines.iter().enumerate() {
         let one = Page {
             text: line.text.clone(),
@@ -725,6 +741,12 @@ fn candidates(
         let context = neighbours(lines, &heads, i);
         for text in std::iter::once(line.text.clone()).chain(unmarked(&line.text)) {
             for mut c in read(&text, &context)? {
+                if c.entity.as_str() == "PERSON"
+                    && text == line.text
+                    && !text[c.end..].chars().any(char::is_alphanumeric)
+                {
+                    ends_in_name[i] = true;
+                }
                 if c.entity.as_str() == "PERSON" {
                     let span = &text[c.start..c.end];
                     let own: Vec<&str> = crate::detect::name_words(span).collect();
@@ -745,11 +767,15 @@ fn candidates(
     // A line and the one right below it that starts with a number, read as
     // two lines: a letter's address block (`Am Anger 7` / `15938 Lindau`),
     // which a row of the page cuts where a window beside it holds lines of
-    // its own, and a line read alone does not hold whole.
+    // its own, and a line read alone does not hold whole. So too a line that
+    // ends in a name and the line under it in its column that starts with a
+    // capital: a headline broken after a given name (`… noch Jonas` /
+    // `Kellermann!: …`), whose lines stand further apart than a cell's.
     for (i, line) in lines.iter().enumerate() {
-        let next = lines
-            .iter()
-            .filter(|l| l.text.starts_with(|c: char| c.is_ascii_digit()) && below(line, l));
+        let next = lines.iter().filter(|l| {
+            (l.text.starts_with(|c: char| c.is_ascii_digit()) && below(line, l))
+                || (ends_in_name[i] && l.text.starts_with(char::is_uppercase) && under(line, l))
+        });
         for l in next {
             let base = line.text.len() + 1;
             let two = Page {
@@ -1932,6 +1958,46 @@ mod tests {
         assert!(found.iter().any(|r| r.y < 110 && r.x >= 590), "{found:?}");
         assert!(found.iter().any(|r| r.y >= 110 && r.x >= 590), "{found:?}");
         assert!(found.iter().all(|r| r.x >= 590), "{found:?}");
+    }
+
+    #[test]
+    fn a_name_broken_after_its_given_name_is_read_with_the_line_below() {
+        // A headline in a card beside others, broken after a given name;
+        // its lines stand further apart than a cell's. A rule of the policy
+        // that finds the whole name stands in for NER here.
+        let policy = crate::Policy::parse(
+            "version = 1\n[[patterns]]\nname = \"full-name\"\nentity = \"PERSON\"\nregex = 'Mira\\sKellermann'\n",
+        )
+        .unwrap();
+        let engine = Engine::new(&policy, None, b"test", None).unwrap();
+        let line = |text: &str, x: u32, y: u32| Line {
+            rect: Rect {
+                h: 17,
+                ..super::tests::line(text, x, y).rect
+            },
+            ..super::tests::line(text, x, y)
+        };
+        let lines = [
+            line("Neue Bruecke am Hafen", 20, 52),
+            line("Termin mit Frau Mira", 350, 52),
+            line("Stadtbote meldet", 690, 52),
+            line("wird im Mai eroeffnet", 20, 81),
+            line("Kellermann!: Wenn alle", 350, 81),
+            line("nicht vergeben", 690, 81),
+        ];
+        let found: Vec<Rect> = candidates(&engine, &lines, 1000, 200, false)
+            .unwrap()
+            .into_iter()
+            .filter(|(c, _)| c.entity.as_str() == "PERSON")
+            .flat_map(|(_, rects)| rects)
+            .collect();
+        // The surname at the start of the line below, in the same card.
+        assert!(
+            found.iter().any(|r| r.y >= 75 && (340..400).contains(&r.x)),
+            "{found:?}"
+        );
+        // Not a line that only stands below in another card.
+        assert!(found.iter().all(|r| (340..700).contains(&r.x)), "{found:?}");
     }
 
     #[test]

@@ -309,6 +309,41 @@ pub(super) fn form_jpeg(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
     (with_exif(&jpeg(&c.img)), truth)
 }
 
+/// A news feed of three cards side by side: headlines set with room between
+/// their lines, one broken after a person's given name (its surname starts
+/// the line below), a kin word where a name could stand (`kann Vater nicht
+/// vergeben`), and a book whose title names a saint. Only the person is
+/// personal data.
+pub(super) fn news_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
+    let (p, q) = (Person::de(r), Person::de(r));
+    let mut c = Canvas::new(1000, 230, [40, 40, 44]);
+    let white = [250, 250, 250];
+    let grey = [180, 180, 180];
+    let size = 19.0;
+    let gap = 31.0; // a headline's lines: more than a cell's half a line apart
+    c.lit(20.0, 20.0, 13.0, "Nordblatt · 9 Std.", grey);
+    c.lit(20.0, 50.0, size, "Neue Brücke am Hafen", white);
+    c.lit(20.0, 50.0 + gap, size, "wird im Mai eröffnet", white);
+    c.lit(350.0, 20.0, 13.0, "Abendpost · 9 Std.", grey);
+    let end = c.lit(350.0, 50.0, size, "Jetzt auch noch ", white);
+    c.pii("PERSON", end, 50.0, size, &p.first, white);
+    let end = c.pii("PERSON", 350.0, 50.0 + gap, size, &p.last, white);
+    c.lit(end, 50.0 + gap, size, "!: Wenn alle deine", white);
+    c.lit(350.0, 50.0 + 2.0 * gap, size, "Lieblinge von früher", white);
+    c.lit(690.0, 20.0, 13.0, "Stadtbote · 2 Std.", grey);
+    let end = c.lit(690.0, 50.0, size, "Nach dem Streit: ", white);
+    c.pii("PERSON", end, 50.0, size, &q.last, white);
+    c.lit(690.0, 50.0 + gap, size, "kann Vater nicht vergeben", white);
+    c.lit(
+        690.0,
+        50.0 + 2.0 * gap,
+        size,
+        "Die Geschichte von Sankt Martin",
+        white,
+    );
+    (png(&c.img), c.truth)
+}
+
 /// Blue ink of a ballpoint pen.
 const PEN: [u8; 3] = [24, 46, 128];
 /// How large a hand writes on a form's line.

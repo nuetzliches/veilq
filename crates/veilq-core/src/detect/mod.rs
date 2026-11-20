@@ -452,7 +452,7 @@ impl Detector {
             let value = &text[c.start..c.end];
             let dropped = if !person {
                 None
-            } else if only_role_words(value) {
+            } else if only_role_words(value) || saint(value) {
                 Some(Verdict::RoleWords)
             } else if ACCOUNTS.contains(&value.to_lowercase().as_str()) {
                 Some(Verdict::Account)
@@ -966,6 +966,29 @@ const PERSON_NOUNS: &[&str] = &[
     "angehörig",
     "bevollmächtigt",
     "teilnehmend",
+    // Kin: a headline's `… kann Vater nicht vergeben` was a name to NER, and
+    // the word went on the file's list (`Zwillinge` too). `Sohn`, `Bruder`,
+    // `Oma` and `Opa` end common surnames (`Mendelssohn`, `Thoma`) and are
+    // left out.
+    "vater",
+    "väter",
+    "mutter",
+    "mütter",
+    "tochter",
+    "töchter",
+    "schwester",
+    "zwilling",
+    "tante",
+    "neffe",
+    "nichte",
+    "witwe",
+    "witwer",
+    "ehefrau",
+    "father",
+    "mother",
+    "daughter",
+    "sister",
+    "twin",
 ];
 
 /// The endings of [`PERSON_NOUNS`]: plural, feminine, case.
@@ -1037,6 +1060,26 @@ pub(crate) fn role_word(word: &str) -> bool {
     NOT_NAMES.contains(&w.as_str())
         || POSSESSIVES.contains(&w.as_str())
         || LABEL_ENDINGS.iter().any(|e| w.ends_with(e))
+}
+
+/// Whether `span` names a saint, and with it a town, a church or a feast:
+/// it starts with `Sankt`, `St.`, `Saint`, `Santa` or `Heilige`
+/// (`Die Geschichte von Sankt Martin` on a book's cover). An address with
+/// one is found by the address patterns, not as a person.
+pub(crate) fn saint(span: &str) -> bool {
+    span.split(|c: char| !c.is_alphabetic())
+        .find(|w| !w.is_empty())
+        .is_some_and(|w| {
+            matches!(
+                w.to_lowercase().as_str(),
+                "sankt" | "st" | "saint" | "santa" | "heilige" | "heiliger" | "heiligen"
+            )
+        })
+        && span
+            .split(|c: char| !c.is_alphabetic())
+            .filter(|w| !w.is_empty())
+            .count()
+            > 1
 }
 
 /// Whether `span` is nothing but role, title and greeting words
@@ -1456,6 +1499,41 @@ mod tests {
         );
         // The possessive alone is a role word: never a word of a name.
         assert!(only_role_words("Ihr"));
+    }
+
+    #[test]
+    fn a_saint_and_a_kin_word_are_no_person() {
+        for s in [
+            "Sankt Martin",
+            "St. Martin",
+            "Saint Pauli",
+            "Heilige Elisabeth",
+        ] {
+            assert!(saint(s), "{s}");
+        }
+        // A name that only starts like one, and the word alone, are not.
+        for s in [
+            "Sanktjohann Brandt",
+            "Martin Sankt",
+            "Sankt",
+            "Stefanie Vogt",
+        ] {
+            assert!(!saint(s), "{s}");
+        }
+        for w in [
+            "Vater",
+            "Mutter",
+            "Zwillinge",
+            "Großvater",
+            "Schwestern",
+            "Twins",
+        ] {
+            assert!(person_noun(w), "{w}");
+        }
+        // Surnames that end like kin stay names.
+        for w in ["Mendelssohn", "Thoma", "Henkel", "Bruder"] {
+            assert!(!person_noun(w), "{w}");
+        }
     }
 
     #[test]

@@ -1065,6 +1065,15 @@ pub fn corpus(seed: u64) -> Vec<Doc> {
         content,
         truth,
     });
+    // A news feed with a name broken after its given name, a kin word and a
+    // saint, from a stream of its own.
+    let mut r = Rng::new(seed ^ 0x2E75_7000_0000_0000);
+    let (content, truth) = visual::news_png(&mut r);
+    docs.push(Doc {
+        path: "de/png/news-1.png".to_owned(),
+        content,
+        truth,
+    });
     // Forms filled in by hand (#59), from a stream of their own, in a track
     // of their own: `check` reads them only when asked (`--only
     // handwriting`), against a gate of their own.

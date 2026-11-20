@@ -626,6 +626,7 @@ fn learnable(w: &str, capitalised: bool) -> bool {
         && !detect::PARTICLES.contains(&key(w).as_str())
         && !LEGAL_FORMS.contains(&key(w).as_str())
         && !detect::only_role_words(w)
+        && !detect::person_noun(w)
         && !detect::brand_word(w)
         && !detect::ACCOUNTS.contains(&w.to_lowercase().as_str())
 }
@@ -739,6 +740,12 @@ mod tests {
                 Source::Text
             ),
             ["Ole", "Hagen"]
+        );
+        // A kin word beside a name stays off the list (`Albers-Zwillinge`).
+        learn(&names, "die Albers-Zwillinge", "Albers-Zwillinge");
+        assert_eq!(
+            found(&names, "Zwillinge und Albers", Source::Text),
+            ["Albers"]
         );
         // A name written all in lower case (a home directory) is learned.
         learn(&names, "mira.albers", "mira.albers");
