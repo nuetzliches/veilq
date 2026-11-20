@@ -87,8 +87,8 @@ mapping file comes in M2, encrypted (age); it never goes into a report.
 | Format | Approach | Traps |
 |---|---|---|
 | Text, logs, NDJSON, JSON, CSV | streamed in chunks with an overlap window; CSV and JSON aware of columns and keys | a value split across a chunk boundary |
-| DOCX, XLSX, PPTX | edit the OOXML parts in place, keep formatting | a value split across runs; comments, tracked changes, headers/footers, document properties (author), hidden sheets, cached formula values, embedded images |
-| EML | headers, bodies, attachments recursively | encoded words, nested messages |
+| DOCX, XLSX, PPTX | edit the OOXML parts in place, keep formatting | a value split across runs; comments, tracked changes, headers/footers, document properties (author), hidden sheets, cached formula values, embedded images; attributes (alt text, tooltips, fields), sheet names, pivot caches, XML comments, the thumbnail (ADR-0063) |
+| EML | headers, bodies, attachments recursively; transport headers removed (ADR-0063) | encoded words, nested messages, attachment names, HTML attributes |
 | Images | OCR, character boxes filled black, encoded anew (ADR-0023); faces and handwritten signatures found and filled black (ADR-0038, ADR-0048) | EXIF/XMP metadata including GPS; a face or a signature the detector misses |
 | GIF | decode frames, OCR changed frames only, boxes persist while their pixels stand still, re-encode (ADR-0023) | one frame without the box shows the value |
 | PDF | rasterise pages with PDFium and redact the images; a new PDF of page images (text layer gone, stated in the report; ADR-0023) | incremental updates and metadata keep old content |

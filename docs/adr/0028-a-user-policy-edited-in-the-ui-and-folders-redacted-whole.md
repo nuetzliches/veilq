@@ -1,6 +1,6 @@
 # ADR-0028: A user policy, edited in the UI, and folders redacted whole
 
-- **Status:** Accepted (card of ADR-0027, points 2 and 3, approved by the owner 2026-11-11); amends [ADR-0004](0004-the-policy-is-veilq-toml-in-the-current-directory-or-the-git-root.md) (where the policy is found) and [ADR-0008](0008-the-web-ui-is-local-token-bound-and-reads-under-one-root.md) (the root can be chosen, the UI writes into a target folder); amended by [ADR-0054](0054-a-mark-acts-on-its-document-is-kept-as-a-case-and-proposes-rules.md) (a rule from a mark is saved into the user's policy)
+- **Status:** Accepted (card of ADR-0027, points 2 and 3, approved by the owner 2026-11-11); amends [ADR-0004](0004-the-policy-is-veilq-toml-in-the-current-directory-or-the-git-root.md) (where the policy is found) and [ADR-0008](0008-the-web-ui-is-local-token-bound-and-reads-under-one-root.md) (the root can be chosen, the UI writes into a target folder); amended by [ADR-0054](0054-a-mark-acts-on-its-document-is-kept-as-a-case-and-proposes-rules.md) (a rule from a mark is saved into the user's policy) and [ADR-0063](0063-what-a-document-says-besides-its-text-is-read-removed-or-reported.md) (a folder run's names are redacted)
 - **Date:** 2026-11-11
 - **Deciders:** project owner
 - **Related:** [ADR-0027](0027-a-double-click-opens-the-ui-and-setup-installs-for-the-user.md)

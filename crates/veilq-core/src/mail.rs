@@ -2,19 +2,25 @@
 //! MIME.
 //!
 //! Headers are read decoded (RFC 2047 encoded words) with their name before
-//! them, so that `From: Lena Vogt <...>` reads as a header line does. Text
+//! them, so that `From: Lena Vogt <...>` reads as a header line does; only
+//! those that say who wrote to whom and about what are kept, the transport's
+//! and clients' are removed (ADR-0063). A part's file name is read and
+//! replaced like text, its extension kept. Text
 //! parts are decoded from their transfer encoding and charset and redacted in
-//! their format: plain text, HTML (its text and its `href`, `title` and `alt`
-//! values, one segment over the whole body so that a name across tags is
-//! found), CSV, JSON, a nested mail, an Office attachment. A part veilq cannot
+//! their format: plain text, HTML (its text and its `href`, `title`, `alt`,
+//! `src`, `content` and `data-*` values, one segment over the whole body so
+//! that a name across tags is found; comments removed), CSV, JSON, a nested
+//! mail, an Office attachment. A part veilq cannot
 //! read (an archive) is an error. Images and PDFs are read with OCR
 //! (ADR-0023); without it a PDF is an error and an image follows
 //! `[office] embedded`.
 //! What changed is encoded again: the same transfer encoding, UTF-8.
 
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use base64::Engine as _;
+use regex::Regex;
 
 use crate::detect::Candidate;
 use crate::finding::{Finding, Location};
@@ -26,7 +32,8 @@ fn error(message: impl std::fmt::Display) -> Error {
     Error::Format(message.to_string())
 }
 
-/// Headers that say how the mail is built, not what it says.
+/// Headers that say how the mail is built, not what it says: kept unread
+/// (a part's file name in them is read on its own).
 const STRUCTURAL: &[&str] = &[
     "content-type",
     "content-transfer-encoding",
@@ -34,6 +41,28 @@ const STRUCTURAL: &[&str] = &[
     "date",
     "content-id",
     "content-disposition",
+];
+
+/// Headers that say who wrote to whom and about what: kept and read. Every
+/// other one (`Received`, `Return-Path`, `X-…`, `DKIM-Signature`, ARC,
+/// `Authentication-Results`, a client's own) is removed: host names, IP
+/// addresses and internal ids no detector takes (ADR-0063).
+const READ: &[&str] = &[
+    "from",
+    "sender",
+    "reply-to",
+    "to",
+    "cc",
+    "bcc",
+    "subject",
+    "comments",
+    "keywords",
+    "message-id",
+    "in-reply-to",
+    "references",
+    "content-description",
+    "content-location",
+    "content-language",
 ];
 
 pub fn process(engine: &Engine, input: &[u8], apply: bool) -> Result<Outcome, Error> {
@@ -45,6 +74,7 @@ pub fn process(engine: &Engine, input: &[u8], apply: bool) -> Result<Outcome, Er
         mapping: Vec::new(),
         review_reasons: Vec::new(),
         weak_lines: Vec::new(),
+        removed_headers: 0,
     };
     let eol = if input.windows(2).any(|w| w == b"\r\n") {
         "\r\n"
@@ -52,6 +82,12 @@ pub fn process(engine: &Engine, input: &[u8], apply: bool) -> Result<Outcome, Er
         "\n"
     };
     out.output = part(engine, input, "", eol, apply, &mut out)?;
+    if out.removed_headers > 0 {
+        out.review_reasons.push(format!(
+            "{} transport or client header(s) (Received, X-…) were removed unread",
+            out.removed_headers
+        ));
+    }
     Ok(out)
 }
 
@@ -131,9 +167,185 @@ fn params<'a>(parts: impl Iterator<Item = &'a str>) -> HashMap<String, String> {
 
 fn filename(hs: &[Header]) -> Option<String> {
     let d = header(hs, "content-disposition").map(|v| params(v.split(';').skip(1)));
-    d.and_then(|p| p.get("filename").cloned())
-        .or_else(|| content_type(hs).1.get("name").cloned())
+    d.and_then(|p| extended(&p, "filename").or_else(|| p.get("filename").cloned()))
+        .or_else(|| {
+            let ps = content_type(hs).1;
+            extended(&ps, "name").or_else(|| ps.get("name").cloned())
+        })
         .map(|n| decode_words(&n))
+}
+
+/// An RFC 2231 parameter (`filename*=utf-8''Akte%20B.pdf`, or continued as
+/// `filename*0*`, `filename*1*`), decoded; `None` without one.
+fn extended(ps: &HashMap<String, String>, key: &str) -> Option<String> {
+    let mut pieces: Vec<(usize, bool, &String)> = ps
+        .iter()
+        .filter_map(|(k, v)| {
+            let rest = k.strip_prefix(key)?.strip_prefix('*')?;
+            let (n, encoded) = match rest.strip_suffix('*') {
+                Some(n) => (n, true),
+                None => (rest, rest.is_empty()),
+            };
+            let n = if n.is_empty() { 0 } else { n.parse().ok()? };
+            Some((n, encoded, v))
+        })
+        .collect();
+    if pieces.is_empty() {
+        return None;
+    }
+    pieces.sort_by_key(|p| p.0);
+    let mut bytes = Vec::new();
+    for (k, (_, encoded, v)) in pieces.into_iter().enumerate() {
+        let v = if k == 0 && encoded {
+            // charset'language'value; only the first piece names them.
+            v.splitn(3, '\'').nth(2).unwrap_or(v)
+        } else {
+            v.as_str()
+        };
+        if encoded {
+            let b = v.as_bytes();
+            let mut i = 0;
+            while i < b.len() {
+                if b[i] == b'%'
+                    && let Some(x) = v
+                        .get(i + 1..i + 3)
+                        .and_then(|h| u8::from_str_radix(h, 16).ok())
+                {
+                    bytes.push(x);
+                    i += 3;
+                } else {
+                    bytes.push(b[i]);
+                    i += 1;
+                }
+            }
+        } else {
+            bytes.extend_from_slice(v.as_bytes());
+        }
+    }
+    Some(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// A file name with what a detector finds in its stem replaced (ADR-0063),
+/// in characters every file system takes; its extension stays. The new
+/// name if anything was found, and the findings reported at `at`.
+pub(crate) fn redact_file_name(
+    engine: &Engine,
+    name: &str,
+    part: &str,
+    at: (u64, usize),
+    apply: bool,
+    out: &mut Outcome,
+) -> Result<Option<String>, Error> {
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((s, e)) if !s.is_empty() && e.len() <= 5 && e.chars().all(char::is_alphanumeric) => {
+            (s, Some(e))
+        }
+        _ => (name, None),
+    };
+    // Words, not a run of underscores: `Vertrag_Ole_Faber` reads as text;
+    // a placeholder written into a name before (`[PERSON]`,
+    // `[PERSON-0a1b2c3d]`) reads as the placeholder it stands for.
+    static READ_AS: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"\[([A-Z][A-Z0-9_]*)(?:-([0-9a-f]{8}))?\]|[_+]").expect("a valid regex")
+    });
+    let spaced = READ_AS
+        .replace_all(stem, |c: &regex::Captures| match (c.get(1), c.get(2)) {
+            (Some(t), Some(h)) => format!("[{}:{}]", t.as_str(), h.as_str()),
+            (Some(t), None) => format!("<{}>", t.as_str()),
+            _ => " ".to_owned(),
+        })
+        .into_owned();
+    let mut found = engine.findings(&spaced, "")?;
+    if found.is_empty() {
+        return Ok(None);
+    }
+    let (new, pseudonyms) = if apply {
+        let (pieces, p) = engine.replace(&spaced, "", &mut found, &mut out.mapping)?;
+        (pieces.into_iter().map(|(p, _)| p).collect::<String>(), p)
+    } else {
+        let mut s = String::new();
+        let mut at = 0;
+        for c in &found {
+            s.push_str(&spaced[at..c.start]);
+            s.push_str(&format!("<{}>", c.entity.as_str()));
+            at = c.end;
+        }
+        (s + &spaced[at..], vec![None; found.len()])
+    };
+    for (c, p) in found.iter().zip(pseudonyms) {
+        out.findings.push(finding(c, part, at, &spaced, p));
+    }
+    // A placeholder in what a file name may hold: `<PERSON>` as `[PERSON]`,
+    // `[PERSON:0a1b2c3d]` as `[PERSON-0a1b2c3d]`; read back as above.
+    static WRITE_AS: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"<([A-Z][A-Z0-9_]*)>|\[([A-Z][A-Z0-9_]*):([0-9a-f]{8})\]")
+            .expect("a valid regex")
+    });
+    let new = WRITE_AS.replace_all(&new, |c: &regex::Captures| match c.get(1) {
+        Some(t) => format!("[{}]", t.as_str()),
+        None => format!("[{}-{}]", &c[2], &c[3]),
+    });
+    let mut safe: String = new
+        .chars()
+        .map(|c| {
+            if matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') || c.is_control() {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    // Back to the stem's own separators where nothing was replaced.
+    if !stem.contains(' ') {
+        safe = safe.replace(' ', "_");
+    }
+    Ok(Some(match ext {
+        Some(e) => format!("{safe}.{e}"),
+        None => safe,
+    }))
+}
+
+/// A `Content-Type` or `Content-Disposition` header with its `name` or
+/// `filename` parameter (and their RFC 2231 forms) set to `new`.
+fn with_file_name(h: &Header, new: &str, eol: &str) -> String {
+    let mut pieces = h.value.split(';');
+    let first = pieces.next().unwrap_or("").trim().to_owned();
+    let key = if h.name.eq_ignore_ascii_case("content-type") {
+        "name"
+    } else {
+        "filename"
+    };
+    let mut out = format!("{}: {first}", h.name);
+    let mut had = false;
+    for p in pieces {
+        let k = p.split('=').next().unwrap_or("").trim().to_lowercase();
+        if k == key || k.starts_with(&format!("{key}*")) {
+            had = true;
+            continue;
+        }
+        if !p.trim().is_empty() {
+            out.push_str(&format!(";{eol} {}", p.trim()));
+        }
+    }
+    if !had {
+        return h.raw.clone();
+    }
+    if new.is_ascii() {
+        out.push_str(&format!(";{eol} {key}=\"{new}\""));
+    } else {
+        let encoded: String = new
+            .bytes()
+            .map(|b| {
+                if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
+                    (b as char).to_string()
+                } else {
+                    format!("%{b:02X}")
+                }
+            })
+            .collect();
+        out.push_str(&format!(";{eol} {key}*=utf-8''{encoded}"));
+    }
+    out + eol
 }
 
 /// One part (or the whole mail): headers and body redacted, written again.
@@ -149,10 +361,37 @@ fn part(
     let head =
         std::str::from_utf8(head).map_err(|_| error(format!("{label}headers are not UTF-8")))?;
     let hs = headers(head);
+    // The part's file name, read in the header that names it.
+    let original = filename(&hs);
+    let renamed = match &original {
+        Some(n) => {
+            let line = hs
+                .iter()
+                .position(|h| {
+                    h.name.eq_ignore_ascii_case("content-disposition")
+                        || h.name.eq_ignore_ascii_case("content-type")
+                })
+                .unwrap_or(0) as u64
+                + 1;
+            redact_file_name(engine, n, &format!("{label}headers"), (line, 0), apply, out)?
+        }
+        None => None,
+    };
     let mut head_out = String::new();
+    let mut removed = 0;
     for (i, h) in hs.iter().enumerate() {
-        if h.name.is_empty() || STRUCTURAL.contains(&h.name.to_lowercase().as_str()) {
-            head_out.push_str(&h.raw);
+        let lower = h.name.to_lowercase();
+        if h.name.is_empty() || STRUCTURAL.contains(&lower.as_str()) {
+            match &renamed {
+                Some(new) if matches!(lower.as_str(), "content-type" | "content-disposition") => {
+                    head_out.push_str(&with_file_name(h, new, eol));
+                }
+                _ => head_out.push_str(&h.raw),
+            }
+            continue;
+        }
+        if !READ.contains(&lower.as_str()) {
+            removed += 1;
             continue;
         }
         // Read as the line `Name: value`, redacted in the value only: what a
@@ -187,6 +426,7 @@ fn part(
             None => head_out.push_str(&h.raw),
         }
     }
+    out.removed_headers += removed;
     let (mime, ps) = content_type(&hs);
     let cte = header(&hs, "content-transfer-encoding")
         .unwrap_or("7bit")
@@ -201,14 +441,17 @@ fn part(
         part(engine, body, &format!("{label}message "), eol, apply, out)?
     } else {
         let decoded = decode_body(body, &cte).map_err(|e| error(format!("{label}{e}")))?;
-        let name = filename(&hs);
-        let shown = format!("{label}{}", name.as_deref().unwrap_or(&mime));
+        // The report names a part by its new name, never by the old one.
+        let shown = format!(
+            "{label}{}",
+            renamed.as_deref().or(original.as_deref()).unwrap_or(&mime)
+        );
         let new = leaf(
             engine,
             &decoded,
             &mime,
             &ps,
-            name.as_deref(),
+            original.as_deref(),
             &shown,
             eol,
             apply,
@@ -520,6 +763,61 @@ fn relabel(findings: Vec<Finding>, label: &str, out: &mut Outcome) {
 
 // ------------------------------------------------------------------ HTML
 
+/// The attributes of an HTML tag (the text between `<` and `>`): each
+/// name in lower case and its value's range in `tag`, quotes left out.
+fn html_attrs(tag: &str) -> Vec<(String, std::ops::Range<usize>)> {
+    let b = tag.as_bytes();
+    let mut out = Vec::new();
+    // Past the tag's name.
+    let mut j = b
+        .iter()
+        .position(|c| c.is_ascii_whitespace())
+        .unwrap_or(b.len());
+    while j < b.len() {
+        while j < b.len() && (b[j].is_ascii_whitespace() || b[j] == b'/') {
+            j += 1;
+        }
+        let k = j;
+        while j < b.len() && !b[j].is_ascii_whitespace() && b[j] != b'=' && b[j] != b'/' {
+            j += 1;
+        }
+        if k == j {
+            break;
+        }
+        let key = tag[k..j].to_lowercase();
+        while j < b.len() && b[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if b.get(j) != Some(&b'=') {
+            continue;
+        }
+        j += 1;
+        while j < b.len() && b[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        let range = match b.get(j) {
+            Some(q @ (b'"' | b'\'')) => {
+                let start = j + 1;
+                let end = b[start..]
+                    .iter()
+                    .position(|c| c == q)
+                    .map_or(b.len(), |p| start + p);
+                j = (end + 1).min(b.len());
+                start..end
+            }
+            _ => {
+                let start = j;
+                while j < b.len() && !b[j].is_ascii_whitespace() {
+                    j += 1;
+                }
+                start..j
+            }
+        };
+        out.push((key, range));
+    }
+    out
+}
+
 /// Tags whose text runs on: a name may be split by them.
 const BLOCKS: &[&str] = &[
     "p",
@@ -552,7 +850,9 @@ const BLOCKS: &[&str] = &[
 ];
 
 /// HTML: one segment over all text (a block tag reads as a line break), and
-/// one per `href`, `title` and `alt` value. The new HTML if anything changed.
+/// one per `href`, `title`, `alt`, `src`, `content` and `data-*` value;
+/// comments outside a style sheet or script removed. The new HTML if
+/// anything changed.
 fn html(
     engine: &Engine,
     s: &str,
@@ -563,15 +863,30 @@ fn html(
     let b = s.as_bytes();
     let mut pieces: Vec<Piece> = Vec::new();
     let mut attrs: Vec<Piece> = Vec::new();
+    // Comments are removed (ADR-0063), except in a style sheet or a
+    // script, which old mail wraps in one: there they are read as text.
+    let mut dropped: Vec<std::ops::Range<usize>> = Vec::new();
+    let mut in_code = false;
     let mut i = 0;
     while i < b.len() {
         if s[i..].starts_with("<!--") {
-            i += s[i..].find("-->").map_or(s.len() - i, |p| p + 3);
-            pieces.push(Piece {
-                raw: None,
-                text: "\n".into(),
-                space_tag: None,
-            });
+            let len = s[i..].find("-->").map_or(s.len() - i, |p| p + 3);
+            if in_code {
+                let (text, _) = crate::xml::unescape(&s[i..i + len], i);
+                pieces.push(Piece {
+                    raw: Some(i..i + len),
+                    text,
+                    space_tag: None,
+                });
+            } else {
+                dropped.push(i..i + len);
+                pieces.push(Piece {
+                    raw: None,
+                    text: "\n".into(),
+                    space_tag: None,
+                });
+            }
+            i += len;
             continue;
         }
         let tag_start = b[i] == b'<'
@@ -603,33 +918,15 @@ fn html(
                     space_tag: None,
                 });
             }
-            for key in ["href", "title", "alt"] {
-                let lower = tag.to_lowercase();
-                let mut from = 0;
-                while let Some(p) = lower[from..].find(key) {
-                    let at = from + p;
-                    from = at + key.len();
-                    let before_ok = at == 0 || !lower.as_bytes()[at - 1].is_ascii_alphanumeric();
-                    let rest = lower[from..].trim_start();
-                    if !before_ok || !rest.starts_with('=') {
-                        continue;
-                    }
-                    let eq = from + (lower[from..].len() - rest.len());
-                    let v = lower[eq + 1..].trim_start();
-                    let vstart = eq + 1 + (lower[eq + 1..].len() - v.len());
-                    let (vs, ve) = match v.as_bytes().first() {
-                        Some(q @ (b'"' | b'\'')) => {
-                            let e = v[1..].find(*q as char).map_or(v.len(), |e| e + 1);
-                            (vstart + 1, vstart + e)
-                        }
-                        _ => (
-                            vstart,
-                            vstart
-                                + v.find(|c: char| c.is_whitespace() || c == '>')
-                                    .unwrap_or(v.len()),
-                        ),
-                    };
-                    let (raw_s, raw_e) = (i + 1 + vs, i + 1 + ve);
+            if matches!(name.as_str(), "style" | "script") {
+                in_code = !tag.starts_with('/');
+            }
+            let base = i + 1;
+            for (key, range) in html_attrs(tag) {
+                let read = matches!(key.as_str(), "href" | "title" | "alt" | "src" | "content")
+                    || key.starts_with("data-");
+                if read && !range.is_empty() {
+                    let (raw_s, raw_e) = (base + range.start, base + range.end);
                     let (text, _) = crate::xml::unescape(&s[raw_s..raw_e], raw_s);
                     attrs.push(Piece {
                         raw: Some(raw_s..raw_e),
@@ -653,7 +950,8 @@ fn html(
         });
         i = end;
     }
-    let mut edits = Vec::new();
+    let mut edits: Vec<(std::ops::Range<usize>, String)> =
+        dropped.into_iter().map(|r| (r, String::new())).collect();
     let body = Segment {
         pieces,
         context: String::new(),
@@ -662,7 +960,7 @@ fn html(
             part: label.to_owned(),
             n: 1,
         },
-        cell: None,
+        rewrite: None,
     };
     office::edit_segment(engine, &body, apply, out, &mut edits)?;
     for (k, a) in attrs.into_iter().enumerate() {
@@ -674,7 +972,7 @@ fn html(
                 part: format!("{label} attribute"),
                 n: k as u64 + 1,
             },
-            cell: None,
+            rewrite: None,
         };
         office::edit_segment(engine, &seg, apply, out, &mut edits)?;
     }
@@ -1002,6 +1300,77 @@ bmFtZSx0ZWxlZm9uCk1pcmEgQWxiZXJzLDA0MjEgNTU1MDE3Mwo=\r\n\
         assert!(process(&engine(), pdf.as_bytes(), true).is_err());
         let koi8 = "Content-Type: text/plain; charset=koi8-r\r\n\r\nabc\r\n";
         assert!(process(&engine(), koi8.as_bytes(), true).is_err());
+    }
+
+    #[test]
+    fn transport_headers_file_names_and_html_beyond_the_text() {
+        // ADR-0063: what no detector takes (hosts, ids) is removed, a file
+        // name is read like text, and HTML is read past href, title and alt.
+        let mail = "Received: from mx1.intern.example ([10.20.30.40]) by mx2.intern.example\r\n\
+\tfor <kai.lindqvist@example.org>; Fri, 20 Nov 2026 10:00:00 +0100\r\n\
+X-Originating-IP: [10.20.30.41]\r\n\
+From: Kai Lindqvist <kai.lindqvist@example.org>\r\n\
+Subject: Unterlagen\r\n\
+Date: Fri, 20 Nov 2026 10:00:00 +0100\r\n\
+MIME-Version: 1.0\r\n\
+Content-Type: multipart/mixed; boundary=\"b1\"\r\n\
+\r\n\
+--b1\r\n\
+Content-Type: text/html; charset=utf-8\r\n\
+\r\n\
+<html><head><style><!-- p { margin: 0 } --></style></head><body><!-- Entwurf von Frau Tilda Brenner --><p>Anbei.</p><img src=\"https://track.example/o.gif?r=tilda.brenner@example.org\" data-recipient=\"tilda.brenner@example.org\"></body></html>\r\n\
+--b1\r\n\
+Content-Type: text/plain; charset=utf-8; name=\"Akte_Frau_Tilda_Brenner.txt\"\r\n\
+Content-Disposition: attachment;\r\n\
+\x20filename*=utf-8''Akte_Frau_Tilda_Brenner.txt\r\n\
+\r\n\
+Siehe Anlage.\r\n\
+--b1--\r\n";
+        let r = process(&engine(), mail.as_bytes(), true).unwrap();
+        let out = String::from_utf8(r.output).unwrap();
+        for gone in [
+            "Received",
+            "X-Originating-IP",
+            "10.20.30",
+            "Brenner",
+            "Lindqvist",
+        ] {
+            assert!(!out.contains(gone), "{gone} in\n{out}");
+        }
+        for kept in [
+            "Subject: Unterlagen\r\n",
+            "Date: Fri, 20 Nov 2026",
+            "<style><!-- p { margin: 0 } --></style>",
+            "filename=\"Akte_Frau_[PERSON].txt\"",
+            "name=\"Akte_Frau_[PERSON].txt\"",
+        ] {
+            assert!(out.contains(kept), "{kept} not in\n{out}");
+        }
+        assert!(!out.contains("<!-- Entwurf"), "{out}");
+        assert!(
+            r.review_reasons
+                .iter()
+                .any(|m| m.starts_with("2 transport or client header(s)")),
+            "{:?}",
+            r.review_reasons
+        );
+        // The report names the attachment by its new name.
+        assert!(
+            r.findings
+                .iter()
+                .all(|f| !format!("{:?}", f.location).contains("Brenner"))
+        );
+        // A placeholder in a file name reads as one: the output redacts to
+        // itself.
+        let again = process(&engine(), out.as_bytes(), true).unwrap();
+        assert!(again.findings.is_empty(), "{:?}", again.findings);
+    }
+
+    #[test]
+    fn rfc_2231_names() {
+        let ps = params(["filename*0*=utf-8''Akte%20", "filename*1*=K%C3%BChn.pdf"].into_iter());
+        assert_eq!(extended(&ps, "filename").as_deref(), Some("Akte Kühn.pdf"));
+        assert_eq!(extended(&ps, "name"), None);
     }
 
     #[test]

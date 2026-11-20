@@ -512,6 +512,35 @@ fn walk(dir: &Path, base: &Path, out: &mut Vec<String>) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Where a file of a folder run goes under the target: each of its folders'
+/// and its own name with what a detector finds in it replaced (ADR-0063),
+/// and ` (2)` before the extension when an earlier file took that path.
+fn target_path(
+    engine: &Engine,
+    rel: &str,
+    taken: &mut std::collections::HashSet<String>,
+) -> Result<String, String> {
+    let mut parts = Vec::new();
+    for name in rel.split('/') {
+        let new = engine.redact_name(name).map_err(|e| e.to_string())?;
+        parts.push(new.unwrap_or_else(|| name.to_owned()));
+    }
+    let path = parts.join("/");
+    let (head, ext) = match path.rsplit_once('.') {
+        Some((h, e)) if !e.contains('/') && !h.ends_with('/') && !h.is_empty() => {
+            (h.to_owned(), format!(".{e}"))
+        }
+        _ => (path.clone(), String::new()),
+    };
+    let mut candidate = path;
+    let mut k = 2;
+    while !taken.insert(candidate.to_lowercase()) {
+        candidate = format!("{head} ({k}){ext}");
+        k += 1;
+    }
+    Ok(candidate)
+}
+
 /// Redacts one file to `out`; its findings' types, and whether a review is
 /// asked for.
 fn redact_file(
@@ -680,22 +709,30 @@ pub async fn batch_start(
             }
         };
         let mut report = Vec::new();
-        for rel in &files {
+        let mut taken = std::collections::HashSet::new();
+        for (k, rel) in files.iter().enumerate() {
             if cancel.load(Ordering::Relaxed) {
                 update(&|b| b.cancelled = true);
                 break;
             }
-            update(&|b| b.current = Some(rel.clone()));
-            let entry = match redact_file(&engine, &source.join(rel), &target.join(rel)) {
+            // Written and reported under its names redacted (ADR-0063).
+            let (shown, renamed) = match target_path(&engine, rel, &mut taken) {
+                Ok(p) => (p, Ok(())),
+                Err(e) => (format!("file {}", k + 1), Err(e)),
+            };
+            update(&|b| b.current = Some(shown.clone()));
+            let result = renamed
+                .and_then(|()| redact_file(&engine, &source.join(rel), &target.join(&shown)));
+            let entry = match result {
                 Ok((n, types, review)) => BatchFile {
-                    path: rel.clone(),
+                    path: shown,
                     findings: Some(n),
                     types,
                     review,
                     error: None,
                 },
                 Err(e) => BatchFile {
-                    path: rel.clone(),
+                    path: shown,
                     findings: None,
                     types: Vec::new(),
                     review: false,
