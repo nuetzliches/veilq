@@ -402,6 +402,7 @@ impl Ocr {
     fn detect(&self, img: &RgbImage) -> Result<Vec<Rect>, Error> {
         let (w, h) = img.dimensions();
         let (sw, sh) = detect_size(w, h);
+        let floor = noise_floor(sw as f32 / w as f32);
         let small = imageops::resize(img, sw, sh, imageops::FilterType::Triangle);
         const MEAN: [f32; 3] = [0.485, 0.456, 0.406];
         const STD: [f32; 3] = [0.229, 0.224, 0.225];
@@ -421,7 +422,7 @@ impl Ocr {
         let (fx, fy) = (w as f32 / mw as f32, h as f32 / mh as f32);
         Ok(components(prob, mw, mh)
             .into_iter()
-            .filter(|c| c.score >= BOX && c.w >= 3 && c.h >= 3)
+            .filter(|c| c.score >= BOX && c.w >= floor && c.h >= floor)
             .map(|c| {
                 // DB's unclip on an axis-aligned box: widen by area x r / perimeter.
                 let (bw, bh) = (c.w as f32, c.h as f32);
@@ -732,6 +733,13 @@ fn detect_size(w: u32, h: u32) -> (u32, u32) {
     (round32(w as f32 * scale), round32(h as f32 * scale))
 }
 
+/// The side, in cells of the probability map, a region needs at `scale`:
+/// 3 at the image's size, more where it was enlarged, so that a speck of
+/// the image does not grow into a box (#89).
+fn noise_floor(scale: f32) -> usize {
+    (3.0 * scale.max(1.0)).round() as usize
+}
+
 /// A connected region of the probability map above [`PIXEL`].
 #[derive(Debug, PartialEq)]
 struct Component {
@@ -824,6 +832,15 @@ mod tests {
         assert_eq!(detect_size(1200, 600), (1600, 800));
         // Larger: down to it, as before.
         assert_eq!(detect_size(3200, 1600), (1600, 800));
+    }
+
+    #[test]
+    fn the_noise_floor_grows_with_the_scale() {
+        // 3 x 3 cells of the map at the image's size; at twice its size the
+        // same speck is twice as large (#89).
+        assert_eq!(noise_floor(1.0), 3);
+        assert_eq!(noise_floor(0.5), 3);
+        assert_eq!(noise_floor(2.0), 6);
     }
 
     #[test]

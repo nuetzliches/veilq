@@ -45,6 +45,15 @@ Notable changes per release. The format follows
 - A GIF whose frames, each decoded on its whole screen, come to more than
   20 Gpx is an error (ADR-0062): many tiny frames on a large screen took as
   long as frames times screen.
+- An IBAN read short in a picture whose rest stands after a wide gap is
+  filled to the rest's end (ADR-0064).
+- An IBAN glued to its label is found with the label in any case and down
+  to its last letter (`IbanDE89…`, `NDE89…`) (ADR-0064).
+- A street of several words in lower case or with its first letters lost
+  (`am lindenweg 12, …`, `uf der Höhe 9, …`) before a postcode is an
+  address (ADR-0064).
+- Specks of a picture enlarged for the detector are no boxes: the noise
+  floor grows with the factor (ADR-0064).
 
 ## [0.7.0] - 2026-11-19
 

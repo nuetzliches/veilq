@@ -103,3 +103,4 @@ keep it to about a page.
 | [0061](0061-a-name-broken-across-lines-kin-words-and-saints.md) | A name broken across lines, kin words and saints | Accepted |
 | [0062](0062-points-from-the-review-before-0-7-0.md) | Points from the review before 0.7.0 | Accepted |
 | [0063](0063-what-a-document-says-besides-its-text-is-read-removed-or-reported.md) | What a document says besides its text is read, removed or reported | Accepted |
+| [0064](0064-points-from-the-review-before-0-4-1.md) | Points from the review before 0.4.1 | Accepted |
