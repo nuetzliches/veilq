@@ -1,6 +1,6 @@
 # ADR-0019: Office files are edited in place, every part read
 
-- **Status:** Accepted (card M3a, points 1 to 4 and 6, approved 2026-11-09)
+- **Status:** Accepted (card M3a, points 1 to 4 and 6, approved 2026-11-09); amended by [ADR-0063](0063-what-a-document-says-besides-its-text-is-read-removed-or-reported.md) (every attribute, sheet names, pivot caches, comments, the thumbnail)
 - **Date:** 2026-11-09
 - **Deciders:** project owner
 - **Related:** [ADR-0003](0003-exit-codes-0-1-2-and-veilq-fails-closed.md), [plan.md §3.4](../plan.md#34-formats)

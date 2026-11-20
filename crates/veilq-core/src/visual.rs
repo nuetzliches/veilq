@@ -26,8 +26,9 @@
 //! filled there, changed or not, and stays like any box (#114).
 //!
 //! The output is encoded anew, so EXIF, XMP and text chunks are gone; when
-//! the input had EXIF (camera, time, often GPS), the report has a `METADATA`
-//! finding for it. EXIF orientation is applied first, so boxes and pixels
+//! the input had any (EXIF with camera, time, often GPS; XMP; IPTC; a PNG's
+//! text chunks; a JPEG's comments), the report has a `METADATA` finding for
+//! it (ADR-0063). EXIF orientation is applied first, so boxes and pixels
 //! agree.
 
 use std::io::Cursor;
@@ -1227,6 +1228,7 @@ fn outcome() -> Outcome {
         mapping: Vec::new(),
         review_reasons: Vec::new(),
         weak_lines: Vec::new(),
+        removed_headers: 0,
     }
 }
 
@@ -1452,6 +1454,41 @@ fn gif(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Outcome,
     Ok(out)
 }
 
+/// Whether a PNG has a text chunk (`tEXt`, `zTXt`, `iTXt`) or a JPEG a
+/// comment (`COM`): text a decoder does not hand over.
+fn text_chunks(bytes: &[u8], format: ImageFormat) -> bool {
+    let be = |b: &[u8]| u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as usize;
+    match format {
+        ImageFormat::Png => {
+            let mut i = 8;
+            while i + 8 <= bytes.len() {
+                let len = be(&bytes[i..]);
+                if matches!(&bytes[i + 4..i + 8], b"tEXt" | b"zTXt" | b"iTXt") {
+                    return true;
+                }
+                i += 12 + len;
+            }
+            false
+        }
+        ImageFormat::Jpeg => {
+            let mut i = 2;
+            while i + 4 <= bytes.len() && bytes[i] == 0xFF {
+                let marker = bytes[i + 1];
+                // The scan's data starts: no more segments.
+                if marker == 0xDA {
+                    return false;
+                }
+                if marker == 0xFE {
+                    return true;
+                }
+                i += 2 + usize::from(u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]));
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
 /// A PNG, JPEG, WebP or GIF image, redacted and encoded anew (no metadata).
 pub fn image(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Outcome, Error> {
     let format = format_of(bytes)?;
@@ -1462,16 +1499,19 @@ pub fn image(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Ou
         .into_decoder()
         .map_err(error)?;
     let orientation = decoder.orientation().map_err(error)?;
-    let exif = decoder
-        .exif_metadata()
-        .ok()
-        .flatten()
-        .is_some_and(|e| !e.is_empty());
+    // What the encoding drops is reported (ADR-0063): EXIF, XMP, IPTC, a
+    // PNG's text chunks, a JPEG's comments.
+    let held =
+        |m: image::ImageResult<Option<Vec<u8>>>| m.ok().flatten().is_some_and(|m| !m.is_empty());
+    let metadata = held(decoder.exif_metadata())
+        || held(decoder.xmp_metadata())
+        || held(decoder.iptc_metadata())
+        || text_chunks(bytes, format);
     let mut img = DynamicImage::from_decoder(decoder).map_err(error)?;
     img.apply_orientation(orientation);
     let mut rgba = img.to_rgba8();
     let mut out = outcome();
-    if exif {
+    if metadata {
         out.findings.push(Finding {
             entity: EntityType::new("METADATA").expect("a valid type"),
             location: Location::Region {
@@ -2421,6 +2461,29 @@ mod tests {
             assert_eq!(image::guess_format(&bytes).unwrap(), f);
             assert!(!bytes.windows(4).any(|w| w == b"Exif"));
         }
+    }
+
+    #[test]
+    fn a_pngs_text_chunk_and_a_jpegs_comment_are_metadata() {
+        let img = RgbaImage::from_pixel(4, 4, Rgba([200, 10, 10, 255]));
+        let png = encode(&img, ImageFormat::Png).unwrap();
+        let jpeg = encode(&img, ImageFormat::Jpeg).unwrap();
+        assert!(!text_chunks(&png, ImageFormat::Png));
+        assert!(!text_chunks(&jpeg, ImageFormat::Jpeg));
+        // After the IHDR chunk (8 + 25 bytes): an author.
+        let text = b"Author\0Kai Lindqvist";
+        let mut chunk = (text.len() as u32).to_be_bytes().to_vec();
+        chunk.extend_from_slice(b"tEXt");
+        chunk.extend_from_slice(text);
+        chunk.extend_from_slice(&[0; 4]);
+        let mut with = png[..33].to_vec();
+        with.extend_from_slice(&chunk);
+        with.extend_from_slice(&png[33..]);
+        assert!(text_chunks(&with, ImageFormat::Png));
+        let mut with = jpeg[..2].to_vec();
+        with.extend_from_slice(&[0xFF, 0xFE, 0x00, 0x05, b'K', b'a', b'i']);
+        with.extend_from_slice(&jpeg[2..]);
+        assert!(text_chunks(&with, ImageFormat::Jpeg));
     }
 
     #[test]

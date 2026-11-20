@@ -6,6 +6,26 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- What a document says besides its text is read, removed or reported
+  (#142, ADR-0063):
+  - Office: every attribute but the structural ones is read (a picture's
+    alt text, a tooltip, a field's `mailto:`, a content control's tag); a
+    sheet named after a person is renamed, and an error when a formula
+    names it; a pivot cache is read under its fields' names; a sheet's
+    header, footer and data validations are read; XML comments are removed
+    and the thumbnail replaced by a blank picture.
+  - Mail: only the headers that say who wrote to whom and about what are
+    kept; `Received`, `X-…` and the like are removed, counted in a review
+    reason. Attachment names are read and replaced, their extension kept.
+    In HTML, `src`, `content` and `data-*` are read and comments removed.
+  - A folder run writes and lists a file under its names redacted, also
+    one it could not read.
+  - A picture with XMP, IPTC, a PNG's text or a JPEG's comment, and a PDF
+    with a title, author, attachments, a form, bookmarks or an annotation's
+    text, has a `METADATA` finding: `scan` exits 1 for it.
+
 ### Fixed
 
 - A name broken across two lines in a picture is filled whole (ADR-0061):

@@ -1,6 +1,6 @@
 # ADR-0023: Pictures are read with OCR and redacted with black boxes
 
-- **Status:** Accepted (card M4, points 1 to 7, approved 2026-11-10); amends [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md) and [ADR-0019](0019-office-files-are-edited-in-place-every-part-read.md); amended by [ADR-0026](0026-a-picture-is-filled-until-a-round-finds-nothing-new.md) (rounds) and [ADR-0030](0030-a-gif-frame-is-read-where-it-changed.md) (GIF)
+- **Status:** Accepted (card M4, points 1 to 7, approved 2026-11-10); amends [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md) and [ADR-0019](0019-office-files-are-edited-in-place-every-part-read.md); amended by [ADR-0026](0026-a-picture-is-filled-until-a-round-finds-nothing-new.md) (rounds) and [ADR-0030](0030-a-gif-frame-is-read-where-it-changed.md) (GIF) and [ADR-0063](0063-what-a-document-says-besides-its-text-is-read-removed-or-reported.md) (dropped metadata reported)
 - **Date:** 2026-11-10
 - **Deciders:** project owner
 - **Related:** plan M4, [ADR-0022](0022-ner-is-gliner-in-onnx-optional-and-pinned.md), [ADR-0013](0013-a-synthetic-corpus-with-truth-and-golden-outputs-gates-recall.md)

@@ -2258,6 +2258,10 @@ mod tests {
         )
         .unwrap();
         std::fs::write(src.join("c.bin"), [0u8, 159, 146, 150]).unwrap();
+        // Names that hold personal data (ADR-0063), one of them unreadable.
+        std::fs::create_dir_all(src.join("Frau Tilda Brenner")).unwrap();
+        std::fs::write(src.join("Frau Tilda Brenner/notiz.txt"), "Hallo").unwrap();
+        std::fs::write(src.join("Akte_Herr_Ole_Faber.bin"), [0u8, 1]).unwrap();
         let target = dir.path().join("out");
         let app = app(dir.path());
         // Not inside the source.
@@ -2277,7 +2281,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK, "{body}");
-        assert_eq!(body["total"], 3);
+        assert_eq!(body["total"], 5);
         let done = loop {
             let (_, b) = send(
                 app.clone(),
@@ -2289,10 +2293,11 @@ mod tests {
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         };
-        assert_eq!(done["done"], 3);
+        assert_eq!(done["done"], 5);
         let a = std::fs::read_to_string(target.join("a.txt")).unwrap();
         assert_eq!(a, "Mail an <EMAIL_ADDRESS>");
         assert!(target.join("sub/b.csv").is_file());
+        assert!(target.join("Frau [PERSON]/notiz.txt").is_file());
         // Fail closed: what veilq cannot read is not copied.
         assert!(!target.join("c.bin").exists());
         let failed: Vec<_> = done["files"]
@@ -2301,12 +2306,17 @@ mod tests {
             .iter()
             .filter(|f| f["error"].is_string())
             .collect();
-        assert_eq!(failed.len(), 1, "{done}");
+        assert_eq!(failed.len(), 2, "{done}");
         assert_eq!(
-            failed[0]["error"], "unsupported format .bin",
+            failed[1]["error"], "unsupported format .bin",
             "the path is in the line"
         );
-        assert!(target.join("veilq-report.json").is_file());
+        assert_eq!(failed[0]["path"], "Akte_Herr_[PERSON].bin");
+        let report = std::fs::read_to_string(target.join("veilq-report.json")).unwrap();
+        assert!(
+            !report.contains("Brenner") && !report.contains("Faber"),
+            "{report}"
+        );
         // The target is not empty now: a second run there is refused.
         let (status, _) = send(
             app,

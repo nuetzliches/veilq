@@ -1202,6 +1202,14 @@ impl Engine {
         report
     }
 
+    /// A file's or folder's name with what a detector finds in it replaced,
+    /// in characters every file system takes, its extension kept
+    /// (ADR-0063); `None` when nothing was found.
+    pub fn redact_name(&self, name: &str) -> Result<Option<String>, Error> {
+        let mut scratch = crate::office::Outcome::default();
+        crate::mail::redact_file_name(self, name, "", (0, 0), true, &mut scratch)
+    }
+
     /// The findings in `text`, decided (for formats beside this module).
     pub(crate) fn findings(&self, text: &str, context: &str) -> Result<Vec<Candidate>, Error> {
         self.decided(text, context, true, Source::Text, false)

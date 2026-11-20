@@ -1,6 +1,6 @@
 # ADR-0020: Mail headers, bodies and attachments are read and written as MIME
 
-- **Status:** Accepted (card M3a, point 5, approved 2026-11-09)
+- **Status:** Accepted (card M3a, point 5, approved 2026-11-09); amended by [ADR-0063](0063-what-a-document-says-besides-its-text-is-read-removed-or-reported.md) (transport headers removed, file names read, more of HTML read)
 - **Date:** 2026-11-09
 - **Deciders:** project owner
 - **Related:** [ADR-0019](0019-office-files-are-edited-in-place-every-part-read.md), [plan.md §3.4](../plan.md#34-formats)
@@ -45,7 +45,8 @@ veilq reads an EML as MIME and writes it back as MIME.
 
 - A display name that is replaced reads `<PERSON> <<EMAIL_ADDRESS>>`; mail
   clients show it, an address parser may not.
-- File names of attachments are not read (a known gap).
+- File names of attachments are not read (a known gap, closed by
+  ADR-0063).
 
 ## Enforced by
 

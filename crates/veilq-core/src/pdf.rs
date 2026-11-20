@@ -5,7 +5,9 @@
 //! annotations' contents, form values, links, attachments, scripts,
 //! metadata) is not carried over: a page is what it shows, nothing else.
 //! The report says so as a review reason, since a text layer that searching
-//! and copying relied on is gone.
+//! and copying relied on is gone; when the PDF held metadata, attachments, a
+//! form, bookmarks or an annotation's text, it has a `METADATA` finding too
+//! (ADR-0063).
 //!
 //! PDFium is loaded at run time from the model directory, like ONNX
 //! Runtime; a PDF it cannot open (encrypted, damaged) is an error.
@@ -80,6 +82,29 @@ pub fn pages(pdfium: &Pdfium, bytes: &[u8], max: usize) -> Result<(Vec<Vec<u8>>,
     Ok((out, doc.pages().len() as usize))
 }
 
+/// Whether a PDF holds what its rewrite drops besides its text layer
+/// (ADR-0063): a title, author, subject or keywords, attachments, a form,
+/// bookmarks, an annotation's text. One `METADATA` finding says so.
+fn holds_more(doc: &PdfDocument) -> bool {
+    use PdfDocumentMetadataTagType as Tag;
+    let tagged = [Tag::Title, Tag::Author, Tag::Subject, Tag::Keywords]
+        .into_iter()
+        .any(|t| {
+            doc.metadata()
+                .get(t)
+                .is_some_and(|m| !m.value().trim().is_empty())
+        });
+    tagged
+        || !doc.attachments().is_empty()
+        || doc.form().is_some()
+        || doc.bookmarks().root().is_some()
+        || doc.pages().iter().any(|page| {
+            page.annotations()
+                .iter()
+                .any(|a| a.contents().is_some_and(|c| !c.trim().is_empty()))
+        })
+}
+
 /// A PDF, redacted page by page (pages counted from 1).
 pub fn redact(
     engine: &Engine,
@@ -97,7 +122,24 @@ pub fn redact(
         mapping: Vec::new(),
         review_reasons: vec![IMAGE_ONLY.into()],
         weak_lines: Vec::new(),
+        removed_headers: 0,
     };
+    if holds_more(&input) {
+        out.findings.push(crate::Finding {
+            entity: crate::EntityType::new("METADATA").expect("a valid type"),
+            location: crate::Location::Region {
+                part: None,
+                frame: None,
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            },
+            confidence: 1.0,
+            detector: "metadata".into(),
+            pseudonym: None,
+        });
+    }
     let mut output = if apply {
         Some(pdfium.create_new_pdf().map_err(error)?)
     } else {

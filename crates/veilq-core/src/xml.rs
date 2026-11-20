@@ -154,6 +154,38 @@ pub fn tokenize(s: &str) -> Result<Vec<Token>, Error> {
     Ok(out)
 }
 
+/// The comments and processing instructions of `s` (not its `<?xml …?>`
+/// declaration): text no reader shows and [`tokenize`] skips, so they are
+/// removed rather than kept unread (ADR-0063).
+pub fn comments(s: &str) -> Vec<Range<usize>> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(p) = s[i..].find('<') {
+        let at = i + p;
+        let rest = &s[at..];
+        let end = if rest.starts_with("<!--") {
+            rest.find("-->").map(|e| (e + 3, true))
+        } else if rest.starts_with("<![CDATA[") {
+            rest.find("]]>").map(|e| (e + 3, false))
+        } else if rest.starts_with("<?") {
+            let declaration = rest.starts_with("<?xml ") || rest.starts_with("<?xml?");
+            rest.find("?>").map(|e| (e + 2, !declaration))
+        } else {
+            None
+        };
+        match end {
+            Some((len, drop)) => {
+                if drop {
+                    out.push(at..at + len);
+                }
+                i = at + len;
+            }
+            None => i = at + 1,
+        }
+    }
+    out
+}
+
 /// `s` with the five XML entities and character references decoded, and
 /// where each escape ended: (decoded offset, raw offset) pairs, as the
 /// engine's segments keep them.
@@ -211,7 +243,8 @@ pub fn unescape(s: &str, base: usize) -> (String, Vec<(usize, usize)>) {
     (out, marks)
 }
 
-/// `s` escaped for text (`attr`: for an attribute value in double quotes).
+/// `s` escaped for text (`attr`: also for an attribute value in either
+/// quotes).
 pub fn escape(s: &str, attr: bool) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -220,6 +253,7 @@ pub fn escape(s: &str, attr: bool) -> String {
             '<' => out.push_str("&lt;"),
             '>' => out.push_str("&gt;"),
             '"' if attr => out.push_str("&quot;"),
+            '\'' if attr => out.push_str("&apos;"),
             c => out.push(c),
         }
     }
@@ -257,6 +291,19 @@ mod tests {
         ));
         assert!(tokenize("<a b=c>").is_err());
         assert!(tokenize("<a").is_err());
+    }
+
+    #[test]
+    fn comments_and_instructions_but_not_the_declaration() {
+        let s = r#"<?xml version="1.0"?><?mso-application progid="Word.Document"?><a><!-- Kai Lindqvist --><![CDATA[<!-- kept -->]]></a>"#;
+        let found: Vec<&str> = comments(s).into_iter().map(|r| &s[r]).collect();
+        assert_eq!(
+            found,
+            [
+                r#"<?mso-application progid="Word.Document"?>"#,
+                "<!-- Kai Lindqvist -->"
+            ]
+        );
     }
 
     #[test]

@@ -31,6 +31,7 @@ use crate::xml::{self, TagKind, Token};
 use crate::{Engine, Error, Format};
 
 /// What a container run found, and its output.
+#[derive(Default)]
 pub struct Outcome {
     pub output: Vec<u8>,
     pub findings: Vec<Finding>,
@@ -39,6 +40,8 @@ pub struct Outcome {
     /// Lines of a picture OCR read badly, where nothing was filled: their
     /// place, as the messages say it; one review reason at the end (#52).
     pub weak_lines: Vec<String>,
+    /// Mail headers removed unread (ADR-0063); one review reason at the end.
+    pub removed_headers: usize,
 }
 
 const PARAGRAPHS: &[&str] = &["p", "si"];
@@ -81,6 +84,22 @@ pub(crate) const BLANK_GIF: &[u8] = &[
 ];
 const BLANK_SVG: &[u8] = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"/>";
 
+/// A white 1x1 picture in the format a part's name says.
+fn blank_picture(lower: &str) -> Result<Vec<u8>, Error> {
+    if lower.ends_with(".jpeg") || lower.ends_with(".jpg") {
+        let white = image::RgbImage::from_pixel(1, 1, image::Rgb([255, 255, 255]));
+        let mut bytes = Cursor::new(Vec::new());
+        white
+            .write_to(&mut bytes, image::ImageFormat::Jpeg)
+            .map_err(error)?;
+        Ok(bytes.into_inner())
+    } else if lower.ends_with(".gif") {
+        Ok(BLANK_GIF.to_vec())
+    } else {
+        Ok(BLANK_PNG.to_vec())
+    }
+}
+
 fn error(message: impl std::fmt::Display) -> Error {
     Error::Format(message.to_string())
 }
@@ -102,9 +121,17 @@ pub(crate) struct Segment {
     /// Replace the whole text as this type, whatever it holds.
     pub(crate) forced: Option<&'static str>,
     pub(crate) place: Place,
-    /// The raw range of the whole thing to rewrite when it is a cell value
-    /// that becomes an inline string; `None` for text in place.
-    pub(crate) cell: Option<CellRewrite>,
+    /// What else changes when the text does; `None` for text in place.
+    pub(crate) rewrite: Option<Rewrite>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum Rewrite {
+    /// A cell value that becomes an inline string.
+    Cell(CellRewrite),
+    /// The local name (its range) of a pivot cache's `n` or `d` element,
+    /// which becomes `s` when its value becomes text.
+    Retag(Range<usize>),
 }
 
 #[derive(Debug, Clone)]
@@ -153,9 +180,13 @@ pub fn process(engine: &Engine, input: &[u8], apply: bool) -> Result<Outcome, Er
         mapping: Vec::new(),
         review_reasons: Vec::new(),
         weak_lines: Vec::new(),
+        removed_headers: 0,
     };
     let names: Vec<String> = entries.iter().map(|e| e.0.clone()).collect();
-    let workbook = Workbook::read(&entries)?;
+    let mut workbook = Workbook::read(&entries)?;
+    // Before any sheet is read: a renamed sheet is reported by its new name.
+    let mut workbook_edits = Some(workbook.names(engine, &entries, apply, &mut out)?);
+    let pivots = pivot_fields(&entries)?;
     let mut new_data: HashMap<String, Vec<u8>> = HashMap::new();
     let mut blanked = 0;
     // The shared strings last: the sheets say first which columns show them.
@@ -174,11 +205,32 @@ pub fn process(engine: &Engine, input: &[u8], apply: bool) -> Result<Outcome, Er
             } else if name == "xl/sharedStrings.xml" {
                 workbook.shared_strings(engine, text, apply, &mut out)?
             } else {
-                part(engine, name, text, apply, &mut out)?
+                let edits = if name == "xl/workbook.xml" {
+                    workbook_edits.take().unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+                let fields = pivots.get(name).map(Vec::as_slice);
+                part(engine, name, text, fields, edits, apply, &mut out)?
+            };
+            // Comments and processing instructions go unread (ADR-0063);
+            // nothing above reads or edits them.
+            let kept = changed.as_deref().unwrap_or(text);
+            let dropped = xml::comments(kept);
+            let changed = if dropped.is_empty() {
+                changed
+            } else {
+                apply_edits(
+                    kept,
+                    dropped.into_iter().map(|r| (r, String::new())).collect(),
+                )
             };
             if let Some(c) = changed {
                 new_data.insert(name.clone(), c.into_bytes());
             }
+        } else if lower.starts_with("docprops/thumbnail.") {
+            // A small picture of the first page: replaced, never read.
+            new_data.insert(name.clone(), blank_picture(&lower)?);
         } else if let Some(kind) = nested_office(&lower) {
             let _ = kind;
             let inner = process(engine, data, apply).map_err(|e| error(format!("{name}: {e}")))?;
@@ -274,8 +326,47 @@ fn nested_office(lower: &str) -> Option<&'static str> {
         .find(|e| lower.ends_with(e))
 }
 
-/// The segments of a part: paragraphs, other text, the metadata.
-fn segments(name: &str, s: &str) -> Result<Vec<Segment>, Error> {
+/// An attribute that holds no text for a reader: a namespace, an id, a
+/// reference to another part, a relationship's or content's type, a
+/// revision mark (ADR-0063). Every other attribute is read.
+fn structural(attr: &str) -> bool {
+    let l = xml::local(attr);
+    attr.starts_with("xmlns")
+        || attr.starts_with("r:")
+        || attr.starts_with("xml:")
+        || l.starts_with("rsid")
+        || l.ends_with("Id")
+        || matches!(
+            l,
+            "id" | "Id"
+                | "uid"
+                | "guid"
+                | "uri"
+                | "spid"
+                | "Ignorable"
+                | "ProcessContent"
+                | "MustUnderstand"
+                | "PreserveElements"
+                | "PreserveAttributes"
+                | "Requires"
+                | "Type"
+                | "ContentType"
+                | "PartName"
+                | "Extension"
+                | "Target"
+                | "TargetMode"
+        )
+}
+
+/// Attributes another part names (a sheet in a formula, a defined name):
+/// read where their names are decided ([`Workbook::names`]), not here.
+fn named_elsewhere(part: &str, element: &str, attr: &str) -> bool {
+    part == "xl/workbook.xml" && matches!(element, "sheet" | "definedName") && attr == "name"
+}
+
+/// The segments of a part: paragraphs, other text, attributes, the
+/// metadata. `fields`: for a pivot cache's records, its fields' names.
+fn segments(name: &str, s: &str, fields: Option<&[String]>) -> Result<Vec<Segment>, Error> {
     let tokens = xml::tokenize(s)?;
     let mut out: Vec<Segment> = Vec::new();
     // Open paragraphs (nested ones in text boxes), each collecting pieces.
@@ -284,8 +375,17 @@ fn segments(name: &str, s: &str) -> Result<Vec<Segment>, Error> {
     let mut stack: Vec<(String, Option<Range<usize>>, bool)> = Vec::new();
     let custom = name == "docProps/custom.xml";
     let comment_authors = name.ends_with("commentAuthors.xml");
+    let pivot = name.starts_with("xl/pivotCache/");
+    // A pivot cache's definition: the field whose items are read; its
+    // records: the place of a value in its record.
+    let mut field = String::new();
+    let mut in_record = 0usize;
     let n = |out: &Vec<Segment>| out.len() as u64 + 1;
-    let push = |out: &mut Vec<Segment>, pieces: Vec<Piece>, forced: Option<&'static str>| {
+    let push = |out: &mut Vec<Segment>,
+                pieces: Vec<Piece>,
+                forced: Option<&'static str>,
+                context: String,
+                rewrite: Option<Rewrite>| {
         if pieces.iter().any(|p| !p.text.trim().is_empty()) {
             let place = Place::Part {
                 part: name.to_owned(),
@@ -293,10 +393,10 @@ fn segments(name: &str, s: &str) -> Result<Vec<Segment>, Error> {
             };
             out.push(Segment {
                 pieces,
-                context: String::new(),
+                context,
                 forced,
                 place,
-                cell: None,
+                rewrite,
             });
         }
     };
@@ -309,8 +409,32 @@ fn segments(name: &str, s: &str) -> Result<Vec<Segment>, Error> {
                 attrs,
             } => {
                 let l = xml::local(tag);
+                let parent = stack.last().map(|e| e.0.as_str()).unwrap_or_default();
+                // A value of a pivot cache: under its field's name.
+                let mut context = String::new();
+                if pivot && *kind != TagKind::End {
+                    if l == "cacheField" {
+                        field = attrs
+                            .iter()
+                            .find(|(a, _)| a == "name")
+                            .map(|(_, v)| xml::unescape(&s[v.clone()], 0).0)
+                            .unwrap_or_default();
+                    }
+                    if l == "r" {
+                        in_record = 0;
+                    } else if parent == "r" {
+                        context = fields
+                            .and_then(|f| f.get(in_record))
+                            .cloned()
+                            .unwrap_or_default();
+                        in_record += 1;
+                    } else if fields.is_none() {
+                        context = field.clone();
+                    }
+                }
                 for (a, v) in attrs {
                     let al = xml::local(a);
+                    let value = &s[v.clone()];
                     let forced = if PERSON_ATTRS.contains(&al) || (comment_authors && al == "name")
                     {
                         Some("PERSON")
@@ -321,18 +445,43 @@ fn segments(name: &str, s: &str) -> Result<Vec<Segment>, Error> {
                         && attrs.iter().any(|(k, v2)| {
                             xml::local(k) == "TargetMode" && &s[v2.clone()] == "External"
                         });
-                    if forced.is_some() || external {
-                        let (text, _) = xml::unescape(&s[v.clone()], v.start);
-                        push(
-                            &mut out,
-                            vec![Piece {
-                                raw: Some(v.clone()),
-                                text,
-                                space_tag: None,
-                            }],
-                            forced,
-                        );
+                    let read = forced.is_some()
+                        || external
+                        || (!structural(a)
+                            && !named_elsewhere(name, l, al)
+                            // A record's index into its field's items.
+                            && !(pivot && l == "x")
+                            && value.chars().any(char::is_alphanumeric));
+                    if !read {
+                        continue;
                     }
+                    let (text, _) = xml::unescape(value, v.start);
+                    let pivot_value = pivot && al == "v";
+                    // An OLAP item with children (`<n v="1"><x/></n>`) keeps
+                    // its name: its end tag would not follow.
+                    let rewrite = (pivot_value
+                        && matches!(l, "n" | "d")
+                        && *kind == TagKind::Empty)
+                        .then(|| {
+                            let at = range.start + 1;
+                            let local = at + tag.len() - l.len();
+                            Rewrite::Retag(local..at + tag.len())
+                        });
+                    push(
+                        &mut out,
+                        vec![Piece {
+                            raw: Some(v.clone()),
+                            text,
+                            space_tag: None,
+                        }],
+                        forced,
+                        if pivot_value {
+                            context.clone()
+                        } else {
+                            String::new()
+                        },
+                        rewrite,
+                    );
                 }
                 match kind {
                     TagKind::Start => {
@@ -369,7 +518,7 @@ fn segments(name: &str, s: &str) -> Result<Vec<Segment>, Error> {
                         if PARAGRAPHS.contains(&l)
                             && let Some(pieces) = open.pop()
                         {
-                            push(&mut out, pieces, None);
+                            push(&mut out, pieces, None, String::new(), None);
                         }
                     }
                 }
@@ -409,7 +558,7 @@ fn segments(name: &str, s: &str) -> Result<Vec<Segment>, Error> {
                     }
                     // Whitespace between runs belongs to no text element.
                     Some(_) if raw.trim().is_empty() => {}
-                    _ => push(&mut out, vec![piece], forced),
+                    _ => push(&mut out, vec![piece], forced, String::new(), None),
                 }
             }
         }
@@ -422,11 +571,12 @@ fn part(
     engine: &Engine,
     name: &str,
     s: &str,
+    fields: Option<&[String]>,
+    mut edits: Vec<(Range<usize>, String)>,
     apply: bool,
     out: &mut Outcome,
 ) -> Result<Option<String>, Error> {
-    let segs = segments(name, s)?;
-    let mut edits: Vec<(Range<usize>, String)> = Vec::new();
+    let segs = segments(name, s, fields)?;
     for seg in segs {
         edit_segment(engine, &seg, apply, out, &mut edits)?;
     }
@@ -508,7 +658,11 @@ fn distribute(
     replacements: &[String],
     edits: &mut Vec<(Range<usize>, String)>,
 ) -> Result<(), Error> {
-    if let Some(cell) = &seg.cell {
+    if let Some(Rewrite::Retag(name)) = &seg.rewrite {
+        // A pivot cache's number or date that becomes text.
+        edits.push((name.clone(), "s".into()));
+    }
+    if let Some(Rewrite::Cell(cell)) = &seg.rewrite {
         // A cell value that becomes an inline string.
         let text = seg.text();
         let mut new = String::new();
@@ -567,7 +721,8 @@ fn distribute(
             }
             Some(raw) => {
                 if new != p.text {
-                    edits.push((raw.clone(), xml::escape(&new, false)));
+                    // Quotes escaped too: the text may be an attribute's.
+                    edits.push((raw.clone(), xml::escape(&new, true)));
                     if let Some(tag) = &p.space_tag
                         && (new.starts_with(char::is_whitespace)
                             || new.ends_with(char::is_whitespace))
@@ -605,6 +760,89 @@ pub(crate) fn apply_edits(s: &str, mut edits: Vec<(Range<usize>, String)>) -> Op
 }
 
 // ------------------------------------------------------------------ XLSX
+
+/// Every text of a workbook that may name a sheet: formulas of cells,
+/// defined names, data validations, conditional formats and charts, a
+/// pivot cache's source, a hyperlink's place.
+fn formula_texts(entries: &[(String, Vec<u8>, CompressionMethod)]) -> Result<Vec<String>, Error> {
+    let mut out = Vec::new();
+    for (name, data, _) in entries {
+        if !name.starts_with("xl/") || !name.ends_with(".xml") {
+            continue;
+        }
+        let Ok(s) = std::str::from_utf8(data) else {
+            continue;
+        };
+        let mut element = String::new();
+        for t in xml::tokenize(s)? {
+            match t {
+                Token::Tag {
+                    name, kind, attrs, ..
+                } => {
+                    let l = xml::local(&name);
+                    if kind == TagKind::Start {
+                        element = l.to_owned();
+                    }
+                    for (a, v) in &attrs {
+                        let al = xml::local(a);
+                        if (l == "worksheetSource" && al == "sheet")
+                            || (l == "hyperlink" && al == "location")
+                        {
+                            out.push(xml::unescape(&s[v.clone()], 0).0);
+                        }
+                    }
+                }
+                Token::Text(r) => {
+                    if matches!(
+                        element.as_str(),
+                        "f" | "definedName" | "formula" | "formula1" | "formula2"
+                    ) {
+                        out.push(xml::unescape(&s[r], 0).0);
+                    }
+                }
+                Token::CData(_) => {}
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Whether a formula (or a pivot cache's source sheet) names `sheet`.
+fn names_sheet(formula: &str, sheet: &str) -> bool {
+    let f = formula.to_lowercase();
+    let s = sheet.to_lowercase();
+    f == s || f.contains(&format!("{s}!")) || f.contains(&format!("'{}'!", s.replace('\'', "''")))
+}
+
+/// A sheet's new name: what Excel allows (no `\ / ? * [ ] :`, at most 31
+/// characters), and not one the workbook has.
+fn sheet_name(replaced: &str, taken: &[String]) -> String {
+    let clean: String = replaced
+        .chars()
+        .filter(|c| !matches!(c, '[' | ']'))
+        .map(|c| {
+            if matches!(c, '\\' | '/' | '?' | '*' | ':') {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect();
+    let clean = clean.trim().trim_matches('\'');
+    let base: String = clean.chars().take(31).collect();
+    let mut name = base.clone();
+    let mut k = 2;
+    while taken.contains(&name.to_lowercase()) {
+        let suffix = format!(" ({k})");
+        name = base
+            .chars()
+            .take(31 - suffix.chars().count())
+            .collect::<String>()
+            + &suffix;
+        k += 1;
+    }
+    name
+}
 
 /// A cell reference `B12` as (row, column).
 fn cell_ref(r: &str) -> Option<(u64, u64)> {
@@ -687,6 +925,105 @@ impl Workbook {
         })
     }
 
+    /// The names in `xl/workbook.xml` that formulas use (ADR-0063): a sheet
+    /// whose name holds personal data is renamed, unless a formula names
+    /// the sheet; a defined name that holds some is an error. A renamed
+    /// sheet is reported under its new name. The edits to the workbook.
+    fn names(
+        &mut self,
+        engine: &Engine,
+        entries: &[(String, Vec<u8>, CompressionMethod)],
+        apply: bool,
+        out: &mut Outcome,
+    ) -> Result<Vec<(Range<usize>, String)>, Error> {
+        let Some(entry) = entries.iter().find(|e| e.0 == "xl/workbook.xml") else {
+            return Ok(Vec::new());
+        };
+        let wb =
+            std::str::from_utf8(&entry.1).map_err(|_| error("xl/workbook.xml is not UTF-8 XML"))?;
+        let mut taken: Vec<String> = self.sheets.values().map(|n| n.to_lowercase()).collect();
+        let mut formulas: Option<Vec<String>> = None;
+        let mut edits = Vec::new();
+        let mut n = 0;
+        for t in xml::tokenize(wb)? {
+            let Token::Tag { name, attrs, .. } = t else {
+                continue;
+            };
+            let l = xml::local(&name);
+            if !matches!(l, "sheet" | "definedName") {
+                continue;
+            }
+            let Some((_, v)) = attrs.iter().find(|(a, _)| a == "name") else {
+                continue;
+            };
+            n += 1;
+            let (text, _) = xml::unescape(&wb[v.clone()], 0);
+            let mut found = engine.findings(&text, "")?;
+            let Some(first) = found.first() else {
+                continue;
+            };
+            let what = first.entity.as_str().to_owned();
+            if l == "definedName" {
+                return Err(error(format!(
+                    "xl/workbook.xml: a defined name holds {what}; veilq does not rename what formulas use"
+                )));
+            }
+            let formulas = match &mut formulas {
+                Some(f) => f,
+                None => formulas.insert(formula_texts(entries)?),
+            };
+            if formulas.iter().any(|f| names_sheet(f, &text)) {
+                return Err(error(format!(
+                    "xl/workbook.xml: a sheet's name holds {what}, and a formula names the sheet; veilq does not rewrite formulas"
+                )));
+            }
+            let pseudonyms;
+            let replaced = if apply {
+                let (pieces, p) = engine.replace(&text, "", &mut found, &mut out.mapping)?;
+                pseudonyms = p;
+                pieces.into_iter().map(|(p, _)| p).collect::<String>()
+            } else {
+                pseudonyms = vec![None; found.len()];
+                let mut s = String::new();
+                let mut at = 0;
+                for c in &found {
+                    s.push_str(&text[at..c.start]);
+                    s.push_str(&format!("<{}>", c.entity.as_str()));
+                    at = c.end;
+                }
+                s + &text[at..]
+            };
+            let new = sheet_name(&replaced, &taken);
+            taken.push(new.to_lowercase());
+            let seg = Segment {
+                pieces: Vec::new(),
+                context: String::new(),
+                forced: None,
+                place: Place::Part {
+                    part: "xl/workbook.xml".into(),
+                    n,
+                },
+                rewrite: None,
+            };
+            for (c, pseudonym) in found.iter().zip(pseudonyms) {
+                out.findings.push(Finding {
+                    entity: c.entity.clone(),
+                    location: location(&seg, &text, c),
+                    confidence: c.confidence,
+                    detector: c.detector.clone(),
+                    pseudonym,
+                });
+            }
+            for shown in self.sheets.values_mut() {
+                if *shown == text {
+                    shown.clone_from(&new);
+                }
+            }
+            edits.push((v.clone(), xml::escape(&new, true)));
+        }
+        Ok(edits)
+    }
+
     /// The shared strings in `si` order (an empty one as an empty segment).
     fn index_shared(text: Option<&str>) -> Result<Vec<Segment>, Error> {
         let Some(s) = text else { return Ok(Vec::new()) };
@@ -732,7 +1069,7 @@ impl Workbook {
                     part: "xl/sharedStrings.xml".into(),
                     n: i as u64 + 1,
                 },
-                cell: None,
+                rewrite: None,
             })
             .collect())
     }
@@ -820,7 +1157,7 @@ impl Workbook {
                         context,
                         forced: None,
                         place,
-                        cell: None,
+                        rewrite: None,
                     };
                     edit_segment(engine, &seg, apply, out, &mut edits)?;
                 }
@@ -834,7 +1171,7 @@ impl Workbook {
                         context,
                         forced: None,
                         place,
-                        cell: None,
+                        rewrite: None,
                     };
                     edit_segment(engine, &seg, apply, out, &mut edits)?;
                 }
@@ -860,15 +1197,27 @@ impl Workbook {
                         context,
                         forced: None,
                         place,
-                        cell: Some(CellRewrite {
+                        rewrite: Some(Rewrite::Cell(CellRewrite {
                             element: c.element.clone(),
                             reference: c.reference.clone(),
                             style: c.style.clone(),
-                        }),
+                        })),
                     };
                     edit_segment(engine, &seg, apply, out, &mut edits)?;
                 }
                 _ => {}
+            }
+        }
+        // Everything outside the cells: headers and footers, data
+        // validations and their prompts, hyperlinks' tooltips (ADR-0063).
+        let data = sheet_data(&tokens);
+        for seg in segments(name, s, None)? {
+            let inside = seg.pieces.iter().filter_map(|p| p.raw.as_ref()).any(|r| {
+                data.as_ref()
+                    .is_some_and(|d| d.start <= r.start && r.end <= d.end)
+            });
+            if !inside {
+                edit_segment(engine, &seg, apply, out, &mut edits)?;
             }
         }
         Ok(apply_edits(s, edits))
@@ -991,6 +1340,84 @@ struct Cell {
     value: Option<(Range<usize>, String)>,
     formula: Option<(Range<usize>, String)>,
     inline: Option<Vec<Piece>>,
+}
+
+/// Where a worksheet's `sheetData` is: its cells, read as cells.
+fn sheet_data(tokens: &[Token]) -> Option<Range<usize>> {
+    let mut start = None;
+    for t in tokens {
+        if let Token::Tag {
+            name, kind, range, ..
+        } = t
+            && xml::local(name) == "sheetData"
+        {
+            match kind {
+                TagKind::Start => start = Some(range.start),
+                TagKind::End => return start.map(|s| s..range.end),
+                TagKind::Empty => return None,
+            }
+        }
+    }
+    None
+}
+
+/// Per pivot cache's records part, its fields' names, from the definition
+/// that points to it.
+fn pivot_fields(
+    entries: &[(String, Vec<u8>, CompressionMethod)],
+) -> Result<HashMap<String, Vec<String>>, Error> {
+    let mut out = HashMap::new();
+    for (name, data, _) in entries {
+        let Some(file) = name.strip_prefix("xl/pivotCache/") else {
+            continue;
+        };
+        if !file.starts_with("pivotCacheDefinition") || !file.ends_with(".xml") {
+            continue;
+        }
+        let s = String::from_utf8_lossy(data);
+        let mut fields = Vec::new();
+        for t in xml::tokenize(&s)? {
+            if let Token::Tag {
+                name, attrs, kind, ..
+            } = t
+                && kind != TagKind::End
+                && xml::local(&name) == "cacheField"
+            {
+                fields.push(
+                    attrs
+                        .iter()
+                        .find(|(a, _)| a == "name")
+                        .map(|(_, v)| xml::unescape(&s[v.clone()], 0).0)
+                        .unwrap_or_default(),
+                );
+            }
+        }
+        let rels = format!("xl/pivotCache/_rels/{file}.rels");
+        let Some((_, rels, _)) = entries.iter().find(|e| e.0 == rels) else {
+            continue;
+        };
+        let rels = String::from_utf8_lossy(rels);
+        for t in xml::tokenize(&rels)? {
+            if let Token::Tag { attrs, .. } = t {
+                let a = |k: &str| {
+                    attrs
+                        .iter()
+                        .find(|(n, _)| n == k)
+                        .map(|(_, r)| rels[r.clone()].to_owned())
+                };
+                if let (Some(kind), Some(target)) = (a("Type"), a("Target"))
+                    && kind.ends_with("/pivotCacheRecords")
+                {
+                    let path = match target.strip_prefix('/') {
+                        Some(abs) => abs.to_owned(),
+                        None => format!("xl/pivotCache/{target}"),
+                    };
+                    out.insert(path, fields.clone());
+                }
+            }
+        }
+    }
+    Ok(out)
 }
 
 fn cells(s: &str, tokens: &[Token]) -> Vec<Cell> {
@@ -1282,5 +1709,123 @@ mod tests {
     #[test]
     fn not_a_zip_is_an_error() {
         assert!(process(&default_engine(), b"plain text", true).is_err());
+    }
+
+    #[test]
+    fn attributes_comments_and_the_thumbnail_are_read_or_dropped() {
+        // ADR-0063: an alt text, a tooltip and a field's instruction are
+        // read; ids, revision marks and styles stay byte for byte.
+        let doc = format!(
+            r#"<?xml version="1.0"?><w:document {W} xmlns:wp="wp"><w:body><!-- Entwurf für Herrn Kai Lindqvist --><w:p w:rsidR="00A1B2C3"><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:hyperlink w:tooltip="Rückruf unter 0421 5550164" r:id="rId4"><w:r><w:t>Rückruf</w:t></w:r></w:hyperlink><w:fldSimple w:instr=" HYPERLINK &quot;mailto:ole.faber@example.org&quot; "><w:r><w:t>Mail</w:t></w:r></w:fldSimple><w:r><w:drawing><wp:docPr id="7" name="Bild 1" descr="Foto: Frau Tilda Brenner"/></w:drawing></w:r></w:p></w:body></w:document>"#
+        );
+        let input = zip(&[
+            ("word/document.xml", doc.as_bytes()),
+            ("docProps/thumbnail.jpeg", b"\xFF\xD8 not a real picture"),
+        ]);
+        let r = process(&default_engine(), &input, true).unwrap();
+        let out = unzip(&r.output, "word/document.xml");
+        for gone in ["Lindqvist", "5550164", "ole.faber", "Brenner"] {
+            assert!(!out.contains(gone), "{gone} in {out}");
+        }
+        for kept in [
+            r#"<?xml version="1.0"?>"#,
+            r#"w:rsidR="00A1B2C3""#,
+            r#"<w:pStyle w:val="Heading1"/>"#,
+            r#"r:id="rId4""#,
+            r#"name="Bild 1""#,
+            // The quotes around the address stay escaped.
+            r#"w:instr=" HYPERLINK &quot;mailto:&lt;EMAIL_ADDRESS&gt;&quot; ""#,
+        ] {
+            assert!(out.contains(kept), "{kept} not in {out}");
+        }
+        assert!(!out.contains("<!--"), "{out}");
+        let mut a = ZipArchive::new(Cursor::new(&r.output)).unwrap();
+        let mut thumb = Vec::new();
+        a.by_name("docProps/thumbnail.jpeg")
+            .unwrap()
+            .read_to_end(&mut thumb)
+            .unwrap();
+        let thumb = image::load_from_memory(&thumb).unwrap();
+        assert_eq!((thumb.width(), thumb.height()), (1, 1));
+    }
+
+    const WB_RELS: &str = r#"<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Target="worksheets/sheet2.xml"/></Relationships>"#;
+    const SHEET: &str = r#"<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Hallo</t></is></c></row></sheetData></worksheet>"#;
+
+    #[test]
+    fn a_sheet_named_after_a_person_is_renamed_unless_a_formula_names_it() {
+        let wb = r#"<workbook xmlns:r="r"><sheets><sheet name="Übersicht" sheetId="1" r:id="rId1"/><sheet name="Akte Herr Ole Faber" sheetId="2" r:id="rId2"/></sheets></workbook>"#;
+        let footer = r#"<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Hallo</t></is></c></row></sheetData><dataValidations count="1"><dataValidation type="list" sqref="B2" prompt="Rückfragen an 0421 5550164"><formula1>"ja,nein"</formula1></dataValidation></dataValidations><headerFooter><oddFooter>&amp;LBearbeitet von Frau Tilda Brenner</oddFooter></headerFooter></worksheet>"#;
+        let parts = |s1: &str| {
+            zip(&[
+                ("xl/workbook.xml", wb.as_bytes()),
+                ("xl/_rels/workbook.xml.rels", WB_RELS.as_bytes()),
+                ("xl/worksheets/sheet1.xml", s1.as_bytes()),
+                ("xl/worksheets/sheet2.xml", footer.as_bytes()),
+            ])
+        };
+        let r = process(&default_engine(), &parts(SHEET), true).unwrap();
+        let wb_out = unzip(&r.output, "xl/workbook.xml");
+        assert!(
+            wb_out.contains(r#"<sheet name="Akte Herr &lt;PERSON&gt;" sheetId="2""#),
+            "{wb_out}"
+        );
+        let s2 = unzip(&r.output, "xl/worksheets/sheet2.xml");
+        assert!(!s2.contains("Brenner") && !s2.contains("5550164"), "{s2}");
+        // No report names the sheet by its old name.
+        assert!(
+            r.findings
+                .iter()
+                .all(|f| !format!("{:?}", f.location).contains("Faber"))
+        );
+        // A formula that names the sheet would break: an error.
+        let formula = r#"<worksheet><sheetData><row r="1"><c r="A1"><f>'Akte Herr Ole Faber'!A1</f><v>0</v></c></row></sheetData></worksheet>"#;
+        let e = process(&default_engine(), &parts(formula), true)
+            .err()
+            .unwrap();
+        assert!(e.to_string().contains("a formula names the sheet"), "{e}");
+        assert!(!e.to_string().contains("Faber"));
+    }
+
+    #[test]
+    fn a_pivot_cache_is_read_under_its_fields_names() {
+        let wb = r#"<workbook xmlns:r="r"><sheets><sheet name="Daten" sheetId="1" r:id="rId1"/></sheets></workbook>"#;
+        let def = r#"<pivotCacheDefinition r:id="rId1"><cacheSource type="worksheet"><worksheetSource ref="A1:B3" sheet="Daten"/></cacheSource><cacheFields count="2"><cacheField name="geburtsdatum" numFmtId="0"><sharedItems><s v="14.03.1987"/><s v="02.11.1990"/></sharedItems></cacheField><cacheField name="Steuer-ID" numFmtId="0"><sharedItems containsNumber="1"/></cacheField></cacheFields></pivotCacheDefinition>"#;
+        let def_rels = r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheRecords" Target="pivotCacheRecords1.xml"/></Relationships>"#;
+        let rec = r#"<pivotCacheRecords count="2"><r><x v="0"/><n v="57381942656"/></r><r><x v="1"/><n v="12"/></r></pivotCacheRecords>"#;
+        let input = zip(&[
+            ("xl/workbook.xml", wb.as_bytes()),
+            ("xl/_rels/workbook.xml.rels", WB_RELS.as_bytes()),
+            ("xl/worksheets/sheet1.xml", SHEET.as_bytes()),
+            ("xl/pivotCache/pivotCacheDefinition1.xml", def.as_bytes()),
+            (
+                "xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels",
+                def_rels.as_bytes(),
+            ),
+            ("xl/pivotCache/pivotCacheRecords1.xml", rec.as_bytes()),
+        ]);
+        let r = process(&default_engine(), &input, true).unwrap();
+        let def_out = unzip(&r.output, "xl/pivotCache/pivotCacheDefinition1.xml");
+        assert!(
+            !def_out.contains("1987") && !def_out.contains("1990"),
+            "{def_out}"
+        );
+        let rec_out = unzip(&r.output, "xl/pivotCache/pivotCacheRecords1.xml");
+        // A number that is personal data becomes text; an index stays.
+        assert!(rec_out.contains(r#"<x v="0"/><s v="&lt;"#), "{rec_out}");
+        assert!(rec_out.contains(r#"<n v="12"/>"#), "{rec_out}");
+        assert!(!rec_out.contains("57381942656"), "{rec_out}");
+    }
+
+    #[test]
+    fn a_defined_name_that_holds_personal_data_is_an_error() {
+        let wb = r#"<workbook xmlns:r="r"><sheets><sheet name="Daten" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="ole.faber@example.org">Daten!$A$1</definedName></definedNames></workbook>"#;
+        let input = zip(&[
+            ("xl/workbook.xml", wb.as_bytes()),
+            ("xl/_rels/workbook.xml.rels", WB_RELS.as_bytes()),
+            ("xl/worksheets/sheet1.xml", SHEET.as_bytes()),
+        ]);
+        let e = process(&default_engine(), &input, true).err().unwrap();
+        assert!(e.to_string().contains("a defined name holds"), "{e}");
     }
 }
