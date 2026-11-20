@@ -674,8 +674,17 @@ fn iban_length(country: &str) -> usize {
 /// characters take, at the width a read one has, a space per four, and one
 /// more. Small text runs digits together: the recogniser reads two as one,
 /// and the detector ends the line where the gap before the rest looked
-/// wide, so the rest of the IBAN stood beside the box unfilled.
-fn with_rest(c: &crate::detect::Candidate, value: &str, mut rects: Vec<Rect>, w: u32) -> Vec<Rect> {
+/// wide, so the rest of the IBAN stood beside the box unfilled. Where
+/// another of the page's boxes (`others`) starts on the same row within the
+/// lost characters and two more, the rest stands there: the box reaches to
+/// its end, at most as far as the lost characters take from its start (#89).
+fn with_rest(
+    c: &crate::detect::Candidate,
+    value: &str,
+    mut rects: Vec<Rect>,
+    others: &[Rect],
+    w: u32,
+) -> Vec<Rect> {
     if c.entity.as_str() != "IBAN_CODE" || crate::detect::validate::iban(value) {
         return rects;
     }
@@ -689,8 +698,22 @@ fn with_rest(c: &crate::detect::Candidate, value: &str, mut rects: Vec<Rect>, w:
     };
     let per_char = (last.right() - first) as f32 / value.chars().count().max(1) as f32;
     let more = ((lost + lost / 4 + 1) as f32 * per_char).ceil() as u32;
-    last.w = (last.right() + more).min(w) - last.x;
+    let reach = ((lost + 2) as f32 * per_char).ceil() as u32;
+    let end = last.right();
+    let rest = others
+        .iter()
+        .filter(|o| o.x >= end && o.x - end <= reach && same_row(o, last))
+        .map(|o| o.right().min(o.x + more))
+        .max()
+        .unwrap_or(0);
+    last.w = (end + more).max(rest).min(w) - last.x;
     rects
+}
+
+/// Whether `a` and `b` overlap by half the lower one's height.
+fn same_row(a: &Rect, b: &Rect) -> bool {
+    let overlap = a.bottom().min(b.bottom()).saturating_sub(a.y.max(b.y));
+    2 * overlap >= a.h.min(b.h)
 }
 
 /// What the detectors find in the lines OCR read: the page as one text,
@@ -716,6 +739,7 @@ fn candidates(
     // stands in its box beside it, and is read as a line of its own below.
     let first: Vec<Line> = lines.iter().filter(|l| !l.handwriting).cloned().collect();
     let p = page(&first);
+    let others: Vec<Rect> = first.iter().map(|l| l.rect).collect();
     let mut out = Vec::new();
     // The names the page holds: a line read alone does not know them, and
     // `Brandts Kapuze` there is cut to `Brandts` by them.
@@ -726,7 +750,7 @@ fn candidates(
                 names.extend(crate::detect::name_words(&text[c.start..c.end]).map(str::to_owned));
             }
             let rects = boxes(&p, c.start, c.end, w, h);
-            let rects = with_rest(&c, &text[c.start..c.end], rects, w);
+            let rects = with_rest(&c, &text[c.start..c.end], rects, &others, w);
             out.push((c, rects));
         }
     }
@@ -760,7 +784,7 @@ fn candidates(
                     }
                 }
                 let rects = boxes(&one, c.start, c.end, w, h);
-                let rects = with_rest(&c, &text[c.start..c.end], rects, w);
+                let rects = with_rest(&c, &text[c.start..c.end], rects, &others, w);
                 out.push((c, rects));
             }
         }
@@ -2151,6 +2175,17 @@ mod tests {
         let found = iban(&portugal);
         // Ten pixels a character: four lost, a space and one more past 360.
         assert!(found.iter().any(|r| r.right() >= 420), "{found:?}");
+        // The detector ended the line at a wide gap, the rest of the IBAN
+        // stands after it (#89): the box reaches to the rest's end, and no
+        // further than the lost characters would.
+        let gap = [
+            line("ANDE893704004405320", 100, 100),
+            line("13000", 360, 100),
+            line("Status", 600, 100),
+        ];
+        let found = iban(&gap);
+        assert!(found.iter().any(|r| r.right() >= 410), "{found:?}");
+        assert!(found.iter().all(|r| r.right() < 600), "{found:?}");
     }
 
     /// With the real NER model (VEILQ_NER_DIR, VEILQ_ORT_DYLIB): a line

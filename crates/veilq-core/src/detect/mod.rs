@@ -1609,6 +1609,15 @@ mod tests {
                 "lindenstraße 12, 28195 Bremen  Status",
                 "lindenstraße 12, 28195 Bremen",
             ),
+            // A street of several words, its first letters lost (#89).
+            (
+                "Anschrift: uf der Höhe 9, 15938 Lindau",
+                "uf der Höhe 9, 15938 Lindau",
+            ),
+            (
+                "wohnt am lindenweg 12, 28195 Bremen",
+                "am lindenweg 12, 28195 Bremen",
+            ),
         ] {
             assert!(
                 found(text, "ADDRESS", value),
@@ -1639,7 +1648,12 @@ mod tests {
             );
         }
         // A short word before the number is not a street.
-        for text in ["Seite 3 von 4, 15938 Lindau", "bis 4, 15938 Lindau"] {
+        for text in [
+            "Seite 3 von 4, 15938 Lindau",
+            "bis 4, 15938 Lindau",
+            "ab dem 4, 15938 Lindau",
+            "gilt bis zum 4, 15938 Lindau",
+        ] {
             assert!(
                 !findings(text, "").iter().any(|f| f.0 == "ADDRESS"),
                 "{text}: {:?}",
@@ -1948,6 +1962,10 @@ mod tests {
         for text in [
             "IBANDE89 3704 0044 0532 0130 00",
             "ANDE89 3704 0044 0532 0130 00 - BIC",
+            // In any case, and with all but its last letter lost (#89).
+            "IbanDE89 3704 0044 0532 0130 00",
+            "ibanDE89 3704 0044 0532 0130 00",
+            "NDE89 3704 0044 0532 0130 00",
         ] {
             assert_eq!(
                 read(text, "", Source::Ocr),
