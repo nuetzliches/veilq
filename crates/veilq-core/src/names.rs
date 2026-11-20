@@ -436,7 +436,7 @@ impl Names {
             let sole = firm && sole_trader(span);
             // A sole trader's firm holds the owner's name: a word after
             // another of its name words is the surname, whatever it ends in
-            // (`Kalbau` in `Malte Kalbau e.K.`, #138).
+            // (`Fernbau` in `Ilka Fernbau e.K.`, #138).
             let mut named = false;
             for w in detect::name_words(span) {
                 if !learnable(w, capitalised) {
