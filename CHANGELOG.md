@@ -14,6 +14,17 @@ Notable changes per release. The format follows
 - A kin word (`Vater`, `Mutter`, `Zwillinge`, `father`, ...) is no name
   alone and never goes on a file's list, and a saint (`Sankt Martin`, a
   book's title) is no person (ADR-0061).
+- A word read off a picture in lower case one letter off a name of the file
+  (`aibrecht` beside `Albrecht`) asks for a review (ADR-0062); it is not
+  filled, since the text may hold that word.
+- A sole trader's surname that ends like a trade (`Fernbau` in
+  `Ilka Fernbau e.K.`) goes on the file's list (ADR-0062).
+- NER does not read a word of more than 64 characters and reads a window of
+  more than 1024 tokens in halves (ADR-0062): one word of 16,000 characters
+  made ONNX Runtime allocate tens of gigabytes.
+- A GIF whose frames, each decoded on its whole screen, come to more than
+  20 Gpx is an error (ADR-0062): many tiny frames on a large screen took as
+  long as frames times screen.
 
 ## [0.7.0] - 2026-11-19
 

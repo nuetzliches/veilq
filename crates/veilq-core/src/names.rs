@@ -56,6 +56,8 @@ const LEGAL_FORMS: &[&str] = &[
     "partg",
     "mbb",
     "haftungsbeschränkt",
+    "kfm",
+    "kfr",
 ];
 /// The ends of the words a firm's name shares with every firm of its trade
 /// (`Kessler Hausverwaltung GmbH`, `Albers Malerbetrieb`), and such words
@@ -163,6 +165,8 @@ struct Inner {
     seen_tokens: HashMap<String, usize>,
     /// A word was learned after it stood unfound in an earlier text.
     late: bool,
+    /// OCR read a word in lower case one edit off a name's ([`Names::doubtful`]).
+    doubtful: bool,
     /// The words, whole, built for the length of `order`.
     whole: Option<(usize, Regex)>,
     /// In OCR text, built only there: a word's start with dots after it, a
@@ -229,6 +233,12 @@ impl Names {
         self.lock().late
     }
 
+    /// Whether OCR read a word in lower case one edit off a name's word: it
+    /// is not filled (`richtet` beside `Richter`), a review looks at it.
+    pub(crate) fn doubtful(&self) -> bool {
+        self.lock().doubtful
+    }
+
     /// The candidates of the list's words and values in `text`.
     pub(crate) fn candidates(&self, text: &str, source: Source) -> Result<Vec<Candidate>, Error> {
         let mut out = self.value_candidates(text)?;
@@ -256,10 +266,16 @@ impl Names {
             });
         };
         if source == Source::Ocr && self.similar {
+            let mut doubtful = false;
             for (start, w) in words_at(text) {
-                if let Some(c) = similar_confidence(&words, w) {
-                    push(start, start + w.len(), c);
+                match similar_confidence(&words, w) {
+                    Some(c) if starts_upper(w) => push(start, start + w.len(), c),
+                    Some(_) => doubtful = true,
+                    None => {}
                 }
+            }
+            if doubtful {
+                self.lock().doubtful = true;
             }
         }
         for caps in whole.captures_iter(text) {
@@ -417,9 +433,21 @@ impl Names {
             let span = &text[start..end];
             let capitalised = detect::name_words(span).any(starts_upper);
             let firm = is_firm(span);
+            let sole = firm && sole_trader(span);
+            // A sole trader's firm holds the owner's name: a word after
+            // another of its name words is the surname, whatever it ends in
+            // (`Fernbau` in `Ilka Fernbau e.K.`, #138).
+            let mut named = false;
             for w in detect::name_words(span) {
-                if !learnable(w, capitalised) || (firm && trade_word(w)) {
+                if !learnable(w, capitalised) {
                     continue;
+                }
+                if firm && trade_word(w) {
+                    if !(sole && named) {
+                        continue;
+                    }
+                } else {
+                    named = true;
                 }
                 let k = key(w);
                 match inner.words.get(&k).copied() {
@@ -559,13 +587,13 @@ fn value_learnable(k: &str) -> bool {
 
 /// The confidence of a word read one edit off a name's word of
 /// [`MIN_SIMILAR`] letters or more with the same first letter; `None` for
-/// a word of the list itself (found whole) and for any other.
+/// a word of the list itself (found whole) and for any other. A name is
+/// written with a capital, and OCR mostly keeps it: a lowercase word one
+/// letter off (`richtet`, `Richter`) is more often a word of the text, and
+/// the caller only asks for a review of it (#138).
 fn similar_confidence(words: &HashMap<String, f32>, w: &str) -> Option<f32> {
     let k = key(w);
-    // A name is written with a capital, and OCR keeps it: a lowercase word
-    // one letter off (`richtet`, `Richter`) is a word of the text.
-    if k.chars().count() + 1 < MIN_SIMILAR || !starts_upper(w) || confidence_of(words, w).is_some()
-    {
+    if k.chars().count() + 1 < MIN_SIMILAR || confidence_of(words, w).is_some() {
         return None;
     }
     words
@@ -631,15 +659,28 @@ fn learnable(w: &str, capitalised: bool) -> bool {
         && !detect::ACCOUNTS.contains(&w.to_lowercase().as_str())
 }
 
+/// The legal forms of a sole trader, as [`key`] has the last word of
+/// `e.K.`, `eK`, `e. Kfm.` and `e. Kfr.`.
+const SOLE_TRADER: &[&str] = &["ek", "k", "kfm", "kfr"];
+
 /// Whether a person's span is a firm: it ends in a legal form.
 fn is_firm(span: &str) -> bool {
-    let last = span
-        .trim_end_matches(|c: char| !c.is_alphanumeric())
+    let k = key(last_word(span));
+    LEGAL_FORMS.contains(&k.as_str())
+        || ["ag", "kg", "ug"].contains(&k.as_str())
+        || SOLE_TRADER.contains(&k.as_str())
+}
+
+/// Whether a firm is a sole trader's ([`SOLE_TRADER`]).
+fn sole_trader(span: &str) -> bool {
+    SOLE_TRADER.contains(&key(last_word(span)).as_str())
+}
+
+fn last_word(span: &str) -> &str {
+    span.trim_end_matches(|c: char| !c.is_alphanumeric())
         .rsplit(|c: char| !c.is_alphanumeric())
         .next()
-        .unwrap_or("");
-    let k = key(last);
-    LEGAL_FORMS.contains(&k.as_str()) || ["ag", "kg", "ug", "ek", "k"].contains(&k.as_str())
+        .unwrap_or("")
 }
 
 /// Whether a word of a firm's name is its trade's ([`TRADE_ENDINGS`]).
@@ -795,6 +836,52 @@ mod tests {
         let person = Names::default();
         learn(&person, "Herr Jonas Bau", "Jonas Bau");
         assert_eq!(found(&person, "Grüße an Bau", Source::Text), ["Bau"]);
+    }
+
+    #[test]
+    fn a_sole_traders_surname_ending_like_a_trade_is_learned() {
+        // A sole trader's firm holds the owner's name: a word after another
+        // name word is the surname, whatever it ends in (#138).
+        let names = Names::default();
+        learn(&names, "Ilka Fernbau e.K.", "Ilka Fernbau e.K.");
+        learn(&names, "Timo Wessdienst e. Kfm.", "Timo Wessdienst e. Kfm.");
+        assert_eq!(
+            found(&names, "Frau Fernbau und Herr Wessdienst", Source::Text),
+            ["Fernbau", "Wessdienst"]
+        );
+        // A firm of the trade word alone keeps the filter, and so does any
+        // other legal form.
+        let trade = Names::default();
+        learn(&trade, "Holzbau e.K.", "Holzbau e.K.");
+        learn(&trade, "Kessler Holzbau GmbH", "Kessler Holzbau GmbH");
+        assert_eq!(
+            found(&trade, "der Holzbau von Kessler", Source::Text),
+            ["Kessler"]
+        );
+    }
+
+    #[test]
+    fn a_name_read_in_lower_case_one_letter_off_asks_for_a_review() {
+        // OCR that drops a name's capital (`aibrecht` beside `Albrecht`)
+        // reads a word the text could hold too (`richtet` beside `Richter`):
+        // not filled, but a review is asked for (#138).
+        let names = Names::default();
+        learn(&names, "Mandant: Corvin Albrecht", "Corvin Albrecht");
+        assert!(found(&names, "kopie an aibrecht", Source::Ocr).is_empty());
+        assert!(names.doubtful());
+        // Written text, a word of the list itself and two edits ask for
+        // nothing.
+        let text = Names::default();
+        learn(&text, "Mandant: Corvin Albrecht", "Corvin Albrecht");
+        assert!(found(&text, "kopie an aibrecht", Source::Text).is_empty());
+        assert_eq!(found(&text, "an albrecht", Source::Ocr), ["albrecht"]);
+        assert!(found(&text, "an aibrehct", Source::Ocr).is_empty());
+        assert!(!text.doubtful());
+        // Off with `[names] similar = false`.
+        let off = Names::new(true, false);
+        learn(&off, "Mandant: Corvin Albrecht", "Corvin Albrecht");
+        found(&off, "kopie an aibrecht", Source::Ocr);
+        assert!(!off.doubtful());
     }
 
     #[test]

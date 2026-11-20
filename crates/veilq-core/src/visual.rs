@@ -1095,14 +1095,40 @@ fn gif_decoder(bytes: &[u8]) -> Result<GifDecoder<Cursor<&[u8]>>, Error> {
     Ok(decoder)
 }
 
+/// The pixels a GIF's frames may come to, each decoded on its whole screen:
+/// some 10,000 frames at 1920 x 1080. The screen alone is bounded by
+/// [`gif_decoder`]; a file of many tiny frames on a large screen took as
+/// long as its frames times its screen (#138).
+const MAX_GIF_PIXELS: u64 = 20_000_000_000;
+
+/// A GIF's frames as they are decoded, an error once they come to more than
+/// `max` pixels.
+fn gif_frames(
+    bytes: &[u8],
+    max: u64,
+) -> Result<impl Iterator<Item = Result<image::Frame, Error>> + '_, Error> {
+    let decoder = gif_decoder(bytes)?;
+    let (w, h) = decoder.dimensions();
+    let screen = u64::from(w) * u64::from(h);
+    Ok(decoder.into_frames().zip(1u64..).map(move |(f, n)| {
+        if n.saturating_mul(screen) > max {
+            return Err(error(format!(
+                "a GIF of {w} x {h} pixels with more than {} frames is too large to read",
+                n - 1
+            )));
+        }
+        f.map_err(error)
+    }))
+}
+
 /// Frame `n` (from 1) of a GIF as PNG, as decoded, and how many frames it
 /// has: what an area is drawn on and cropped from (#114).
 pub fn gif_frame(bytes: &[u8], n: u64) -> Result<(Vec<u8>, u64), Error> {
-    let frames = gif_decoder(bytes)?.into_frames();
+    let frames = gif_frames(bytes, MAX_GIF_PIXELS)?;
     let mut picked = None;
     let mut count = 0;
     for frame in frames {
-        let frame = frame.map_err(error)?;
+        let frame = frame?;
         count += 1;
         if count == n {
             picked = Some(encode(&frame.into_buffer(), ImageFormat::Png)?);
@@ -1118,8 +1144,8 @@ pub fn gif_frame(bytes: &[u8], n: u64) -> Result<(Vec<u8>, u64), Error> {
 /// it not decoded: where their count is known already (#129).
 pub fn gif_frame_at(bytes: &[u8], n: u64) -> Result<Vec<u8>, Error> {
     let mut count = 0;
-    for frame in gif_decoder(bytes)?.into_frames() {
-        let frame = frame.map_err(error)?;
+    for frame in gif_frames(bytes, MAX_GIF_PIXELS)? {
+        let frame = frame?;
         count += 1;
         if count == n {
             return encode(&frame.into_buffer(), ImageFormat::Png);
@@ -1351,7 +1377,7 @@ fn redact_changed(
 fn gif(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Outcome, Error> {
     // Frame by frame, decoded and encoded as they come: a screen recording
     // of a few hundred frames at 4K is tens of GB decoded at once.
-    let frames = gif_decoder(bytes)?.into_frames();
+    let frames = gif_frames(bytes, MAX_GIF_PIXELS)?;
     let mut out = outcome();
     let mut buf = Vec::new();
     let mut encoder = if apply {
@@ -1365,7 +1391,7 @@ fn gif(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Outcome,
     let mut prev: Option<(RgbaImage, RgbaImage)> = None;
     let mut boxes: Vec<Rect> = Vec::new();
     for (i, frame) in frames.enumerate() {
-        let frame = frame.map_err(error)?;
+        let frame = frame?;
         let delay = frame.delay();
         let original = frame.into_buffer();
         let n = Some(i as u64 + 1);
@@ -2287,6 +2313,20 @@ mod tests {
         // Without counting the frames after it, the same frame.
         assert_eq!(gif_frame_at(&gif, 2).unwrap(), png);
         assert!(gif_frame_at(&gif, 4).is_err());
+    }
+
+    #[test]
+    fn a_gif_of_more_frames_than_its_screen_allows_is_an_error() {
+        // Each frame is decoded on the whole screen: 64 pixels here, the
+        // bound in the run 20 Gpx (#138).
+        let gif = gif_of(&[[0, 0, 0]; 5]);
+        let read = |max| gif_frames(&gif, max).and_then(|f| f.collect::<Result<Vec<_>, _>>());
+        assert_eq!(read(5 * 64).map(|f| f.len()).ok(), Some(5));
+        let Err(e) = read(4 * 64) else {
+            panic!("five frames read within four frames' pixels")
+        };
+        let e = e.to_string();
+        assert!(e.contains("8 x 8") && e.contains("4 frames"), "{e}");
     }
 
     #[test]
