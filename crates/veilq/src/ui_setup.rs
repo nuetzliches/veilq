@@ -120,6 +120,9 @@ fn about(component: &str) -> &'static str {
         "face" => {
             "Faces in images, GIFs and PDF pages, filled black; found, never recognised. Without it pictures are refused unless the policy keeps faces. YuNet (MIT), with ONNX Runtime (MIT). Under 1 MB."
         }
+        "face-verify" => {
+            "Checks weak face boxes (needs the face detector too): an app icon, a hand or a detail of a photo the detector took for a face is left unfilled, and the report says so; every clear face and every drawn face is filled as before. veilq-face-verify-v1, MobileNetV3-small trained by nuetzliches on synthetic pictures only (Apache-2.0), with ONNX Runtime (MIT). About 6 MB."
+        }
         "signature" => {
             "Handwritten signatures in images, GIFs and PDF pages, filled black; found, never compared. Without it pictures are refused unless the policy keeps signatures. veilq-signature-v3, YOLOS-tiny fine-tuned by nuetzliches (Apache-2.0), with ONNX Runtime (MIT). About 26 MB."
         }
@@ -146,6 +149,7 @@ pub async fn models(State(state): State<Arc<AppState>>) -> axum::Json<Models> {
                     "ocr" => engine.has_ocr(),
                     "htr" => engine.has_htr(),
                     "face" => engine.has_faces(),
+                    "face-verify" => engine.has_face_verifier(),
                     "signature" => engine.has_signatures(),
                     "pdf" => engine.has_pdf(),
                     _ => false,

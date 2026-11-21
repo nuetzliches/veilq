@@ -57,6 +57,84 @@ pub struct ModelFiles<'a> {
 
 pub struct Faces {
     session: Mutex<Session>,
+    /// Asked about a weak box (ADR-0065).
+    verifier: Option<Verifier>,
+}
+
+/// YuNet's score below which a box is shown to the [`Verifier`]: above it a
+/// box is filled whatever the verifier would say (ADR-0065).
+pub const VERIFY_BELOW: f32 = 0.8;
+/// The verifier's probability of `no face` from which a weak box is left
+/// unfilled, as chosen on its validation (veilq-face-verify-v1).
+pub const NO_FACE: f32 = 0.9532;
+/// The side of the square the verifier reads.
+const VERIFY_SIDE: u32 = 112;
+const VERIFY_MEAN: [f32; 3] = [0.485, 0.456, 0.406];
+const VERIFY_STD: [f32; 3] = [0.229, 0.224, 0.225];
+
+/// veilq-face-verify-v1 (ADR-0065): a small classifier, trained on synthetic
+/// pictures only, of a face box as a photographed face, a drawn face or no
+/// face at all (an icon, a hand, a detail of a photo). It tells nothing of
+/// whose a face is.
+pub struct Verifier {
+    session: Mutex<Session>,
+}
+
+impl Verifier {
+    pub fn load(files: &ModelFiles) -> Result<Self, Error> {
+        let env = crate::runtime::env(files.runtime)?;
+        let session = Session::builder(env)
+            .map_err(error)?
+            .commit_from_file(files.model)
+            .map_err(|e| error(format!("{}: {e}", files.model.display())))?;
+        Ok(Self {
+            session: Mutex::new(session),
+        })
+    }
+
+    /// The probability that the box `r` of `img` holds no face: the box as
+    /// veilq fills it, stretched to [`VERIFY_SIDE`], RGB from 0 to 1
+    /// normalised; logits of photo face, drawn face, no face.
+    pub fn no_face(&self, img: &RgbImage, r: Rect) -> Result<f32, Error> {
+        let crop = imageops::crop_imm(img, r.x, r.y, r.w.max(1), r.h.max(1)).to_image();
+        let crop = imageops::resize(
+            &crop,
+            VERIFY_SIDE,
+            VERIFY_SIDE,
+            imageops::FilterType::Triangle,
+        );
+        let side = VERIFY_SIDE as usize;
+        let plane = side * side;
+        let mut data = vec![0f32; 3 * plane];
+        for (x, y, p) in crop.enumerate_pixels() {
+            let i = y as usize * side + x as usize;
+            for c in 0..3 {
+                data[c * plane + i] = (f32::from(p[c]) / 255.0 - VERIFY_MEAN[c]) / VERIFY_STD[c];
+            }
+        }
+        let input = Tensor::from_array(([1usize, 3, side, side], data)).map_err(error)?;
+        let mut session = self
+            .session
+            .lock()
+            .map_err(|_| error("a poisoned session"))?;
+        let outputs = session.run(ort::inputs![input]).map_err(error)?;
+        let (_, logits) = outputs[0].try_extract_tensor::<f32>().map_err(error)?;
+        if logits.len() != 3 {
+            return Err(error(format!(
+                "the face verifier gives {} classes, not 3",
+                logits.len()
+            )));
+        }
+        Ok(softmax(logits)[2])
+    }
+}
+
+/// `logits` as probabilities.
+fn softmax(logits: &[f32]) -> Vec<f32> {
+    let max = logits.iter().copied().fold(f32::MIN, f32::max);
+    let exp: Vec<f32> = logits.iter().map(|v| (v - max).exp()).collect();
+    let sum: f32 = exp.iter().sum();
+    exp.into_iter().map(|e| e / sum).collect()
 }
 
 /// A box in pixels of what was read, before it is placed in the picture.
@@ -78,7 +156,38 @@ impl Faces {
             .map_err(|e| error(format!("{}: {e}", files.model.display())))?;
         Ok(Self {
             session: Mutex::new(session),
+            verifier: None,
         })
+    }
+
+    /// This detector with a verifier of its weak boxes (ADR-0065).
+    pub fn with_verifier(mut self, verifier: Verifier) -> Self {
+        self.verifier = Some(verifier);
+        self
+    }
+
+    /// Whether weak boxes are shown to a verifier.
+    pub fn has_verifier(&self) -> bool {
+        self.verifier.is_some()
+    }
+
+    /// `faces` of `img` without the weak ones ([`VERIFY_BELOW`]) the verifier
+    /// holds for no face ([`NO_FACE`]), and how many it left out. Without a
+    /// verifier, all of them.
+    pub fn verify(&self, img: &RgbImage, faces: Vec<Face>) -> Result<(Vec<Face>, usize), Error> {
+        let Some(verifier) = &self.verifier else {
+            return Ok((faces, 0));
+        };
+        let mut kept = Vec::with_capacity(faces.len());
+        let mut left = 0;
+        for f in faces {
+            if f.score < VERIFY_BELOW && verifier.no_face(img, f.rect)? >= NO_FACE {
+                left += 1;
+            } else {
+                kept.push(f);
+            }
+        }
+        Ok((kept, left))
     }
 
     /// The faces in `img`, the best first.
@@ -367,6 +476,42 @@ mod tests {
         );
         let outside = Found { x: 2000.0, ..f };
         assert_eq!(place(&outside, 1000, 1000), None);
+    }
+
+    #[test]
+    fn logits_become_probabilities() {
+        let p = softmax(&[0.0, 0.0, 3.0]);
+        assert!((p.iter().sum::<f32>() - 1.0).abs() < 1e-6);
+        assert!(p[2] > 0.9 && (p[0] - p[1]).abs() < 1e-6);
+    }
+
+    /// The real verifier, when installed: VEILQ_FACE_VERIFY_MODEL,
+    /// VEILQ_ORT_DYLIB, a picture VEILQ_FACE_VERIFY_IMAGE that is no face
+    /// (an app icon) and one VEILQ_FACE_VERIFY_FACE that is one (synthetic).
+    #[test]
+    fn the_verifier_tells_an_icon_from_a_face() {
+        let (Ok(model), Ok(dylib), Ok(icon), Ok(face)) = (
+            std::env::var("VEILQ_FACE_VERIFY_MODEL"),
+            std::env::var("VEILQ_ORT_DYLIB"),
+            std::env::var("VEILQ_FACE_VERIFY_IMAGE"),
+            std::env::var("VEILQ_FACE_VERIFY_FACE"),
+        ) else {
+            return;
+        };
+        let v = Verifier::load(&ModelFiles {
+            model: Path::new(&model),
+            runtime: Path::new(&dylib),
+        })
+        .unwrap();
+        let whole = |p: &str| {
+            let img = image::open(p).unwrap().to_rgb8();
+            let (w, h) = img.dimensions();
+            (img, Rect { x: 0, y: 0, w, h })
+        };
+        let (img, r) = whole(&icon);
+        assert!(v.no_face(&img, r).unwrap() >= NO_FACE);
+        let (img, r) = whole(&face);
+        assert!(v.no_face(&img, r).unwrap() < 0.5);
     }
 
     #[test]

@@ -6,6 +6,16 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A face verifier, `face-verify` (ADR-0065; `veilq models fetch
+  face-verify`, or in the UI's setup; veilq-face-verify-v1, trained by
+  nuetzliches on synthetic pictures only, Apache-2.0, about 6 MB): a box
+  the face detector found with a weak score (below 0.8) that the verifier
+  holds for no face (an app icon, a hand, a detail of a photo) is left
+  unfilled, and the report asks for a review. A drawn face stays a face.
+  Without the component every box is filled, as before.
+
 ### Changed
 
 - What a document says besides its text is read, removed or reported

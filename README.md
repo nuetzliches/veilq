@@ -126,8 +126,9 @@ keeps them in the model directory (`veilq models list` shows where;
 | `signature` | handwritten signatures in images, GIF, PDF pages, filled black (found, never compared) | veilq-signature-v3 (`nuetzliches/veilq-signature-v3`): YOLOS-tiny (`mdefrance/yolos-tiny-signature-detection`) fine-tuned by nuetzliches to leave photos, web pages, watermarks, stamps and logos, Apache-2.0 | 26 MB |
 | `pdf` | PDF (with `ocr`) | PDFium (`bblanchon/pdfium-binaries`), BSD-3-Clause | 7 MB |
 | `htr` | handwriting (with `ocr`): a line OCR reads badly is read again as handwriting | de-htr-web-v2 (`naeyn/de-htr-web-v2`), modern German handwriting, Apache-2.0 | 10 MB |
+| `face-verify` | weak face boxes (with `face`): an icon, a hand or a photo's detail YuNet took for a face is left unfilled, and the report says so | veilq-face-verify-v1 (`nuetzliches/veilq-face-verify-v1`): MobileNetV3-small trained by nuetzliches on synthetic pictures only, Apache-2.0 | 6 MB |
 
-`ner`, `ocr`, `htr`, `face` and `signature` share ONNX Runtime (Microsoft, MIT, 33 MB), fetched with
+`ner`, `ocr`, `htr`, `face`, `face-verify` and `signature` share ONNX Runtime (Microsoft, MIT, 33 MB), fetched with
 the first of them. ONNX Runtime and PDFium are pinned for Windows x86_64,
 Linux x86_64 and arm64, and macOS on Apple Silicon.
 
@@ -135,6 +136,7 @@ Linux x86_64 and arm64, and macOS on Apple Silicon.
 veilq models fetch ner
 veilq models fetch ocr
 veilq models fetch face
+veilq models fetch face-verify
 veilq models fetch signature
 veilq models fetch pdf
 veilq models fetch htr

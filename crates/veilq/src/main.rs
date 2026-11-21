@@ -576,10 +576,18 @@ fn engine(policy: &Policy, action: Option<Action>) -> anyhow::Result<Engine> {
     }
     #[cfg(feature = "ocr")]
     if let Some((model, runtime)) = models::face_files(&dir) {
-        let faces = veilq_core::face::Faces::load(&veilq_core::face::ModelFiles {
+        let mut faces = veilq_core::face::Faces::load(&veilq_core::face::ModelFiles {
             model: &model,
             runtime: &runtime,
         })?;
+        if let Some((model, runtime)) = models::face_verify_files(&dir) {
+            faces = faces.with_verifier(veilq_core::face::Verifier::load(
+                &veilq_core::face::ModelFiles {
+                    model: &model,
+                    runtime: &runtime,
+                },
+            )?);
+        }
         engine = engine.with_faces(std::sync::Arc::new(faces));
     }
     #[cfg(feature = "ocr")]

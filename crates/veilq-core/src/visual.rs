@@ -51,6 +51,8 @@ const PAD: u32 = 2;
 pub const BOXES_ONLY: &str = "in a picture every action is a black box: a pseudonym or a stand-in cannot be written into pixels faithfully";
 /// Said when lines read badly were read again as handwriting (#59).
 pub const HANDWRITING: &str = "lines read badly were read again as handwriting, and what either reading found was filled; a word misread in both stays: check the handwriting";
+/// Said when the face verifier left weak boxes unfilled (ADR-0065).
+pub const FACES_LEFT: &str = "boxes the face detector found weakly were judged no face (an icon, a hand, a detail) by the face verifier and left unfilled: check the picture";
 /// Said when faces were filled: what the detector missed stays.
 pub const FACES_FOUND: &str = "faces were found and filled black; the face detector can miss a face (in profile, small, covered, drawn): check the picture";
 /// Said when signatures were filled: what the detector missed stays, and
@@ -505,8 +507,13 @@ fn faces(
         return Ok(Vec::new());
     };
     let rgb = DynamicImage::ImageRgba8(img.clone()).to_rgb8();
-    let found = detector
-        .find(&rgb)?
+    // A weak box the verifier holds for no face is left (ADR-0065), and the
+    // report says so: what it held wrongly stays in sight.
+    let (found, left) = detector.verify(&rgb, detector.find(&rgb)?)?;
+    if left > 0 && !out.review_reasons.iter().any(|r| r == FACES_LEFT) {
+        out.review_reasons.push(FACES_LEFT.into());
+    }
+    let found = found
         .into_iter()
         .map(|f| (f.rect, crate::face::confidence(f.score)))
         .collect();

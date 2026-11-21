@@ -22,10 +22,18 @@ pub const DETECTORS: &[&str] = &["pattern", "ner", "ocr", "face", "signature", "
 /// What `veilq models` fetches: the detectors with a model, `htr` (a second
 /// reading of lines OCR read badly, as handwriting; #59), and `pdf` (PDFium,
 /// which renders a PDF's pages for OCR; ADR-0023).
-pub const COMPONENTS: &[&str] = &["ner", "ocr", "htr", "face", "signature", "pdf"];
+pub const COMPONENTS: &[&str] = &[
+    "ner",
+    "ocr",
+    "htr",
+    "face",
+    "face-verify",
+    "signature",
+    "pdf",
+];
 
 /// The detectors that run in ONNX Runtime.
-const ON_RUNTIME: &[&str] = &["ner", "ocr", "htr", "face", "signature"];
+const ON_RUNTIME: &[&str] = &["ner", "ocr", "htr", "face", "face-verify", "signature"];
 
 /// A file a detector needs, as compiled into the binary.
 #[derive(Debug)]
@@ -73,6 +81,12 @@ const HTR: &str =
 /// YuNet 2023mar (MIT), the face detector of the OpenCV Zoo, as `opencv`
 /// publishes it on Hugging Face, at a fixed revision (ADR-0038).
 const FACE: &str = "https://huggingface.co/opencv/face_detection_yunet/resolve/3cc26e7f1014a5ee5d74a42acee58bafc9d0a310";
+
+/// veilq-face-verify-v1: MobileNetV3-small (`timm/mobilenetv3_small_100`,
+/// Apache-2.0) fine-tuned by nuetzliches on synthetic pictures only to tell a
+/// weak face box from an icon, a hand or a photo's detail; Apache-2.0,
+/// published on Hugging Face, at a fixed revision (ADR-0065).
+const FACE_VERIFY: &str = "https://huggingface.co/nuetzliches/veilq-face-verify-v1/resolve/68675ec05cb534744ae7e66afd619fc77bb9c0d1";
 
 /// veilq-signature-v3: YOLOS-tiny (`mdefrance/yolos-tiny-signature-detection`,
 /// Apache-2.0) fine-tuned by nuetzliches on synthetic letters, web pages and
@@ -139,6 +153,15 @@ pub const PINNED: &[PinnedFile] = &[
         base: FACE,
         name: "face_detection_yunet_2023mar.onnx",
         sha256: "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+        member: None,
+        target: None,
+    },
+    PinnedFile {
+        detector: "face-verify",
+        file: "face-verify/veilq-face-verify-v1/model.onnx",
+        base: FACE_VERIFY,
+        name: "model.onnx",
+        sha256: "cfaeca8700aa35e7c2693b8515b264f14248e42627ed5959ae5ffd9a6b837e75",
         member: None,
         target: None,
     },
@@ -344,6 +367,17 @@ pub fn face_files(model_dir: &Path) -> Option<(PathBuf, PathBuf)> {
     }
     let files = pinned_for("face");
     let model = files.iter().find(|f| f.detector == "face")?;
+    let runtime = files.iter().find(|f| f.detector == "runtime")?;
+    Some((model_dir.join(model.file), model_dir.join(runtime.file)))
+}
+
+/// The installed files of the face verifier: model, runtime.
+pub fn face_verify_files(model_dir: &Path) -> Option<(PathBuf, PathBuf)> {
+    if !installed("face-verify", model_dir) {
+        return None;
+    }
+    let files = pinned_for("face-verify");
+    let model = files.iter().find(|f| f.detector == "face-verify")?;
     let runtime = files.iter().find(|f| f.detector == "runtime")?;
     Some((model_dir.join(model.file), model_dir.join(runtime.file)))
 }
