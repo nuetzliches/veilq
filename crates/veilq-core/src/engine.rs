@@ -845,6 +845,14 @@ impl Engine {
         false
     }
 
+    /// Whether weak face boxes are shown to a verifier (ADR-0065).
+    pub fn has_face_verifier(&self) -> bool {
+        #[cfg(feature = "ocr")]
+        return self.faces.as_ref().is_some_and(|f| f.has_verifier());
+        #[cfg(not(feature = "ocr"))]
+        false
+    }
+
     /// The face detector, when the policy has faces filled.
     #[cfg(feature = "ocr")]
     pub(crate) fn faces(&self) -> Option<&crate::face::Faces> {

@@ -298,10 +298,19 @@ pub fn engine_for(ner: bool, ocr: bool) -> anyhow::Result<Engine> {
         let (model, runtime) = veilq_core::models::face_files(&dir).ok_or_else(|| {
             anyhow::anyhow!("the face detector is not installed in {}", dir.display())
         })?;
-        let faces = veilq_core::face::Faces::load(&veilq_core::face::ModelFiles {
+        let mut faces = veilq_core::face::Faces::load(&veilq_core::face::ModelFiles {
             model: &model,
             runtime: &runtime,
         })?;
+        // Weak boxes are verified where the verifier is installed (ADR-0065).
+        if let Some((model, runtime)) = veilq_core::models::face_verify_files(&dir) {
+            faces = faces.with_verifier(veilq_core::face::Verifier::load(
+                &veilq_core::face::ModelFiles {
+                    model: &model,
+                    runtime: &runtime,
+                },
+            )?);
+        }
         let (model, runtime) = veilq_core::models::signature_files(&dir).ok_or_else(|| {
             anyhow::anyhow!(
                 "the signature detector is not installed in {}",
