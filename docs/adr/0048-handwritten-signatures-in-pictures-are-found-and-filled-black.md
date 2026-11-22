@@ -1,6 +1,6 @@
 # ADR-0048: Handwritten signatures in pictures are found and filled black
 
-- **Status:** Accepted (card in the conversation, points B1 to B6, approved by the owner 2026-11-13; the model changed after measuring, approved 2026-11-16; veilq-signature-v2 and v3 approved 2026-11-18); amends [ADR-0023](0023-pictures-are-read-with-ocr-and-redacted-with-black-boxes.md) and [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md); amended by [ADR-0053](0053-every-detector-reads-the-picture-before-anything-is-filled.md) (filled with the first reading's boxes, not before OCR)
+- **Status:** Accepted (card in the conversation, points B1 to B6, approved by the owner 2026-11-13; the model changed after measuring, approved 2026-11-16; veilq-signature-v2 and v3 approved 2026-11-18, v4 2026-11-22); amends [ADR-0023](0023-pictures-are-read-with-ocr-and-redacted-with-black-boxes.md) and [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md); amended by [ADR-0053](0053-every-detector-reads-the-picture-before-anything-is-filled.md) (filled with the first reading's boxes, not before OCR)
 - **Date:** 2026-11-16
 - **Deciders:** project owner
 - **Related:** [ADR-0038](0038-faces-in-pictures-are-found-and-filled-black.md), #80
@@ -93,6 +93,25 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
   300 held-out pictures, against v2 read the same way: signatures on photos
   15/40 (9/40), letters 120/125 (119/125), false boxes 10 (20); on the
   reported screenshot and the corpus no box (v2: one weak one on the form).
+- **After 0.7.0: veilq-signature-v4.** v3 filled the values a hand writes
+  into a form (38 boxes on 24 synthetic hand-filled forms without a
+  signature) and now and then a large printed heading. The next training,
+  on a GPU of the pool and with three times the pictures, added forms filled
+  in by hand (labels with values in the same hand as the signature, which
+  stands only on the line for it), screenshots with large printed headings
+  as background, and more signed photo cards of web pages; the photos are
+  484 public-domain pictures reviewed by eye to hold no person and no
+  handwriting. Published as `nuetzliches/veilq-signature-v4`, pinned at
+  `signature/veilq-signature-v4/model.onnx`. In veilq, against v3: on the
+  24 forms 10 false fills (38); the corpus' recall and precision unchanged,
+  also on the five held-out seeds and when redacting. On 800 held-out
+  pictures: letters 170/170, photographed letters 40/41, signatures on
+  photos 67/77, forms 105/105, signed photo cards of web pages 85/130.
+  Approved by the owner from a review card, 2026-11-22. The handwriting
+  gate (ADR-0060) was set with v3, whose fills covered hand-written
+  phone numbers, IBANs and addresses as signatures; with v4 they are left
+  to the reading, and the owner set the gate again to what it covers
+  (held-out seed 7004: addresses 0 of 4, phone numbers 1 of 4).
 - **Found, never compared:** veilq finds where a signature is. It computes
   no features of it, compares none, keeps none, and nothing leaves the
   machine.
@@ -155,7 +174,10 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
   veilq-signature-v2 puts none there over the five held-out seeds, and one
   small box (64 x 14 pixels) on the corpus' transfer screenshot.
 - veilq-signature-v3 still misses more signatures written on a photo (an
-  autograph) than it finds; v1 and v2 missed nearly all.
+  autograph) than it finds; v1 and v2 missed nearly all. v4 finds most of
+  them, but of the signatures on small photo cards of a web page only about
+  two in three; a missed one stays visible. A hand-filled value is still
+  taken for a signature now and then and filled black.
 - 0.4.1 pins the model at a new path: an installed 0.4.0 model does not
   count, and pictures are refused until `veilq models fetch signature`;
   so does the release after 0.5.0 for an installed v1.

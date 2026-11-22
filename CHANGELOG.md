@@ -18,6 +18,13 @@ Notable changes per release. The format follows
 
 ### Changed
 
+- The signature detector is veilq-signature-v4 (ADR-0048): trained again
+  with forms filled in by hand and large printed headings as background, it
+  fills a hand-written form value as a signature far less often (10 false
+  fills on 24 synthetic forms, v3 38). It is pinned at a new path: pictures
+  are refused until `veilq models fetch signature`. A hand-written phone
+  number or address that the reading misses is no longer covered by such a
+  fill; the handwriting gate is set to what the reading covers.
 - What a document says besides its text is read, removed or reported
   (#142, ADR-0063):
   - Office: every attribute but the structural ones is read (a picture's
