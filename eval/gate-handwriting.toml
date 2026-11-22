@@ -6,13 +6,20 @@
 # and the held-out seeds 7001 to 7005 when this gate was set (four forms,
 # 20 values each; 101 of 120 covered with the recogniser, 94 without it):
 # raised as veilq gets better, never lowered by a tuning run (ADR-0014).
+#
+# Set again with veilq-signature-v4 (ADR-0048), by the owner's decision:
+# v3 filled hand-written values as signatures, and a filled box covers a
+# value whatever its type, so ADDRESS and PHONE_NUMBER held more than was
+# read (seed 7004: phone numbers 3 covered, none typed). v4 fills no value
+# there; these are what the reading covers on its own.
 [recall]
 default = 0.75
 
 [recall.entities]
 # The street, postcode and town on one line: OCR splits or misreads a part.
-ADDRESS = 0.25
-PHONE_NUMBER = 0.5
+ADDRESS = 0.0
+# A hand's digits are misread, and a number one digit off is no number.
+PHONE_NUMBER = 0.25
 
 [precision]
 min = 0.97

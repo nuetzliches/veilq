@@ -107,7 +107,11 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
   also on the five held-out seeds and when redacting. On 800 held-out
   pictures: letters 170/170, photographed letters 40/41, signatures on
   photos 67/77, forms 105/105, signed photo cards of web pages 85/130.
-  Approved by the owner from a review card, 2026-11-22.
+  Approved by the owner from a review card, 2026-11-22. The handwriting
+  gate (ADR-0060) was set with v3, whose fills covered hand-written
+  phone numbers, IBANs and addresses as signatures; with v4 they are left
+  to the reading, and the owner set the gate again to what it covers
+  (held-out seed 7004: addresses 0 of 4, phone numbers 1 of 4).
 - **Found, never compared:** veilq finds where a signature is. It computes
   no features of it, compares none, keeps none, and nothing leaves the
   machine.
