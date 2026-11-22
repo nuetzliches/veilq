@@ -124,7 +124,7 @@ fn about(component: &str) -> &'static str {
             "Checks weak face boxes (needs the face detector too): an app icon, a hand or a detail of a photo the detector took for a face is left unfilled, and the report says so; every clear face and every drawn face is filled as before. veilq-face-verify-v1, MobileNetV3-small trained by nuetzliches on synthetic pictures only (Apache-2.0), with ONNX Runtime (MIT). About 6 MB."
         }
         "signature" => {
-            "Handwritten signatures in images, GIFs and PDF pages, filled black; found, never compared. Without it pictures are refused unless the policy keeps signatures. veilq-signature-v3, YOLOS-tiny fine-tuned by nuetzliches (Apache-2.0), with ONNX Runtime (MIT). About 26 MB."
+            "Handwritten signatures in images, GIFs and PDF pages, filled black; found, never compared. Without it pictures are refused unless the policy keeps signatures. veilq-signature-v4, YOLOS-tiny fine-tuned by nuetzliches (Apache-2.0), with ONNX Runtime (MIT). About 26 MB."
         }
         "pdf" => "PDF files, page by page (needs OCR too). PDFium (BSD-3-Clause). About 7 MB.",
         _ => "",

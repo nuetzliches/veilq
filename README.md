@@ -123,7 +123,7 @@ keeps them in the model directory (`veilq models list` shows where;
 | `ner` | names that no word marks (`Beim Termin war auch Lena Vogt`) | GLiNER `urchade/gliner_multi_pii-v1` in ONNX (onnx-community), Apache-2.0 | 570 MB |
 | `ocr` | images, GIF, PDF pages | PaddleOCR PP-OCRv3 detector and PP-OCRv5 Latin recogniser in ONNX (`monkt/paddleocr-onnx`), Apache-2.0 | 10 MB |
 | `face` | faces in images, GIF, PDF pages, filled black (found, never recognised) | YuNet 2023mar (OpenCV Zoo, `opencv/face_detection_yunet`), MIT | 0.2 MB |
-| `signature` | handwritten signatures in images, GIF, PDF pages, filled black (found, never compared) | veilq-signature-v3 (`nuetzliches/veilq-signature-v3`): YOLOS-tiny (`mdefrance/yolos-tiny-signature-detection`) fine-tuned by nuetzliches to leave photos, web pages, watermarks, stamps and logos, Apache-2.0 | 26 MB |
+| `signature` | handwritten signatures in images, GIF, PDF pages, filled black (found, never compared) | veilq-signature-v4 (`nuetzliches/veilq-signature-v4`): YOLOS-tiny (`mdefrance/yolos-tiny-signature-detection`) fine-tuned by nuetzliches to leave photos, web pages, watermarks, stamps, logos and hand-filled form values, Apache-2.0 | 26 MB |
 | `pdf` | PDF (with `ocr`) | PDFium (`bblanchon/pdfium-binaries`), BSD-3-Clause | 7 MB |
 | `htr` | handwriting (with `ocr`): a line OCR reads badly is read again as handwriting | de-htr-web-v2 (`naeyn/de-htr-web-v2`), modern German handwriting, Apache-2.0 | 10 MB |
 | `face-verify` | weak face boxes (with `face`): an icon, a hand or a photo's detail YuNet took for a face is left unfilled, and the report says so | veilq-face-verify-v1 (`nuetzliches/veilq-face-verify-v1`): MobileNetV3-small trained by nuetzliches on synthetic pictures only, Apache-2.0 | 6 MB |
