@@ -50,11 +50,12 @@ pub fn write(
 }
 
 fn text(out: &mut dyn Write, reading: &Reading) -> std::io::Result<()> {
-    // A check's reading (a verify round, a picture read again) says so.
-    let label = if reading.verify {
-        "read again:"
-    } else {
-        "read:"
+    // A check's reading (a verify round, a picture read again) says so, and
+    // so does another reading of a line read badly (ADR-0067).
+    let label = match (&reading.again, reading.verify) {
+        (Some(how), _) => format!("read again ({how}):"),
+        (None, true) => "read again:".to_owned(),
+        (None, false) => "read:".to_owned(),
     };
     let mut lines = reading.text.lines();
     writeln!(out, "{label} {}", lines.next().unwrap_or(""))?;

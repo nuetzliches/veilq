@@ -1036,6 +1036,9 @@ pub fn corpus(seed: u64) -> Vec<Doc> {
         ("office", visual::OFFICE),
         ("fax", visual::FAX),
         ("copier", visual::COPIER),
+        // ADR-0067: finer than a page is rendered, and coarser.
+        ("fine", visual::FINE),
+        ("coarse", visual::COARSE),
     ] {
         let (content, truth) = visual::scanned_letter_pdf(&mut r, scan);
         docs.push(Doc {

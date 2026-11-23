@@ -27,6 +27,12 @@ Notable changes per release. The format follows
   badly right beside a name is filled with it (detector
   `ocr:name-neighbour`). The corpus has three scanned letters (office
   scanner, fax, copier).
+- A line OCR read badly is read a second time from its box in black and
+  white (Sauvola), beside the first reading (ADR-0067); what only that
+  reading finds counts where the line was read badly, and it learns no
+  names of the file. `--explain` shows it as `read again (contrast):`.
+  The corpus has two more scanned letters (300 dpi grey, 100 dpi black and
+  white).
 - The signature detector is veilq-signature-v4 (ADR-0048): trained again
   with forms filled in by hand and large printed headings as background, it
   fills a hand-written form value as a signature far less often (10 false

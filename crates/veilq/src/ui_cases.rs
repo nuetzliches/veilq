@@ -381,7 +381,7 @@ fn add_case(state: &AppState, request: CaseRequest) -> Result<CaseAdded, Failure
     // its whole segment), and what it proposed there.
     let reading = readings
         .iter()
-        .find(|r| !r.verify && r.text.contains(&value));
+        .find(|r| !r.verify && r.again.is_none() && r.text.contains(&value));
     let mut case = Case::new(kind, entity, format.name(), location, &state.policy().0);
     case.label = label;
     let line = reading.map(|r| {
@@ -587,7 +587,7 @@ impl Rule {
         };
         let reading = readings
             .iter()
-            .find(|r| !r.verify && r.text.contains(value));
+            .find(|r| !r.verify && r.again.is_none() && r.text.contains(value));
         // What veilq proposed at the mark's place.
         let candidate = |verdict: veilq_core::detect::Verdict, entity: &EntityType| {
             let r = reading?;
@@ -1162,6 +1162,7 @@ fn propose_rule(state: &AppState, request: CaseRequest) -> Result<Proposal, Fail
             text: line,
             context: String::new(),
             verify: false,
+            again: None,
             candidates: Vec::new(),
         });
         value
@@ -1294,6 +1295,7 @@ mod tests {
             text: text.into(),
             context: context.into(),
             verify: false,
+            again: None,
             candidates: Vec::new(),
         };
         let r = reading("Name: Lena\nSteuer-ID: 12 345 678 901", "");

@@ -106,3 +106,4 @@ keep it to about a page.
 | [0064](0064-points-from-the-review-before-0-4-1.md) | Points from the review before 0.4.1 | Accepted |
 | [0065](0065-a-weak-face-box-is-shown-to-a-verifier.md) | A weak face box is shown to a verifier | Accepted |
 | [0066](0066-small-print-in-a-scanned-page-is-read-whole-and-its-glued-words-count.md) | Small print in a scanned page is read whole, and its glued words count | Accepted |
+| [0067](0067-a-line-read-badly-is-read-again-in-black-and-white.md) | A line read badly is read again in black and white | Accepted |

@@ -181,6 +181,9 @@ pub struct Line {
     /// Read as handwriting ([`Htr`]): a second reading of a line read
     /// badly, beside it.
     pub handwriting: bool,
+    /// Read again in black and white ([`Ocr::contrast`], ADR-0067): a second
+    /// reading of a line read badly, beside it.
+    pub contrast: bool,
 }
 
 impl Line {
@@ -253,19 +256,22 @@ impl Ocr {
     /// the lines its top and bottom edge cut ([`Line::cut`]), and beside a
     /// line read badly its reading as handwriting ([`Line::handwriting`]).
     pub fn read(&self, img: &RgbImage) -> Result<Vec<Line>, Error> {
-        self.read_edges(img, true, true, MAX_SIDE)
+        self.read_edges(img, true, true, MAX_SIDE, false)
     }
 
     /// [`read`](Self::read), the lines cut looked for at the `top` and the
     /// `bottom` edge only: those that are the picture's, not a band's open
     /// edge (#129). A picture larger than [`MAX_SIDE`] is detected at a
-    /// longer side of `side` at most ([`PAGE_SIDE`] for a PDF's page).
+    /// longer side of `side` at most ([`PAGE_SIDE`] for a PDF's page). With
+    /// `contrast`, a line read badly is read again in black and white beside
+    /// it ([`Line::contrast`]).
     pub fn read_edges(
         &self,
         img: &RgbImage,
         top: bool,
         bottom: bool,
         side: u32,
+        contrast: bool,
     ) -> Result<Vec<Line>, Error> {
         let mut lines = Vec::new();
         for rect in self.detect(img, side)? {
@@ -285,6 +291,23 @@ impl Ocr {
             for l in self.cut_lines(img, bottom, &read, side)? {
                 if !lines.iter().any(|o| holds(&o.rect, &l.rect)) {
                     cut.push(l);
+                }
+            }
+        }
+        // A line read badly is read again from its box in black and white,
+        // and both readings are kept (ADR-0067); as many as for handwriting.
+        let mut again = Vec::new();
+        if contrast {
+            for l in lines
+                .iter()
+                .filter(|l| l.weak().next().is_some())
+                .take(HTR_LINES)
+            {
+                if let Some(c) = self.contrast(img, l.rect)?
+                    && !c.text.trim().is_empty()
+                    && c.text != l.text
+                {
+                    again.push(c);
                 }
             }
         }
@@ -311,6 +334,7 @@ impl Ocr {
             }
             lines.extend(second);
         }
+        lines.extend(again);
         lines.extend(cut);
         lines.sort_by_key(|l| (l.rect.y + l.rect.h / 2, l.rect.x));
         Ok(lines)
@@ -412,6 +436,7 @@ impl Ocr {
                     scores: Vec::new(),
                     cut: true,
                     handwriting: false,
+                    contrast: false,
                 },
             });
         }
@@ -461,6 +486,35 @@ impl Ocr {
     }
 
     fn recognise(&self, img: &RgbImage, rect: Rect) -> Result<Option<Line>, Error> {
+        let (probs, steps) = self.probabilities(img, rect)?;
+        Ok(decode(
+            &probs,
+            steps,
+            self.alphabet.len(),
+            &self.alphabet,
+            rect,
+        ))
+    }
+
+    /// `rect` of `img` read again in black and white (ADR-0067): its grey
+    /// binarised by Sauvola's threshold over a window as high as the line,
+    /// so that a coarse scan's grey strokes and its background's grain stand
+    /// apart as a printed page's do.
+    fn contrast(&self, img: &RgbImage, rect: Rect) -> Result<Option<Line>, Error> {
+        let crop = imageops::crop_imm(img, rect.x, rect.y, rect.w, rect.h).to_image();
+        let bw = sauvola(&crop, (rect.h as usize).max(15));
+        let (probs, steps) = self.probabilities(&bw, Rect { x: 0, y: 0, ..rect })?;
+        Ok(
+            decode(&probs, steps, self.alphabet.len(), &self.alphabet, rect).map(|l| Line {
+                contrast: true,
+                ..l
+            }),
+        )
+    }
+
+    /// The recogniser's probabilities for `rect` of `img`: `steps` rows of
+    /// one per class of the alphabet.
+    fn probabilities(&self, img: &RgbImage, rect: Rect) -> Result<(Vec<f32>, usize), Error> {
         let crop = imageops::crop_imm(img, rect.x, rect.y, rect.w, rect.h).to_image();
         let width =
             ((REC_HEIGHT as f32 * rect.w as f32 / rect.h as f32).ceil() as u32).clamp(8, 4000);
@@ -484,8 +538,53 @@ impl Ocr {
                 self.alphabet.len()
             )));
         }
-        Ok(decode(probs, steps, classes, &self.alphabet, rect))
+        Ok((probs.to_vec(), steps))
     }
+}
+
+/// `img` in black and white by Sauvola's threshold over a `window`-wide
+/// square: a pixel is ink where its grey lies below the window's mean times
+/// `1 + K (deviation / R - 1)`. Integral images make it linear in the
+/// pixels.
+fn sauvola(img: &RgbImage, window: usize) -> RgbImage {
+    const K: f64 = 0.2;
+    const R: f64 = 128.0;
+    let (w, h) = (img.width() as usize, img.height() as usize);
+    let grey: Vec<f64> = img
+        .pixels()
+        .map(|p| (f64::from(p[0]) + f64::from(p[1]) + f64::from(p[2])) / 3.0)
+        .collect();
+    // Sums and sums of squares over [0, x) x [0, y).
+    let mut sum = vec![0f64; (w + 1) * (h + 1)];
+    let mut sq = vec![0f64; (w + 1) * (h + 1)];
+    for y in 0..h {
+        let (mut row, mut row_sq) = (0f64, 0f64);
+        for x in 0..w {
+            let g = grey[y * w + x];
+            row += g;
+            row_sq += g * g;
+            sum[(y + 1) * (w + 1) + x + 1] = sum[y * (w + 1) + x + 1] + row;
+            sq[(y + 1) * (w + 1) + x + 1] = sq[y * (w + 1) + x + 1] + row_sq;
+        }
+    }
+    let half = window / 2;
+    let mut out = RgbImage::new(w as u32, h as u32);
+    for y in 0..h {
+        let (y0, y1) = (y.saturating_sub(half), (y + half + 1).min(h));
+        for x in 0..w {
+            let (x0, x1) = (x.saturating_sub(half), (x + half + 1).min(w));
+            let at = |t: &[f64], x: usize, y: usize| t[y * (w + 1) + x];
+            let n = ((x1 - x0) * (y1 - y0)) as f64;
+            let s = at(&sum, x1, y1) - at(&sum, x0, y1) - at(&sum, x1, y0) + at(&sum, x0, y0);
+            let s2 = at(&sq, x1, y1) - at(&sq, x0, y1) - at(&sq, x1, y0) + at(&sq, x0, y0);
+            let mean = s / n;
+            let dev = (s2 / n - mean * mean).max(0.0).sqrt();
+            let ink = grey[y * w + x] < mean * (1.0 + K * (dev / R - 1.0));
+            let v = if ink { 0 } else { 255 };
+            out.put_pixel(x as u32, y as u32, image::Rgb([v, v, v]));
+        }
+    }
+    out
 }
 
 /// The line read from `rect`: greedy CTC over `probs`, `steps` rows of
@@ -555,6 +654,7 @@ fn decode(
         scores: runs.iter().map(|r| r.3).collect(),
         cut: false,
         handwriting: false,
+        contrast: false,
     })
 }
 
@@ -991,6 +1091,28 @@ mod tests {
         assert_eq!(line.chars.len(), 2);
         assert!(line.chars[0].2.x >= 100 && line.chars[1].2.right() <= 140);
         assert!(!line.handwriting);
+    }
+
+    #[test]
+    fn a_grey_stroke_on_grain_comes_out_black_on_white() {
+        // A line's box: a light, grainy background and a grey stroke.
+        let mut img = RgbImage::new(40, 20);
+        for (x, y, p) in img.enumerate_pixels_mut() {
+            let grain = if (x + y) % 3 == 0 { 200 } else { 215 };
+            let v = if (18..22).contains(&x) && (4..16).contains(&y) {
+                150
+            } else {
+                grain
+            };
+            *p = image::Rgb([v, v, v]);
+        }
+        let bw = sauvola(&img, 15);
+        assert_eq!(bw.get_pixel(20, 10).0, [0, 0, 0], "the stroke is ink");
+        assert_eq!(bw.get_pixel(5, 10).0, [255, 255, 255], "the grain is not");
+        assert!(
+            bw.pixels()
+                .all(|p| p.0 == [0, 0, 0] || p.0 == [255, 255, 255])
+        );
     }
 
     /// The real recogniser, when installed: VEILQ_HTR_DIR (model.onnx,

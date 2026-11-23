@@ -818,7 +818,11 @@ fn candidates(
     };
     // The page of the first readings: a line read again as handwriting
     // stands in its box beside it, and is read as a line of its own below.
-    let first: Vec<Line> = lines.iter().filter(|l| !l.handwriting).cloned().collect();
+    let first: Vec<Line> = lines
+        .iter()
+        .filter(|l| !l.handwriting && !l.contrast)
+        .cloned()
+        .collect();
     let p = page(&first);
     let others: Vec<Rect> = first.iter().map(|l| l.rect).collect();
     let mut out = Vec::new();
@@ -835,6 +839,11 @@ fn candidates(
             out.push((c, rects));
         }
     }
+    // A line read badly read again in black and white (ADR-0067) stands in
+    // its box beside it too, but is no neighbour, head or line of its own:
+    // it is read below, with the context of the line it reads again.
+    let (agains, lines): (Vec<Line>, Vec<Line>) = lines.iter().cloned().partition(|l| l.contrast);
+    let lines = &lines[..];
     let heads = heads(lines);
     // The lines that end in a person's name: its surname may stand at the
     // start of the line below.
@@ -910,6 +919,31 @@ fn candidates(
             }
         }
     }
+    // A line read badly read again in black and white (ADR-0067), with the
+    // context of the line it reads again. What it finds counts where it
+    // covers a character the first reading read badly: elsewhere that
+    // reading read well, and one that differs there is noise. It learns no
+    // names of the file.
+    for a in &agains {
+        let Some(i) = lines
+            .iter()
+            .position(|l| !l.handwriting && l.rect == a.rect)
+        else {
+            continue;
+        };
+        let weak: Vec<Rect> = lines[i].weak().copied().collect();
+        let one = Page {
+            text: a.text.clone(),
+            chars: a.chars.clone(),
+        };
+        let context = neighbours(lines, &heads, i);
+        for c in engine.ocr_findings_read_again(&a.text, &context, "contrast")? {
+            let rects = boxes(&one, c.start, c.end, w, h);
+            if rects.iter().any(|r| weak.iter().any(|k| r.intersects(k))) {
+                out.push((c, rects));
+            }
+        }
+    }
     Ok(out)
 }
 
@@ -941,7 +975,15 @@ fn settle(
         // A band's open edge is no edge of the picture: a line cut there is
         // read when the band grows, and looked for there it made the band
         // grow toward the whole frame (#129).
-        let lines = ocr.read_edges(&rgb, !band.open_above, !band.open_below, band.side)?;
+        // Only the first reading reads a line read badly again (ADR-0067):
+        // a verify round reads the picture as written, its boxes filled.
+        let lines = ocr.read_edges(
+            &rgb,
+            !band.open_above,
+            !band.open_below,
+            band.side,
+            round == 1,
+        )?;
         if lines.iter().any(|l| {
             (band.open_above && l.rect.y <= EDGE)
                 || (band.open_below && l.rect.bottom() + EDGE >= h)
@@ -1133,9 +1175,9 @@ fn unread(
 ) -> Result<Vec<Rect>, Error> {
     let low = engine.policy().picture.low_confidence.unwrap_or_default();
     let mut boxes = Vec::new();
-    // A reading as handwriting is of a line read badly already: that line
-    // stands for both.
-    for l in lines.iter().filter(|l| !l.handwriting) {
+    // A reading as handwriting or in black and white (ADR-0067) is of a line
+    // read badly already: that line stands for all of them.
+    for l in lines.iter().filter(|l| !l.handwriting && !l.contrast) {
         let weak = l.weak().any(|r| !covered(r, new.iter()));
         let cut = l.cut && (weak || (l.text.trim().is_empty() && !covered(&l.rect, new.iter())));
         if !weak && !cut {
@@ -1737,6 +1779,7 @@ mod tests {
             score: 1.0,
             cut: false,
             handwriting: false,
+            contrast: false,
         }
     }
 
@@ -2206,6 +2249,45 @@ mod tests {
         );
         // Not a line that only stands below in another card.
         assert!(found.iter().all(|r| (340..700).contains(&r.x)), "{found:?}");
+    }
+
+    #[test]
+    fn a_reading_in_black_and_white_counts_where_the_line_was_read_badly() {
+        // The first reading misread the given name (read badly); the line
+        // read again in black and white has it right (ADR-0067). A rule
+        // stands in for NER.
+        let policy = crate::Policy::parse(
+            "version = 1\n[[patterns]]\nname = \"two-names\"\nentity = \"PERSON\"\nregex = 'Jonas\\sFriedhelm'\n",
+        )
+        .unwrap();
+        let engine = Engine::new(&policy, None, b"test", None).unwrap();
+        let first = |weak: &str| {
+            let text = "fuer Jcnas Friedhelm Akte";
+            let mut l = line(text, 0, 40);
+            let at = text.find(weak).unwrap();
+            for (i, (b, _)) in text.char_indices().enumerate() {
+                if (at..at + weak.len()).contains(&b) {
+                    l.scores[i] = 0.4;
+                }
+            }
+            l
+        };
+        let again = Line {
+            contrast: true,
+            ..line("fuer Jonas Friedhelm Akte", 0, 40)
+        };
+        let found = |first: Line| -> Vec<String> {
+            candidates(&engine, &[first, again.clone()], 1000, 100, false)
+                .unwrap()
+                .into_iter()
+                .filter(|(c, _)| c.entity.as_str() == "PERSON")
+                .map(|(c, _)| c.detector)
+                .collect()
+        };
+        // Read badly at the given name: the other reading's name counts.
+        assert_eq!(found(first("Jcnas")), ["policy:two-names"]);
+        // Read badly elsewhere only: the name it differs in is noise.
+        assert!(found(first("Akte")).is_empty());
     }
 
     #[test]
