@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 173,
+        "y": 466,
+        "width": 89,
+        "height": 21
+      }
+    },
+    {
+      "entity": "ADDRESS",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 176,
+        "y": 511,
+        "width": 143,
+        "height": 21
+      }
+    },
+    {
+      "entity": "ADDRESS",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 175,
+        "y": 557,
+        "width": 139,
+        "height": 16
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 1425,
+        "y": 394,
+        "width": 70,
+        "height": 11
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "frame": 1,
+        "x": 417,
+        "y": 885,
+        "width": 96,
+        "height": 15
+      }
+    }
+  ]
+}

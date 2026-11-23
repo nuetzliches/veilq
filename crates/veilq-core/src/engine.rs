@@ -194,17 +194,15 @@ impl Explain {
         std::mem::take(&mut *self.0.lock().unwrap_or_else(|e| e.into_inner()))
     }
 
-    fn record(
-        &self,
-        text: &str,
-        context: &str,
-        decisions: &[crate::detect::Decision],
-        verify: bool,
-    ) {
+    fn record(&self, text: &str, context: &str, decisions: &[crate::detect::Decision], pass: Pass) {
         let reading = Reading {
             text: text.to_owned(),
             context: context.to_owned(),
-            verify,
+            verify: pass == Pass::Check,
+            again: match pass {
+                Pass::Again(how) => Some(how.to_owned()),
+                _ => None,
+            },
             candidates: decisions
                 .iter()
                 .map(|d| Explained {
@@ -244,7 +242,24 @@ pub struct Reading {
     /// a reading before it already.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub verify: bool,
+    /// Another reading of a line OCR read badly (ADR-0067): `contrast`, its
+    /// box read again in black and white. What only it finds counts where
+    /// the line was read badly.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub again: Option<String>,
     pub candidates: Vec<Explained>,
+}
+
+/// What kind of reading a text is to the decider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pass {
+    /// A first reading: what it finds may go on the file's lists.
+    First,
+    /// A check of veilq's own output (a verify round): it learns nothing.
+    Check,
+    /// Another reading of a line OCR read badly (ADR-0067), named so: it
+    /// learns nothing either.
+    Again(&'static str),
 }
 
 /// A candidate in a [`Reading`], with the policy's verdict on it.
@@ -666,7 +681,7 @@ impl Engine {
                 // A finding across the cut goes whole into the next chunk.
                 // This reading only places the cut: a candidate it lifts is
                 // counted where it is written, not here too (#117).
-                for d in self.decisions(chunk, "", true, Source::Text, false)? {
+                for d in self.decisions(chunk, "", true, Source::Text, Pass::First)? {
                     let f = &d.candidate;
                     if d.verdict == Verdict::Kept && f.start < cut && f.end > cut {
                         cut = chunk[..f.start].rfind('\n').map_or(0, |i| i + 1);
@@ -1239,6 +1254,19 @@ impl Engine {
         self.decided(text, context, true, Source::Ocr, true)
     }
 
+    /// [`ocr_findings`](Self::ocr_findings) in another reading of a line
+    /// OCR read badly (ADR-0067), named `how` in the explanation: it finds
+    /// the file's names but learns none, as a misreading would teach a
+    /// misread word.
+    pub(crate) fn ocr_findings_read_again(
+        &self,
+        text: &str,
+        context: &str,
+        how: &'static str,
+    ) -> Result<Vec<Candidate>, Error> {
+        self.decided_as(text, context, true, Source::Ocr, Pass::Again(how))
+    }
+
     /// The detector's findings in `text`, written to the explanation when
     /// there is one; with `placeholders`, what lies inside one of veilq's
     /// own placeholders (`<PERSON>`, `[PERSON:0a1b2c3d]`, ADR-0001) is
@@ -1253,9 +1281,22 @@ impl Engine {
         source: Source,
         verify: bool,
     ) -> Result<Vec<Candidate>, Error> {
-        let decisions = self.decisions(text, context, placeholders, source, verify)?;
+        let pass = if verify { Pass::Check } else { Pass::First };
+        self.decided_as(text, context, placeholders, source, pass)
+    }
+
+    /// [`decided`](Self::decided) in a reading of the kind `pass`.
+    fn decided_as(
+        &self,
+        text: &str,
+        context: &str,
+        placeholders: bool,
+        source: Source,
+        pass: Pass,
+    ) -> Result<Vec<Candidate>, Error> {
+        let decisions = self.decisions(text, context, placeholders, source, pass)?;
         // A check's reading finds again what a reading before it lifted.
-        if !verify {
+        if pass != Pass::Check {
             self.count_lifted(
                 decisions
                     .iter()
@@ -1279,7 +1320,7 @@ impl Engine {
         context: &str,
     ) -> Result<Vec<(Candidate, bool)>, Error> {
         Ok(self
-            .decisions(text, context, true, Source::Text, false)?
+            .decisions(text, context, true, Source::Text, Pass::First)?
             .into_iter()
             .filter(|d| d.verdict == Verdict::Kept)
             .map(|d| (d.candidate, d.lifted))
@@ -1301,7 +1342,7 @@ impl Engine {
         context: &str,
         placeholders: bool,
         source: Source,
-        verify: bool,
+        pass: Pass,
     ) -> Result<Vec<crate::detect::Decision>, Error> {
         static PLACEHOLDER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
             regex::Regex::new(r"\\?<[A-Z][A-Z0-9_]*\\?>|\[[A-Z][A-Z0-9_]*:[0-9a-f]{8}\]")
@@ -1344,7 +1385,7 @@ impl Engine {
         let mut decisions = decide(self.names.as_deref())?;
         // The file's names (ADR-0047): a person found in the input goes on
         // the list, and a name new to it is looked for in this text too.
-        if let Some(names) = self.names.as_ref().filter(|_| !verify) {
+        if let Some(names) = self.names.as_ref().filter(|_| pass == Pass::First) {
             let kept = |d: &&crate::detect::Decision| d.verdict == Verdict::Kept;
             let own = |d: &&crate::detect::Decision| {
                 d.candidate.detector != crate::names::DETECTOR
@@ -1381,7 +1422,7 @@ impl Engine {
             }
         }
         if let Some(explain) = &self.explain {
-            explain.record(text, context, &decisions, verify);
+            explain.record(text, context, &decisions, pass);
         }
         Ok(decisions)
     }
@@ -2160,6 +2201,19 @@ mod tests {
         let e = engine().with_names();
         found(&e, text, false);
         assert_eq!(found(&e, later, false), ["Brandt"]);
+    }
+
+    #[test]
+    fn another_reading_of_a_line_learns_no_names() {
+        // Another reading of a line read badly (ADR-0067) may misread a
+        // word into a name; learned, that word would be filled everywhere.
+        let e = engine().with_names();
+        let found = e
+            .ocr_findings_read_again("Herr Jonas Brandt", "", "contrast")
+            .unwrap();
+        assert!(!found.is_empty(), "found in that reading");
+        let later = e.ocr_findings("Brandt kommt", "").unwrap();
+        assert!(later.is_empty(), "not learned: {later:?}");
     }
 
     #[test]
