@@ -393,12 +393,15 @@ fn fill(img: &mut RgbaImage, r: &Rect) {
 }
 
 /// Redacts one picture: the boxes filled (with `apply`) and their findings
-/// reported, at `frame` (a GIF's frame or a PDF's page, from 1).
+/// reported, at `frame` (a GIF's frame or a PDF's page, from 1). OCR detects
+/// its lines at a longer side of `side` at most (`ocr::MAX_SIDE`, for a
+/// PDF's page `ocr::PAGE_SIDE`).
 pub fn redact_picture(
     engine: &Engine,
     ocr: &Ocr,
     img: &mut RgbaImage,
     frame: Option<u64>,
+    side: u32,
     apply: bool,
     out: &mut Outcome,
 ) -> Result<Vec<Rect>, Error> {
@@ -408,7 +411,7 @@ pub fn redact_picture(
     let mut regions = marked(engine, img, frame, out);
     regions.extend(faces(engine, img, frame, out, &[])?);
     regions.extend(signatures(engine, img, frame, out, &[])?);
-    let read = read_whole(engine, ocr, img, frame, apply, out, &regions)?;
+    let read = read_whole(engine, ocr, img, frame, side, apply, out, &regions)?;
     regions.extend(read);
     Ok(regions)
 }
@@ -479,16 +482,22 @@ fn released(engine: &Engine, frame: Option<u64>, r: &Rect) -> bool {
 
 /// The text of a whole picture, redacted: [`settle`] without a band, with
 /// `regions` filled with its first reading's boxes.
+#[allow(clippy::too_many_arguments)]
 fn read_whole(
     engine: &Engine,
     ocr: &Ocr,
     img: &mut RgbaImage,
     frame: Option<u64>,
+    side: u32,
     apply: bool,
     out: &mut Outcome,
     regions: &[Rect],
 ) -> Result<Vec<Rect>, Error> {
-    settle(engine, ocr, img, frame, apply, out, Band::WHOLE, regions)?
+    let band = Band {
+        side,
+        ..Band::WHOLE
+    };
+    settle(engine, ocr, img, frame, apply, out, band, regions)?
         .ok_or_else(|| error("a whole picture has no edge a line could be cut at"))
 }
 
@@ -612,12 +621,13 @@ fn regions(
 
 /// Where a picture being read is a band of a larger one: its top row there,
 /// and whether rows above or below it were left out (a line there may be
-/// cut by the band's edge).
+/// cut by the band's edge); and the longer side OCR detects it at, at most.
 #[derive(Clone, Copy)]
 struct Band {
     top: u32,
     open_above: bool,
     open_below: bool,
+    side: u32,
 }
 
 impl Band {
@@ -625,6 +635,7 @@ impl Band {
         top: 0,
         open_above: false,
         open_below: false,
+        side: crate::ocr::MAX_SIDE,
     };
 }
 
@@ -717,6 +728,69 @@ fn with_rest(
     rects
 }
 
+/// The detector of a name's neighbour read badly (ADR-0066).
+const NEIGHBOUR_DETECTOR: &str = "ocr:name-neighbour";
+
+/// The words beside a person's name at `start..end` in `text` (a reading of
+/// `line`, byte for byte as long) that are part of it read badly: the one
+/// right before it and the one right after it on the line, each when it
+/// starts with a capital, has three letters or more and OCR read one of its
+/// letters or digits below [`crate::ocr::WEAK`]. Small print gave the given
+/// name read well and the surname beside it misread past knowing
+/// (`Ooemoz`); it stood beside the box unfilled (ADR-0066). A word read well
+/// is the text's own (`Herr`, `beauftragt`) and stays.
+fn weak_neighbours(line: &Line, text: &str, start: usize, end: usize) -> Vec<(usize, usize)> {
+    let weak = |s: usize, e: usize| {
+        line.chars
+            .iter()
+            .zip(&line.scores)
+            .any(|((cs, ce, _), score)| {
+                *cs >= s
+                    && *ce <= e
+                    && *score < crate::ocr::WEAK
+                    && text[*cs..*ce].chars().all(char::is_alphanumeric)
+            })
+    };
+    // A word: its letters and digits, the marks around it left out.
+    let word = |s: usize, e: usize| {
+        let token = &text[s..e];
+        let lead = token.len()
+            - token
+                .trim_start_matches(|c: char| !c.is_alphanumeric())
+                .len();
+        let core = token.trim_matches(|c: char| !c.is_alphanumeric());
+        (s + lead, s + lead + core.len())
+    };
+    let mut out = Vec::new();
+    // Only whitespace between the name and its neighbour: a name glued to a
+    // word (`fürJonas`) has none beside it.
+    let before = &text[..start];
+    if before.ends_with(char::is_whitespace) {
+        let trimmed = before.trim_end();
+        let s = trimmed
+            .char_indices()
+            .rev()
+            .find(|(_, c)| c.is_whitespace())
+            .map_or(0, |(i, c)| i + c.len_utf8());
+        out.push(word(s, trimmed.len()));
+    }
+    let after = &text[end..];
+    if after.starts_with(char::is_whitespace) {
+        let s = end + (after.len() - after.trim_start().len());
+        let e = text[s..]
+            .find(char::is_whitespace)
+            .map_or(text.len(), |i| s + i);
+        out.push(word(s, e));
+    }
+    out.retain(|&(s, e)| {
+        let w = &text[s..e];
+        w.chars().next().is_some_and(char::is_uppercase)
+            && w.chars().filter(|c| c.is_alphabetic()).count() >= 3
+            && weak(s, e)
+    });
+    out
+}
+
 /// Whether `a` and `b` overlap by half the lower one's height.
 fn same_row(a: &Rect, b: &Rect) -> bool {
     let overlap = a.bottom().min(b.bottom()).saturating_sub(a.y.max(b.y));
@@ -789,6 +863,17 @@ fn candidates(
                     if let Some(n) = crate::detect::genitive_head(span, others) {
                         c.end = c.start + n;
                     }
+                    for (start, end) in weak_neighbours(line, &text, c.start, c.end) {
+                        let rects = boxes(&one, start, end, w, h);
+                        let n = crate::detect::Candidate {
+                            start,
+                            end,
+                            entity: c.entity.clone(),
+                            confidence: c.confidence,
+                            detector: NEIGHBOUR_DETECTOR.into(),
+                        };
+                        out.push((n, rects));
+                    }
                 }
                 let rects = boxes(&one, c.start, c.end, w, h);
                 let rects = with_rest(&c, &text[c.start..c.end], rects, &others, w);
@@ -856,7 +941,7 @@ fn settle(
         // A band's open edge is no edge of the picture: a line cut there is
         // read when the band grows, and looked for there it made the band
         // grow toward the whole frame (#129).
-        let lines = ocr.read_edges(&rgb, !band.open_above, !band.open_below)?;
+        let lines = ocr.read_edges(&rgb, !band.open_above, !band.open_below, band.side)?;
         if lines.iter().any(|l| {
             (band.open_above && l.rect.y <= EDGE)
                 || (band.open_below && l.rect.bottom() + EDGE >= h)
@@ -1355,7 +1440,16 @@ fn redact_changed(
     // nothing of a reading given up reaches the frame or the report.
     let read = 'read: loop {
         if too_much(&bands, h) {
-            let read = read_whole(engine, ocr, img, frame, apply, out, &boxes)?;
+            let read = read_whole(
+                engine,
+                ocr,
+                img,
+                frame,
+                crate::ocr::MAX_SIDE,
+                apply,
+                out,
+                &boxes,
+            )?;
             boxes.extend(read);
             return Ok(boxes);
         }
@@ -1367,6 +1461,7 @@ fn redact_changed(
                 top,
                 open_above: top > 0,
                 open_below: bottom < h,
+                ..Band::WHOLE
             };
             let regions = in_band(&boxes, top, bottom);
             match settle(
@@ -1459,7 +1554,15 @@ fn gif(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Outcome,
                     Some((before, _)) => redact_changed(
                         engine, ocr, before, &original, &mut img, n, apply, &mut out, &boxes,
                     )?,
-                    None => redact_picture(engine, ocr, &mut img, n, apply, &mut out)?,
+                    None => redact_picture(
+                        engine,
+                        ocr,
+                        &mut img,
+                        n,
+                        crate::ocr::MAX_SIDE,
+                        apply,
+                        &mut out,
+                    )?,
                 };
                 boxes.extend(found);
                 img
@@ -1558,7 +1661,15 @@ pub fn image(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Ou
             pseudonym: None,
         });
     }
-    redact_picture(engine, ocr, &mut rgba, None, apply, &mut out)?;
+    redact_picture(
+        engine,
+        ocr,
+        &mut rgba,
+        None,
+        crate::ocr::MAX_SIDE,
+        apply,
+        &mut out,
+    )?;
     if apply {
         // After the verify rounds: OCR never reads the mark (ADR-0050).
         if engine.watermarks() {
@@ -2095,6 +2206,59 @@ mod tests {
         );
         // Not a line that only stands below in another card.
         assert!(found.iter().all(|r| (340..700).contains(&r.x)), "{found:?}");
+    }
+
+    #[test]
+    fn a_word_read_badly_beside_a_name_is_filled_with_it() {
+        // Small print (ADR-0066): the given and middle names read well, the
+        // surname misread past knowing and read badly. A rule of the policy
+        // stands in for NER.
+        let policy = crate::Policy::parse(
+            "version = 1\n[[patterns]]\nname = \"two-names\"\nentity = \"PERSON\"\nregex = 'Jonas\\sFriedhelm'\n",
+        )
+        .unwrap();
+        let engine = Engine::new(&policy, None, b"test", None).unwrap();
+        let read = |text: &str, weak: &[&str]| {
+            let mut l = line(text, 0, 40);
+            for w in weak {
+                let at = text.find(w).unwrap();
+                for (i, (b, _)) in text.char_indices().enumerate() {
+                    if (at..at + w.len()).contains(&b) && i % 2 == 0 {
+                        l.scores[i] = 0.4;
+                    }
+                }
+            }
+            l
+        };
+        let filled = |l: Line| -> Vec<String> {
+            let text = l.text.clone();
+            let mut got: Vec<String> = candidates(&engine, &[l], 1000, 100, false)
+                .unwrap()
+                .into_iter()
+                .filter(|(c, _)| c.detector == NEIGHBOUR_DETECTOR)
+                .map(|(c, _)| text[c.start..c.end].to_owned())
+                .collect();
+            got.sort();
+            got.dedup();
+            got
+        };
+        // The surname read badly, with a comma after it: filled.
+        assert_eq!(
+            filled(read("fuer Jonas Friedhelm Ooemoz, beauftragt", &["Ooemoz"])),
+            ["Ooemoz"]
+        );
+        // Read well, a word beside the name is the text's own.
+        assert!(filled(read("fuer Jonas Friedhelm Oberholz beauftragt", &[])).is_empty());
+        // Read badly but in lower case: no name's word.
+        assert!(filled(read("fuer Jonas Friedhelm beauftragt", &["beauftragt"])).is_empty());
+        // One word on each side, not two.
+        assert_eq!(
+            filled(read(
+                "Akte Herrn Jonas Friedhelm Ooemoz Bescheid",
+                &["Herrn", "Ooemoz", "Bescheid", "Akte"]
+            )),
+            ["Herrn", "Ooemoz"]
+        );
     }
 
     #[test]

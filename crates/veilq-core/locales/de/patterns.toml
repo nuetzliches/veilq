@@ -117,6 +117,22 @@ entity = "ADDRESS"
 regex = '(?m)^[ \t]*(?P<pii>\p{Lu}[\p{L}.\-]*(?: (?:\p{Lu}[\p{L}.\-]*|an|am|auf|aus|bei|beim|der|die|das|den|dem|des|im|in|hinter|über|unter|vor|vom|von|zu|zum|zur)){0,3} \d{1,4} ?[a-zA-Z]?(?: ?- ?\d{1,4})?[ \t]*\r?\n[ \t]*(?:DE?[ -]?)?\d{5} \p{Lu}[\p{L}\-]+(?: (?:an der|am|im|in der) \p{Lu}\p{L}+)?(?: \p{Lu}[\p{L}\-]+){0,2})[ \t]*\r?$'
 confidence = 0.85
 
+# The same two kinds with the number glued to the street (ADR-0066): small
+# print read without its space (`Lindenweg12, 28195 Bremen`, `Am Anger7` /
+# `15938 Lindau`). In text read from a picture only: written text that glues
+# them is a code, not a street. The street's last letter is a small one.
+[[patterns]]
+name = "address-glued"
+entity = "ADDRESS"
+regex = '\b\p{Lu}[\p{L}.\-]*(?: (?:\p{Lu}[\p{L}.\-]*|an|am|auf|aus|bei|beim|der|die|das|den|dem|des|im|in|hinter|über|unter|vor|vom|von|zu|zum|zur)){0,3}\p{Ll}\d{1,4} ?[a-zA-Z]?, ?(?:DE?[ -]?)?\d{5} \p{Lu}[\p{L}\-]+(?: \p{Lu}[\p{L}\-]+){0,2}'
+confidence = 0.85
+
+[[patterns]]
+name = "address-lines-glued"
+entity = "ADDRESS"
+regex = '(?m)^[ \t]*(?P<pii>\p{Lu}[\p{L}.\-]*(?: (?:\p{Lu}[\p{L}.\-]*|an|am|auf|aus|bei|beim|der|die|das|den|dem|des|im|in|hinter|über|unter|vor|vom|von|zu|zum|zur)){0,3}\p{Ll}\d{1,4} ?[a-zA-Z]?(?: ?- ?\d{1,4})?[ \t]*\r?\n[ \t]*(?:DE?[ -]?)?\d{5} \p{Lu}[\p{L}\-]+(?: (?:an der|am|im|in der) \p{Lu}\p{L}+)?(?: \p{Lu}[\p{L}\-]+){0,2})[ \t]*\r?$'
+confidence = 0.85
+
 # A street and number alone, when the text says it is an address.
 [[patterns]]
 name = "street"

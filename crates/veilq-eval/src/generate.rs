@@ -1029,6 +1029,21 @@ pub fn corpus(seed: u64) -> Vec<Doc> {
             truth,
         });
     }
+    // A letter with small print as three kinds of scan hand it on
+    // (ADR-0066): a stream of its own, so the pictures above stay the same.
+    let mut r = Rng::new(seed ^ 0x5CA1_1E77_0000_0000);
+    for (name, scan) in [
+        ("office", visual::OFFICE),
+        ("fax", visual::FAX),
+        ("copier", visual::COPIER),
+    ] {
+        let (content, truth) = visual::scanned_letter_pdf(&mut r, scan);
+        docs.push(Doc {
+            path: format!("de/pdf/scan-{name}-1.pdf"),
+            content,
+            truth,
+        });
+    }
     // Reported cases (#39), each from a stream of its own, so that the
     // documents above stay the same: messages written informally, and a
     // case list whose columns hold surnames and addresses.

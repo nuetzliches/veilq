@@ -59,9 +59,13 @@ const NOT_CONTEXT: &[&str] = &[
 ];
 
 /// The built-in rules that read text from a picture only (ADR-0051): what
-/// they look for is how a screen cuts a value, and written text rarely
-/// holds it.
-const OCR_ONLY: &[&str] = &["pattern:de.name-cut"];
+/// they look for is how a screen cuts a value, or how OCR loses a space in
+/// small print (ADR-0066), and written text rarely holds it.
+const OCR_ONLY: &[&str] = &[
+    "pattern:de.name-cut",
+    "pattern:de.address-glued",
+    "pattern:de.address-lines-glued",
+];
 
 /// Where a text comes from: written, or read from a picture by OCR.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -1450,6 +1454,38 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn a_street_glued_to_its_number_is_read_from_a_picture_only() {
+        let d = Detector::new(&Policy::default()).unwrap();
+        let read = |text: &str, source| -> Vec<String> {
+            d.findings(text, "", source)
+                .unwrap()
+                .into_iter()
+                .filter(|c| c.entity.as_str() == "ADDRESS")
+                .map(|c| text[c.start..c.end].to_owned())
+                .collect()
+        };
+        // Small print read without its space (ADR-0066).
+        assert_eq!(
+            read("Lindenweg12, 28195 Bremen", Source::Ocr),
+            ["Lindenweg12, 28195 Bremen"]
+        );
+        assert_eq!(
+            read("Am Anger7\n15938 Lindau", Source::Ocr),
+            ["Am Anger7\n15938 Lindau"]
+        );
+        // A street misread as well (`ß` read as `R`) has no street word: the
+        // block of two lines says what it is.
+        assert_eq!(
+            read("LindenstraRe61\n30159 Hannover", Source::Ocr),
+            ["LindenstraRe61\n30159 Hannover"]
+        );
+        // Written text that glues them is a code.
+        assert!(read("Am Anger7\n15938 Lindau", Source::Text).is_empty());
+        // A code of capitals and digits is no street.
+        assert!(read("REF12, 28195 Bremen", Source::Ocr).is_empty());
     }
 
     #[test]
