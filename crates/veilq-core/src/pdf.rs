@@ -148,7 +148,17 @@ pub fn redact(
     let config = render_config();
     for (i, page) in input.pages().iter().enumerate() {
         let mut img = render(&page, &config, i + 1)?;
-        crate::visual::redact_picture(engine, ocr, &mut img, Some(i as u64 + 1), apply, &mut out)?;
+        // The detector reads the page whole up to A4 at 200 dpi: its small
+        // print, scaled down to a picture's size, was lost (ADR-0066).
+        crate::visual::redact_picture(
+            engine,
+            ocr,
+            &mut img,
+            Some(i as u64 + 1),
+            crate::ocr::PAGE_SIDE,
+            apply,
+            &mut out,
+        )?;
         if let Some(doc) = &mut output {
             // In the page's footer, after its verify rounds (ADR-0050).
             if engine.watermarks() {

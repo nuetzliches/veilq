@@ -2,8 +2,9 @@
 //! ONNX find the lines of text in an image and every character's place.
 //!
 //! **Detection** (DB): the image, scaled so that its longer side is at most
-//! [`MAX_SIDE`] (a small one enlarged up to [`MAX_UPSCALE`] times) and both
-//! sides are multiples of 32, normalised with the
+//! [`MAX_SIDE`] (a small one enlarged up to [`MAX_UPSCALE`] times, a PDF's
+//! page read up to [`PAGE_SIDE`]) and both sides are multiples of 32,
+//! normalised with the
 //! ImageNet mean and deviation, gives a map of text probability; regions above
 //! [`PIXEL`] that score at least [`BOX`] become boxes, widened as DB widens
 //! them (`unclip`). **Recognition** (CTC): each box, scaled to a height of 48,
@@ -24,6 +25,11 @@ use crate::Error;
 
 /// The longer side of the image the detector reads.
 pub const MAX_SIDE: u32 = 1600;
+/// The longer side the detector reads a PDF's page at, when the page is
+/// larger than [`MAX_SIDE`] (ADR-0066): an A4 page at 200 dpi whole. Scaled
+/// down to 1600, the small print of a scanned letter's side column was read
+/// at lines seven pixels high, and a name there stood unfound.
+pub const PAGE_SIDE: u32 = 2400;
 /// How far the detector enlarges a small image towards [`MAX_SIDE`]. A
 /// screenshot passed on scaled down has lines eight pixels high: read at that
 /// size, DB split a line of an address and lost most of the IBAN below it;
@@ -247,15 +253,22 @@ impl Ocr {
     /// the lines its top and bottom edge cut ([`Line::cut`]), and beside a
     /// line read badly its reading as handwriting ([`Line::handwriting`]).
     pub fn read(&self, img: &RgbImage) -> Result<Vec<Line>, Error> {
-        self.read_edges(img, true, true)
+        self.read_edges(img, true, true, MAX_SIDE)
     }
 
     /// [`read`](Self::read), the lines cut looked for at the `top` and the
     /// `bottom` edge only: those that are the picture's, not a band's open
-    /// edge (#129).
-    pub fn read_edges(&self, img: &RgbImage, top: bool, bottom: bool) -> Result<Vec<Line>, Error> {
+    /// edge (#129). A picture larger than [`MAX_SIDE`] is detected at a
+    /// longer side of `side` at most ([`PAGE_SIDE`] for a PDF's page).
+    pub fn read_edges(
+        &self,
+        img: &RgbImage,
+        top: bool,
+        bottom: bool,
+        side: u32,
+    ) -> Result<Vec<Line>, Error> {
         let mut lines = Vec::new();
-        for rect in self.detect(img)? {
+        for rect in self.detect(img, side)? {
             if let Some(line) = self.recognise(img, rect)?
                 && !line.text.trim().is_empty()
             {
@@ -269,7 +282,7 @@ impl Ocr {
         let read: Vec<Rect> = lines.iter().map(|l| l.rect).collect();
         let edges = [(false, top), (true, bottom)];
         for bottom in edges.into_iter().filter(|e| e.1).map(|e| e.0) {
-            for l in self.cut_lines(img, bottom, &read)? {
+            for l in self.cut_lines(img, bottom, &read, side)? {
                 if !lines.iter().any(|o| holds(&o.rect, &l.rect)) {
                     cut.push(l);
                 }
@@ -309,7 +322,13 @@ impl Ocr {
     /// them and the lines `read` already painted over with it (the rest of
     /// a cut line otherwise joins the box of the line above), and a line
     /// that reaches the edge is kept, read or not.
-    fn cut_lines(&self, img: &RgbImage, bottom: bool, read: &[Rect]) -> Result<Vec<Line>, Error> {
+    fn cut_lines(
+        &self,
+        img: &RgbImage,
+        bottom: bool,
+        read: &[Rect],
+        side: u32,
+    ) -> Result<Vec<Line>, Error> {
         let (w, h) = img.dimensions();
         let strip = h.min(EDGE_STRIP);
         let edge_row = if bottom { h - 1 } else { 0 };
@@ -340,7 +359,7 @@ impl Ocr {
             }
         }
         let mut out = Vec::new();
-        for rect in self.detect(&padded)? {
+        for rect in self.detect(&padded, side)? {
             let reaches = if bottom {
                 rect.bottom() + EDGE_TOUCH >= strip
             } else {
@@ -399,9 +418,9 @@ impl Ocr {
         Ok(out)
     }
 
-    fn detect(&self, img: &RgbImage) -> Result<Vec<Rect>, Error> {
+    fn detect(&self, img: &RgbImage, side: u32) -> Result<Vec<Rect>, Error> {
         let (w, h) = img.dimensions();
-        let (sw, sh) = detect_size(w, h);
+        let (sw, sh) = detect_size(w, h, side);
         let floor = noise_floor(sw as f32 / w as f32);
         let small = imageops::resize(img, sw, sh, imageops::FilterType::Triangle);
         const MEAN: [f32; 3] = [0.485, 0.456, 0.406];
@@ -725,10 +744,16 @@ fn softmax(logits: &[f32], classes: usize) -> Vec<f32> {
 }
 
 /// The size the detector reads an image of `w` x `h` at: its longer side
-/// towards [`MAX_SIDE`], enlarged at most [`MAX_UPSCALE`] times, both sides
+/// towards [`MAX_SIDE`], enlarged at most [`MAX_UPSCALE`] times; one larger
+/// than that scaled down to `side` at most, never enlarged; both sides
 /// multiples of 32.
-fn detect_size(w: u32, h: u32) -> (u32, u32) {
-    let scale = (MAX_SIDE as f32 / w.max(h) as f32).min(MAX_UPSCALE);
+fn detect_size(w: u32, h: u32, side: u32) -> (u32, u32) {
+    let long = w.max(h) as f32;
+    let scale = if long > MAX_SIDE as f32 {
+        (side.max(MAX_SIDE) as f32 / long).min(1.0)
+    } else {
+        (MAX_SIDE as f32 / long).min(MAX_UPSCALE)
+    };
     let round32 = |v: f32| ((v / 32.0).round() as u32).max(1) * 32;
     (round32(w as f32 * scale), round32(h as f32 * scale))
 }
@@ -825,13 +850,23 @@ mod tests {
     #[test]
     fn a_small_image_is_read_larger_a_large_one_smaller() {
         // A screenshot passed on at 800 pixels: twice its size.
-        assert_eq!(detect_size(800, 545), (1600, 1088));
+        assert_eq!(detect_size(800, 545, MAX_SIDE), (1600, 1088));
         // Not more than twice, however small.
-        assert_eq!(detect_size(400, 200), (800, 416));
+        assert_eq!(detect_size(400, 200, MAX_SIDE), (800, 416));
         // Between: up to the longer side the detector reads.
-        assert_eq!(detect_size(1200, 600), (1600, 800));
+        assert_eq!(detect_size(1200, 600, MAX_SIDE), (1600, 800));
         // Larger: down to it, as before.
-        assert_eq!(detect_size(3200, 1600), (1600, 800));
+        assert_eq!(detect_size(3200, 1600, MAX_SIDE), (1600, 800));
+    }
+
+    #[test]
+    fn a_pdfs_page_is_read_at_its_size_up_to_the_page_side() {
+        // An A4 page at 200 dpi: whole, not scaled down to 1600.
+        assert_eq!(detect_size(1654, 2339, PAGE_SIDE), (1664, 2336));
+        // A page larger than that: down to the page side.
+        assert_eq!(detect_size(2480, 3508, PAGE_SIDE), (1696, 2400));
+        // A small page is enlarged as any picture is, not to the page side.
+        assert_eq!(detect_size(1240, 900, PAGE_SIDE), (1600, 1152));
     }
 
     #[test]

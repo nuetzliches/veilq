@@ -18,6 +18,15 @@ Notable changes per release. The format follows
 
 ### Changed
 
+- Small print in a scanned PDF is read whole (ADR-0066): a page larger
+  than 1600 pixels is no longer scaled down to 1600 before its lines are
+  found (an A4 page at 200 dpi is read at its size; detection takes about
+  twice as long per page). In text read from a picture, a name of the file
+  glued to the word before it (`fürJonas`) and a street glued to its number
+  (`Lindenweg12, 28195 Bremen`) are found, and a capitalised word OCR read
+  badly right beside a name is filled with it (detector
+  `ocr:name-neighbour`). The corpus has three scanned letters (office
+  scanner, fax, copier).
 - The signature detector is veilq-signature-v4 (ADR-0048): trained again
   with forms filled in by hand and large printed headings as background, it
   fills a hand-written form value as a signature far less often (10 false

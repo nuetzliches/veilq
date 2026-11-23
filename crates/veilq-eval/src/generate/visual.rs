@@ -853,9 +853,131 @@ pub(super) fn scan_pdf(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
     (pdf_of_jpeg(&jpeg(&c.img), w, h), c.truth)
 }
 
+/// How a letter was scanned (ADR-0066): the resolution across and down,
+/// whether it is grey or black and white, the JPEG quality it was stored at,
+/// and how blurred the scanner's optics left it. Each is one a person still
+/// reads.
+#[derive(Clone, Copy)]
+pub(super) struct Scan {
+    pub dpi_x: u32,
+    pub dpi_y: u32,
+    pub black_and_white: bool,
+    pub quality: u8,
+    pub blur: f32,
+}
+
+/// An office scanner's default: 150 dpi, grey, compressed hard.
+pub(super) const OFFICE: Scan = Scan {
+    dpi_x: 150,
+    dpi_y: 150,
+    black_and_white: false,
+    quality: 40,
+    blur: 0.6,
+};
+/// A fax in standard mode: 200 dpi across, 100 down, black and white.
+pub(super) const FAX: Scan = Scan {
+    dpi_x: 200,
+    dpi_y: 100,
+    black_and_white: true,
+    quality: 75,
+    blur: 0.0,
+};
+/// A copier's scan to mail at its lowest setting: 120 dpi, grey.
+pub(super) const COPIER: Scan = Scan {
+    dpi_x: 120,
+    dpi_y: 120,
+    black_and_white: false,
+    quality: 35,
+    blur: 0.8,
+};
+
+/// A letter on A4 as `scan` hands it on (ADR-0066): the recipient's name and
+/// address, a side column in small print that names the policyholder, and a
+/// sentence that names them again. Drawn at 200 dpi, where veilq reads a
+/// PDF's page and the truth is; scanned down to the scan's resolution and
+/// set into the PDF at it, so that PDFium renders it back to 200 dpi.
+pub(super) fn scanned_letter_pdf(r: &mut Rng, scan: Scan) -> (Vec<u8>, Vec<Truth>) {
+    let (p, q, x) = (Person::de(r), Person::de(r), Lookalikes::new(r));
+    let mut c = Canvas::new(1654, 2339, [250, 250, 248]);
+    c.frame = Some(1);
+    // A point is 200/72 pixels.
+    let pt = |v: f32| v * 200.0 / 72.0;
+    c.lit(
+        160.0,
+        410.0,
+        pt(6.0),
+        "Beispiel Versicherung AG · Musterstraße 1 · 28195 Bremen",
+        MUTED,
+    );
+    c.pii("PERSON", 175.0, 460.0, pt(10.0), &p.name(), INK);
+    c.pii("ADDRESS", 175.0, 505.0, pt(10.0), &p.street, INK);
+    c.pii("ADDRESS", 175.0, 550.0, pt(10.0), &p.city, INK);
+    // The side column in small print, set flush right.
+    let size = pt(6.5);
+    let right = |c: &Canvas, s: &str| 1496.0 - c.width(size, s);
+    let mut y = 300.0;
+    for line in [
+        format!("Datum: {}", x.date),
+        "Beispiel Versicherung AG".to_owned(),
+        format!("Vertrag {}", x.invoice),
+    ] {
+        let at = right(&c, &line);
+        c.lit(at, y, size, &line, INK);
+        y += 30.0;
+    }
+    let at = right(&c, &format!("Versicherungsnehmer: {}", q.name()));
+    let end = c.lit(at, y, size, "Versicherungsnehmer: ", INK);
+    c.pii("PERSON", end, y, size, &q.name(), INK);
+    // No capitalised word starts a line of the body: NER read alone takes
+    // `Ihre Anfrage` and `Ihnen …` for a person there, a reading of its own
+    // this letter does not measure (ADR-0066, Consequences).
+    c.lit(175.0, 800.0, pt(11.0), "zur Vertragsübersicht", INK);
+    let size = pt(9.0);
+    let end = c.lit(175.0, 880.0, size, "zu dem Vertrag, den Sie für ", INK);
+    let end = c.pii("PERSON", end, 880.0, size, &q.name(), INK);
+    c.lit(end, 880.0, size, " abgeschlossen haben, senden wir", INK);
+    c.lit(
+        175.0,
+        925.0,
+        size,
+        &format!("die Übersicht zum {} über {} EUR mit.", x.date, x.amount),
+        INK,
+    );
+    let (w, h) = c.img.dimensions();
+    let img = if scan.blur > 0.0 {
+        image::imageops::blur(&c.img, scan.blur)
+    } else {
+        c.img.clone()
+    };
+    let (sw, sh) = (w * scan.dpi_x / 200, h * scan.dpi_y / 200);
+    let mut img = image::imageops::resize(&img, sw, sh, image::imageops::FilterType::Triangle);
+    if scan.black_and_white {
+        for px in img.pixels_mut() {
+            let grey = (u32::from(px[0]) + u32::from(px[1]) + u32::from(px[2])) / 3;
+            *px = Rgb(if grey < 170 {
+                [0, 0, 0]
+            } else {
+                [255, 255, 255]
+            });
+        }
+    }
+    let mut data = Vec::new();
+    JpegEncoder::new_with_quality(&mut data, scan.quality)
+        .encode_image(&img)
+        .expect("a JPEG");
+    let (pw, ph) = (w as f32 * 72.0 / 200.0, h as f32 * 72.0 / 200.0);
+    (pdf_of_jpeg_on(&data, sw, sh, pw, ph), c.truth)
+}
+
 /// A one-page PDF that is the JPEG `data` (`w` x `h` pixels at 200 dpi).
 fn pdf_of_jpeg(data: &[u8], w: u32, h: u32) -> Vec<u8> {
     let (pw, ph) = (w as f32 * 72.0 / 200.0, h as f32 * 72.0 / 200.0);
+    pdf_of_jpeg_on(data, w, h, pw, ph)
+}
+
+/// A one-page PDF of `pw` x `ph` points that is the JPEG `data` (`w` x `h`
+/// pixels), stretched over the page.
+fn pdf_of_jpeg_on(data: &[u8], w: u32, h: u32, pw: f32, ph: f32) -> Vec<u8> {
     let content = format!("q {pw:.2} 0 0 {ph:.2} 0 0 cm /Im0 Do Q");
     let mut out: Vec<u8> = b"%PDF-1.4\n".to_vec();
     let mut offsets = Vec::new();

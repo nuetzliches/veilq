@@ -9,8 +9,10 @@
 //! any case, Turkish `İ`/`ı` folded, NFC and NFD, with the genitive. It is a
 //! `PERSON` at the confidence of the finding it came from, detector
 //! [`DETECTOR`]. In text read by OCR, a word cut by a window's edge counts
-//! too: the start of a name's word with dots after it (`Brand..`), and the
-//! end of one at the start of a line (`randt,`).
+//! too: the start of a name's word with dots after it (`Brand..`), the end
+//! of one at the start of a line (`randt,`), and one with its capital glued
+//! to a word in lower case before it (`fürBrandt`, small print read without
+//! its space, ADR-0066).
 //!
 //! The list holds a file's values too (ADR-0059): each other finding kept at
 //! or above its threshold whose value has five characters or more, one a
@@ -170,7 +172,8 @@ struct Inner {
     /// The words, whole, built for the length of `order`.
     whole: Option<(usize, Regex)>,
     /// In OCR text, built only there: a word's start with dots after it, a
-    /// word's end at the start of a line; `None` inside when there is none.
+    /// word's end at the start of a line, a word glued to a word in lower
+    /// case before it; `None` inside when there is none.
     cut: Option<(usize, Option<Regex>)>,
     /// Every start of a value's key, the key itself too: a value is found
     /// by walking a text along them, in time linear in the text however
@@ -286,6 +289,14 @@ impl Names {
         }
         if let Some(cut) = &cut {
             for caps in cut.captures_iter(text) {
+                if let Some(m) = caps.name("glued") {
+                    if starts_upper(m.as_str())
+                        && let Some(c) = confidence_of(&words, m.as_str())
+                    {
+                        push(m.start(), m.end(), c);
+                    }
+                    continue;
+                }
                 let m = caps
                     .name("head")
                     .or_else(|| caps.name("tail"))
@@ -526,7 +537,8 @@ impl Inner {
         Ok(r)
     }
 
-    /// The words cut by a window's edge, for OCR text.
+    /// The words cut by a window's edge and the words glued to the word
+    /// before them, for OCR text.
     fn cut(&mut self) -> Result<Option<Regex>, Error> {
         if let Some((n, r)) = &self.cut
             && *n == self.order.len()
@@ -561,6 +573,12 @@ impl Inner {
             parts.push(format!(
                 r"(?m:^)[^\p{{L}}\p{{N}}\n]{{0,3}}(?P<tail>(?:{}))\b",
                 detect::alternation(tails)
+            ));
+        }
+        if !self.order.is_empty() {
+            parts.push(format!(
+                r"(?-i:\p{{Ll}})(?P<glued>(?:{})(?:s|'s|’s)?)\b",
+                detect::alternation(self.order.clone())
             ));
         }
         let r = if parts.is_empty() {
@@ -918,6 +936,33 @@ mod tests {
         // A short end, or an end inside a line, is no name.
         assert!(found(&names, "eier kaufen", Source::Ocr).is_empty());
         assert!(found(&names, "Akte andtmeier", Source::Ocr).is_empty());
+    }
+
+    #[test]
+    fn a_word_glued_to_the_word_before_it_is_found_in_a_picture() {
+        // Small print read without its spaces (ADR-0066): `für Jonas
+        // Brandtmeier` read as `fürJonas`.
+        let names = Names::default();
+        learn(&names, "Jonas Brandtmeier", "Jonas Brandtmeier");
+        for (text, want) in [
+            // The surname read one letter off is found as before (ADR-0059).
+            (
+                "verfahren fürJonas Brandtmeler",
+                vec!["Brandtmeler", "Jonas"],
+            ),
+            ("gegenJonas", vec!["Jonas"]),
+            ("Akte vonBrandtmeiers", vec!["Brandtmeiers"]),
+        ] {
+            let mut got = found(&names, text, Source::Ocr);
+            got.sort();
+            assert_eq!(got, want, "{text}");
+        }
+        // The word glued must start with its capital after a small letter:
+        // inside a word (`Lebensjonas`), or after a capital, it is none.
+        assert!(found(&names, "Lebensjonas", Source::Ocr).is_empty());
+        assert!(found(&names, "ABCJonas", Source::Ocr).is_empty());
+        // Written text keeps its spaces: a glued word there stays.
+        assert!(found(&names, "fürJonas", Source::Text).is_empty());
     }
 
     #[test]
