@@ -456,7 +456,9 @@ impl Detector {
             let value = &text[c.start..c.end];
             let dropped = if !person {
                 None
-            } else if only_role_words(value) || saint(value) {
+            } else if only_role_words(value)
+                || (saint(value) && !after_salutation(&text[..c.start]))
+            {
                 Some(Verdict::RoleWords)
             } else if ACCOUNTS.contains(&value.to_lowercase().as_str()) {
                 Some(Verdict::Account)
@@ -1069,8 +1071,17 @@ pub(crate) fn role_word(word: &str) -> bool {
 /// Whether `span` names a saint, and with it a town, a church or a feast:
 /// it starts with `Sankt`, `St.`, `Saint`, `Santa` or `Heilige`
 /// (`Die Geschichte von Sankt Martin` on a book's cover). An address with
-/// one is found by the address patterns, not as a person.
+/// one is found by the address patterns, not as a person. Joined by a hyphen
+/// it is a surname (`Saint-Exupéry`), and so is one after a salutation
+/// ([`after_salutation`]: `Frau Santa Cruz`; review before 0.8.0).
 pub(crate) fn saint(span: &str) -> bool {
+    let first = span.trim_start_matches(|c: char| !c.is_alphabetic());
+    if first
+        .trim_start_matches(char::is_alphabetic)
+        .starts_with('-')
+    {
+        return false;
+    }
     span.split(|c: char| !c.is_alphabetic())
         .find(|w| !w.is_empty())
         .is_some_and(|w| {
@@ -1084,6 +1095,27 @@ pub(crate) fn saint(span: &str) -> bool {
             .filter(|w| !w.is_empty())
             .count()
             > 1
+}
+
+/// Whether `before` ends with a salutation (`Frau`, `Herrn`, `Hr.`): what
+/// follows names a person, even a word that names a saint or kin
+/// (`Frau Santa Cruz`, `Herrn Vater`).
+pub(crate) fn after_salutation(before: &str) -> bool {
+    before
+        .trim_end()
+        .trim_end_matches('.')
+        .rsplit(|c: char| !c.is_alphabetic())
+        .next()
+        .is_some_and(salutation)
+}
+
+/// Whether `word` is a salutation: `Herr`, `Herrn`, `Frau`, `Hr`, `Fr`,
+/// `Mr`, `Mrs`, `Ms`.
+pub(crate) fn salutation(word: &str) -> bool {
+    matches!(
+        word.to_lowercase().as_str(),
+        "herr" | "herrn" | "frau" | "hr" | "fr" | "mr" | "mrs" | "ms"
+    )
 }
 
 /// Whether `span` is nothing but role, title and greeting words
@@ -1570,6 +1602,30 @@ mod tests {
         for w in ["Mendelssohn", "Thoma", "Henkel", "Bruder"] {
             assert!(!person_noun(w), "{w}");
         }
+    }
+
+    #[test]
+    fn a_surname_that_starts_like_a_saint_is_a_person() {
+        // Review before 0.8.0: `Frau Santa Cruz` and `Saint-Exupéry` were
+        // taken for saints and kept. A pattern stands for the detector that
+        // finds the name.
+        let policy = Policy::parse(
+            "version = 1\n[[patterns]]\nname = \"n\"\nentity = \"PERSON\"\nregex = '(Santa Cruz|Saint-Exupéry|Sankt Martin)'\n",
+        )
+        .unwrap();
+        let d = Detector::new(&policy).unwrap();
+        let found = |text: &str| -> Vec<String> {
+            d.findings(text, "", Source::Text)
+                .unwrap()
+                .into_iter()
+                .filter(|c| c.entity.as_str() == "PERSON")
+                .map(|c| text[c.start..c.end].to_owned())
+                .collect()
+        };
+        assert_eq!(found("Frau Santa Cruz hat angerufen"), ["Santa Cruz"]);
+        assert_eq!(found("Herrn Saint-Exupéry zur Kenntnis"), ["Saint-Exupéry"]);
+        // A saint stays none: a feast, a church.
+        assert!(found("Am Tag von Sankt Martin ziehen die Kinder").is_empty());
     }
 
     #[test]

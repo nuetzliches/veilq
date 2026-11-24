@@ -95,6 +95,21 @@ Notable changes per release. The format follows
   address (ADR-0064).
 - Specks of a picture enlarged for the detector are no boxes: the noise
   floor grows with the factor (ADR-0064).
+- Points from the review before 0.8.0 (ADR-0069), each of which let
+  personal data through:
+  - A file or folder name's last dot no longer hides a name: up to five
+    letters after it (`Akte_Lena.Vogt`) were kept as an extension, unread.
+  - A mail attachment's quoted file name with a `;` in it is read whole;
+    the header was written out unread.
+  - A word over 64 characters joined by `_` or `-` is read by NER in its
+    pieces; it was left out whole.
+  - A self-closing `<script src="…"/>` in an HTML mail no longer keeps every
+    later comment.
+  - A surname that starts like a saint (`Frau Santa Cruz`,
+    `Saint-Exupéry`) is a person; a kin word after a salutation
+    (`Herrn Vater`) is a surname.
+- The lock file takes `url` 2.5.9 and `cookie` 0.18.3 (RUSTSEC-2026-0592,
+  RUSTSEC-2026-0594, through `tao` and `wry` of the UI window).
 
 ## [0.7.0] - 2026-11-19
 

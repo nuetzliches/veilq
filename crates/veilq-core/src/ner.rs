@@ -241,12 +241,26 @@ fn words_regex() -> Regex {
 }
 
 /// The words of `text` the model reads: as [`words_regex`] splits them,
-/// none longer than [`MAX_WORD`].
+/// none longer than [`MAX_WORD`]. A longer word joined by `_` or `-`
+/// (`kunde_Kai_Lindqvist_vertrag_…`) is read in its pieces, so a name in it
+/// still reaches the model; only a piece over the bound is left out, and
+/// no name is that long.
 fn read_words(re: &Regex, text: &str) -> Vec<(usize, usize)> {
-    re.find_iter(text)
-        .filter(|m| m.as_str().chars().count() <= MAX_WORD)
-        .map(|m| (m.start(), m.end()))
-        .collect()
+    let mut out = Vec::new();
+    for m in re.find_iter(text) {
+        if m.as_str().chars().count() <= MAX_WORD {
+            out.push((m.start(), m.end()));
+            continue;
+        }
+        let mut at = m.start();
+        for piece in m.as_str().split(['_', '-']) {
+            if !piece.is_empty() && piece.chars().count() <= MAX_WORD {
+                out.push((at, at + piece.len()));
+            }
+            at += piece.len() + 1;
+        }
+    }
+    out
 }
 
 /// `range` of words, in parts of at most `max` tokens each as `count` has
@@ -310,6 +324,9 @@ fn can_be_name(span: &str) -> bool {
         .filter(|w| w.chars().count() >= 2)
         .collect();
     let capital = |w: &str| w.chars().next().is_some_and(char::is_uppercase);
+    // After a salutation a kin word is a surname (`Herrn Vater`; review
+    // before 0.8.0).
+    let saluted = words.iter().any(|w| crate::detect::salutation(w));
     words
         .iter()
         .all(|w| capital(w) || crate::detect::PARTICLES.contains(w))
@@ -317,7 +334,7 @@ fn can_be_name(span: &str) -> bool {
             capital(w)
                 && w.chars().skip(1).any(char::is_lowercase)
                 && !crate::detect::role_word(w)
-                && !crate::detect::person_noun(w)
+                && (saluted || !crate::detect::person_noun(w))
         })
 }
 
@@ -390,6 +407,22 @@ mod tests {
     }
 
     #[test]
+    fn a_long_joined_word_is_read_in_its_pieces() {
+        // Review before 0.8.0: words joined by `_` or `-` over MAX_WORD were
+        // left out whole, a name among them never reached the model.
+        let text = "kunde_Kai_Lindqvist_vertrag_2026_11_24_endfassung_unterschrieben_final_v2";
+        assert!(text.chars().count() > MAX_WORD);
+        let words: Vec<&str> = read_words(&words_regex(), text)
+            .into_iter()
+            .map(|(s, e)| &text[s..e])
+            .collect();
+        assert!(
+            words.contains(&"Kai") && words.contains(&"Lindqvist"),
+            "{words:?}"
+        );
+    }
+
+    #[test]
     fn a_window_of_too_many_tokens_is_halved() {
         // A token per character: windows of words of 64 characters each.
         let count = |r: std::ops::Range<usize>| Ok::<_, Error>(r.len() * 64);
@@ -421,6 +454,12 @@ mod tests {
 
     #[test]
     fn role_words_are_no_names() {
+        // Review before 0.8.0: a kin word is a surname after a salutation
+        // (`Herrn Vater`), not in a headline (`kann Vater nicht vergeben`).
+        assert!(can_be_name("Herrn Vater"));
+        assert!(can_be_name("Frau Tante"));
+        assert!(!can_be_name("Vater"));
+        assert!(!can_be_name("Der Vater"));
         assert!(!can_be_name("Der Kunde"));
         assert!(!can_be_name("Herr Doktor"));
         assert!(!can_be_name("name"));
