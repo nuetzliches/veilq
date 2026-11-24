@@ -107,3 +107,4 @@ keep it to about a page.
 | [0065](0065-a-weak-face-box-is-shown-to-a-verifier.md) | A weak face box is shown to a verifier | Accepted |
 | [0066](0066-small-print-in-a-scanned-page-is-read-whole-and-its-glued-words-count.md) | Small print in a scanned page is read whole, and its glued words count | Accepted |
 | [0067](0067-a-line-read-badly-is-read-again-in-black-and-white.md) | A line read badly is read again in black and white | Accepted |
+| [0068](0068-a-wide-picture-is-read-in-tiles-for-signatures.md) | A wide picture is read in tiles for signatures | Accepted |
