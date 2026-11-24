@@ -112,6 +112,10 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
   phone numbers, IBANs and addresses as signatures; with v4 they are left
   to the reading, and the owner set the gate again to what it covers
   (held-out seed 7004: addresses 0 of 4, phone numbers 1 of 4).
+- **veilq-signature-v5** ([ADR-0068](0068-a-wide-picture-is-read-in-tiles-for-signatures.md)):
+  trained on tiles of wide pictures too; a wide landscape picture is also
+  read in 640-pixel tiles, and a box counts from 0.65 (a tile's from 0.95)
+  instead of 0.5.
 - **Found, never compared:** veilq finds where a signature is. It computes
   no features of it, compares none, keeps none, and nothing leaves the
   machine.
@@ -124,7 +128,8 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
   embedded image falls to `[office] embedded`. `signatures = "keep"` leaves
   signatures.
 - **A low threshold, a review:** a score from 0.5 counts and is reported as
-  a confidence the default threshold keeps (0.5 -> 0.7, 1.0 -> 1.0). A
+  a confidence the default threshold keeps (0.5 -> 0.7, 1.0 -> 1.0; with v5
+  from 0.65, 0.65 -> 0.7, ADR-0068). A
   picture in which a signature was found is `review_required`: one may be
   missed, and a watermark or a stamp may be taken for one.
 - **Whole and in squares:** the model reads 640 x 640, the picture resized
@@ -184,7 +189,8 @@ Every false box of YOLOS-tiny fp32 lay on a large diagonal watermark
 - A signature's box takes a line below it as well when the strokes reach
   into it (the signer's printed name, a role).
 - The search adds about 0.1 s for a page and 0.5 s for a wide screenshot on
-  a laptop CPU; OCR still dominates.
+  a laptop CPU; OCR still dominates. With the tiles of ADR-0068 a wide
+  screenshot takes 3 to 6 s more.
 - The weights were trained on Tobacco800 and `signatures-xc8up`; their
   terms are those of the base model's card.
 

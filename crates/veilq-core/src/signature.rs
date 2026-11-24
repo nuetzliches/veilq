@@ -9,7 +9,10 @@
 //! picture is read whole and, when much wider or taller than square (a
 //! screenshot with a letter beside a window, an A4 page), also in squares of
 //! its shorter side, overlapping by half: a signature on a page that fills a
-//! third of the screen is read at a larger scale.
+//! third of the screen is read at a larger scale. A wide landscape picture
+//! (a web page, a screenshot) is also read in tiles of 640 pixels of the
+//! original, where a signature on a small photo card is large enough to be
+//! found (ADR-0068); a box only a tile found must score higher.
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -26,10 +29,19 @@ const SIDE: u32 = 640;
 /// A picture this much longer than wide (or the other way) is also read in
 /// squares.
 const SQUARES_FROM: f32 = 1.3;
-/// The detector's own threshold: what the measurements of ADR-0048 found
-/// all signatures at, but a watermark too (#80); a box filled black costs
-/// less than a signature left.
-pub const MIN_SCORE: f32 = 0.5;
+/// The detector's own threshold. veilq-signature-v5 scores higher than v4
+/// did; at 0.5 it put a third more false boxes on pictures it had not seen,
+/// at 0.65 fewer than v4 at 0.5 in every kind of picture (ADR-0068).
+pub const MIN_SCORE: f32 = 0.65;
+/// The side of a tile, in pixels of the picture.
+const TILE: u32 = 640;
+/// A landscape picture far from square and wider than this is also read in
+/// tiles.
+const TILES_FROM: u32 = 1280;
+/// A box a tile found counts from this score: a tile shows the model a
+/// detail at a scale it rarely saw in a whole picture, and lower boxes there
+/// lay on charts, textures and lettering (ADR-0068).
+const TILE_ALONE: f32 = 0.95;
 /// A box narrower than this (in pixels of the picture) holds no signature
 /// anyone could read: the model's few small boxes lay on empty space or a
 /// mouse pointer in a screen recording.
@@ -90,9 +102,17 @@ impl Signatures {
     pub fn find(&self, img: &RgbImage) -> Result<Vec<Signature>, Error> {
         let (w, h) = img.dimensions();
         let mut found = Vec::new();
-        for (x, y, side_w, side_h) in parts(w, h) {
+        let tiles = tiles(w, h);
+        let reads = parts(w, h)
+            .into_iter()
+            .map(|p| (p, MIN_SCORE))
+            .chain(tiles.into_iter().map(|p| (p, TILE_ALONE)));
+        for ((x, y, side_w, side_h), min) in reads {
             let part = imageops::crop_imm(img, x, y, side_w, side_h).to_image();
             for f in self.read(&part)? {
+                if f.score < min {
+                    continue;
+                }
                 found.push(Found {
                     x: x as f32 + f.x,
                     y: y as f32 + f.y,
@@ -171,6 +191,36 @@ fn parts(w: u32, h: u32) -> Vec<(u32, u32, u32, u32)> {
         } else {
             (0, s, short, short)
         });
+    }
+    out
+}
+
+/// The tiles of a `w` x `h` picture that are read besides [`parts`]: none
+/// unless it is landscape, from [`SQUARES_FROM`] : 1 and wider than
+/// [`TILES_FROM`]; then [`TILE`] x `min(TILE, h)` of the original, half a
+/// tile apart, the last of each row and column at the far edge. A portrait
+/// page (A4) is read as before.
+fn tiles(w: u32, h: u32) -> Vec<(u32, u32, u32, u32)> {
+    if w <= h || (w as f32) < h as f32 * SQUARES_FROM || w <= TILES_FROM {
+        return Vec::new();
+    }
+    let starts = |n: u32| -> Vec<u32> {
+        if n <= TILE {
+            return vec![0];
+        }
+        let mut s: Vec<u32> = (0..)
+            .map(|i| i * (TILE / 2))
+            .take_while(|s| s + TILE < n)
+            .collect();
+        s.push(n - TILE);
+        s
+    };
+    let (tw, th) = (TILE.min(w), TILE.min(h));
+    let mut out = Vec::new();
+    for y in starts(h) {
+        for x in starts(w) {
+            out.push((x, y, tw, th));
+        }
     }
     out
 }
@@ -374,7 +424,35 @@ mod tests {
     fn scores_become_confidences_the_default_threshold_keeps() {
         assert_eq!(confidence(MIN_SCORE), 0.7);
         assert_eq!(confidence(1.0), 1.0);
-        assert_eq!(confidence(0.75), 0.85);
+        assert_eq!(confidence((MIN_SCORE + 1.0) / 2.0), 0.85);
+    }
+
+    #[test]
+    fn a_wide_landscape_picture_is_read_in_tiles_too() {
+        // Square, portrait, not wide enough, not far enough from square: none.
+        assert!(tiles(1000, 1000).is_empty());
+        assert!(tiles(1240, 1754).is_empty());
+        assert!(tiles(1280, 720).is_empty());
+        assert!(tiles(1600, 1300).is_empty());
+        // 1920 x 1080: columns at 0, 320, ..., 1280 (five), rows at 0, 320
+        // and 440, the last of each at the far edge.
+        let t = tiles(1920, 1080);
+        assert_eq!(t.len(), 15);
+        assert_eq!(t[0], (0, 0, 640, 640));
+        assert_eq!(t[4], (1280, 0, 640, 640));
+        assert_eq!(t[14], (1280, 440, 640, 640));
+        // A strip lower than a tile: one row as high as the picture.
+        assert_eq!(
+            tiles(2000, 500),
+            vec![
+                (0, 0, 640, 500),
+                (320, 0, 640, 500),
+                (640, 0, 640, 500),
+                (960, 0, 640, 500),
+                (1280, 0, 640, 500),
+                (1360, 0, 640, 500),
+            ]
+        );
     }
 
     /// The real model, when installed: VEILQ_SIGNATURE_MODEL,

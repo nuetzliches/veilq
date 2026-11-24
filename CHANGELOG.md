@@ -40,6 +40,15 @@ Notable changes per release. The format follows
   are refused until `veilq models fetch signature`. A hand-written phone
   number or address that the reading misses is no longer covered by such a
   fill; the handwriting gate is set to what the reading covers.
+- The signature detector is veilq-signature-v5, and a wide picture is also
+  read in 640-pixel tiles (ADR-0068): a landscape screenshot or web page
+  wider than 1280 pixels, where a signature on a small photo card was too
+  small to be found. A box counts from score 0.65 (was 0.5), a box only a
+  tile found from 0.95. On a fresh synthetic set: 127 instead of 109 of 164
+  signatures on web pages found, 203 instead of 322 false boxes, fewer in
+  every kind of picture. Such a picture takes 3 to 6 seconds longer. v5 is
+  pinned at a new path: pictures are refused until `veilq models fetch
+  signature`.
 - What a document says besides its text is read, removed or reported
   (#142, ADR-0063):
   - Office: every attribute but the structural ones is read (a picture's

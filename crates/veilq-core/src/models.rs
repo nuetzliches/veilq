@@ -88,13 +88,14 @@ const FACE: &str = "https://huggingface.co/opencv/face_detection_yunet/resolve/3
 /// published on Hugging Face, at a fixed revision (ADR-0065).
 const FACE_VERIFY: &str = "https://huggingface.co/nuetzliches/veilq-face-verify-v1/resolve/68675ec05cb534744ae7e66afd619fc77bb9c0d1";
 
-/// veilq-signature-v4: YOLOS-tiny (`mdefrance/yolos-tiny-signature-detection`,
+/// veilq-signature-v5: YOLOS-tiny (`mdefrance/yolos-tiny-signature-detection`,
 /// Apache-2.0) fine-tuned by nuetzliches on synthetic letters, web pages,
-/// hand-filled forms and public-domain photos to find handwritten signatures,
-/// also on a photo, and leave photos, watermarks, stamps, logos, printed
-/// headings and the values a hand writes into a form; Apache-2.0, published
-/// on Hugging Face, at a fixed revision (ADR-0048).
-const SIGNATURE: &str = "https://huggingface.co/nuetzliches/veilq-signature-v4/resolve/02a25ee6ed85f471902e232631f41b843f94f6c6";
+/// hand-filled forms and public-domain photos, and on tiles of wide pictures,
+/// to find handwritten signatures, also on a photo or a small photo card, and
+/// leave photos, watermarks, stamps, logos, printed headings and the values a
+/// hand writes into a form; Apache-2.0, published on Hugging Face, at a fixed
+/// revision (ADR-0048, ADR-0068).
+const SIGNATURE: &str = "https://huggingface.co/nuetzliches/veilq-signature-v5/resolve/9066ca7fabb7baeab47ec7c125b65cc4e9130d1e";
 
 /// PDFium (BSD-3-Clause, with the licences of its parts in the archive), as
 /// `bblanchon/pdfium-binaries` (MIT) builds it, at the version whose API
@@ -168,10 +169,10 @@ pub const PINNED: &[PinnedFile] = &[
     },
     PinnedFile {
         detector: "signature",
-        file: "signature/veilq-signature-v4/model.onnx",
+        file: "signature/veilq-signature-v5/model.onnx",
         base: SIGNATURE,
         name: "model.onnx",
-        sha256: "2e2ae2ecfacd5c74aede5524f7142f3fb89ba4a9afa1d0a6f1c9d3891acf0c80",
+        sha256: "bce063456cd61c4645eac224096f183e8d10026b76f805f1f87bcd88c80bbda0",
         member: None,
         target: None,
     },
