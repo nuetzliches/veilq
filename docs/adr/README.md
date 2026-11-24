@@ -108,3 +108,4 @@ keep it to about a page.
 | [0066](0066-small-print-in-a-scanned-page-is-read-whole-and-its-glued-words-count.md) | Small print in a scanned page is read whole, and its glued words count | Accepted |
 | [0067](0067-a-line-read-badly-is-read-again-in-black-and-white.md) | A line read badly is read again in black and white | Accepted |
 | [0068](0068-a-wide-picture-is-read-in-tiles-for-signatures.md) | A wide picture is read in tiles for signatures | Accepted |
+| [0069](0069-points-from-the-review-before-0-8-0.md) | Points from the review before 0.8.0 | Accepted |

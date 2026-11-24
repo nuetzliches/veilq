@@ -145,10 +145,32 @@ fn header<'a>(hs: &'a [Header], name: &str) -> Option<&'a str> {
         .map(|h| h.value.as_str())
 }
 
+/// A header value split at its `;`, but not at one inside a quoted
+/// parameter (`filename="Akte; B.pdf"`): cut there, the name was read in
+/// part and the header written out unread (review before 0.8.0).
+fn split_params(v: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let (mut start, mut quoted, mut escaped) = (0, false, false);
+    for (i, c) in v.char_indices() {
+        match c {
+            _ if escaped => escaped = false,
+            '\\' if quoted => escaped = true,
+            '"' => quoted = !quoted,
+            ';' if !quoted => {
+                out.push(&v[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    out.push(&v[start..]);
+    out
+}
+
 /// `type/subtype` (lower case) and its parameters.
 fn content_type(hs: &[Header]) -> (String, HashMap<String, String>) {
     let v = header(hs, "content-type").unwrap_or("text/plain");
-    let mut parts = v.split(';');
+    let mut parts = split_params(v).into_iter();
     let mime = parts.next().unwrap_or("").trim().to_lowercase();
     (mime, params(parts))
 }
@@ -166,7 +188,7 @@ fn params<'a>(parts: impl Iterator<Item = &'a str>) -> HashMap<String, String> {
 }
 
 fn filename(hs: &[Header]) -> Option<String> {
-    let d = header(hs, "content-disposition").map(|v| params(v.split(';').skip(1)));
+    let d = header(hs, "content-disposition").map(|v| params(split_params(v).into_iter().skip(1)));
     d.and_then(|p| extended(&p, "filename").or_else(|| p.get("filename").cloned()))
         .or_else(|| {
             let ps = content_type(hs).1;
@@ -255,10 +277,19 @@ pub(crate) fn redact_file_name(
             _ => " ".to_owned(),
         })
         .into_owned();
+    // What follows the last dot is read with the stem: `Tilda.Brenner` has
+    // no extension `Brenner` (review before 0.8.0). Is something found
+    // there, the name has no extension; otherwise it stays as it was.
+    let stem_len = spaced.len();
+    let spaced = match ext {
+        Some(e) => format!("{spaced} {e}"),
+        None => spaced,
+    };
     let mut found = engine.findings(&spaced, "")?;
     if found.is_empty() {
         return Ok(None);
     }
+    let ext = ext.filter(|_| found.iter().all(|c| c.end <= stem_len));
     let (new, pseudonyms) = if apply {
         let (pieces, p) = engine.replace(&spaced, "", &mut found, &mut out.mapping)?;
         (pieces.into_iter().map(|(p, _)| p).collect::<String>(), p)
@@ -300,7 +331,11 @@ pub(crate) fn redact_file_name(
         safe = safe.replace(' ', "_");
     }
     Ok(Some(match ext {
-        Some(e) => format!("{safe}.{e}"),
+        Some(e) => {
+            let sep = if stem.contains(' ') { " " } else { "_" };
+            let cut = safe.strip_suffix(&format!("{sep}{e}")).unwrap_or(&safe);
+            format!("{cut}.{e}")
+        }
         None => safe,
     }))
 }
@@ -308,7 +343,7 @@ pub(crate) fn redact_file_name(
 /// A `Content-Type` or `Content-Disposition` header with its `name` or
 /// `filename` parameter (and their RFC 2231 forms) set to `new`.
 fn with_file_name(h: &Header, new: &str, eol: &str) -> String {
-    let mut pieces = h.value.split(';');
+    let mut pieces = split_params(&h.value).into_iter();
     let first = pieces.next().unwrap_or("").trim().to_owned();
     let key = if h.name.eq_ignore_ascii_case("content-type") {
         "name"
@@ -918,7 +953,9 @@ fn html(
                     space_tag: None,
                 });
             }
-            if matches!(name.as_str(), "style" | "script") {
+            // A self-closing `<script src="…"/>` opens nothing: no closing
+            // tag would end it, and every later comment would be kept.
+            if matches!(name.as_str(), "style" | "script") && !tag.trim_end().ends_with('/') {
                 in_code = !tag.starts_with('/');
             }
             let base = i + 1;
@@ -1387,5 +1424,55 @@ Siehe Anlage.\r\n\
             encode_words("Grüße an <PERSON>"),
             "=?utf-8?B?R3LDvMOfZQ==?= an <PERSON>"
         );
+    }
+
+    #[test]
+    fn a_name_after_the_last_dot_is_no_extension() {
+        // Review before 0.8.0: what follows the last dot was kept as an
+        // extension unread; a surname there stayed in the name. A pattern
+        // stands for the detector that knows the surname.
+        let policy = Policy::parse(
+            "version = 1\n[[patterns]]\nname = \"v\"\nentity = \"PERSON\"\nregex = '\\bVogt\\b'\n",
+        )
+        .unwrap();
+        let e = Engine::new(&policy, None, b"s", None).unwrap();
+        // Up to five letters after the dot looked like an extension.
+        let new = e.redact_name("akte.Vogt").unwrap();
+        assert_eq!(new.as_deref(), Some("akte_[PERSON]"));
+        let new = e.redact_name("Akte_Lena.Vogt").unwrap().unwrap();
+        assert!(!new.contains("Vogt"), "{new}");
+        // A real extension stays.
+        let new = e.redact_name("Akte_Vogt.pdf").unwrap();
+        assert_eq!(new.as_deref(), Some("Akte_[PERSON].pdf"));
+        let new = e.redact_name("Akte Vogt.pdf").unwrap();
+        assert_eq!(new.as_deref(), Some("Akte [PERSON].pdf"));
+        let new = engine()
+            .redact_name("Akte_Frau_Tilda_Brenner.pdf")
+            .unwrap()
+            .unwrap();
+        assert!(new.ends_with(".pdf") && !new.contains("Brenner"), "{new}");
+    }
+
+    #[test]
+    fn a_semicolon_in_a_quoted_file_name_does_not_cut_it() {
+        let mail = "From: a@b.example\r\nSubject: x\r\nMIME-Version: 1.0\r\n\
+Content-Type: multipart/mixed; boundary=\"b1\"\r\n\r\n--b1\r\n\
+Content-Type: text/plain; charset=utf-8\r\n\
+Content-Disposition: attachment; filename=\"Akte; Frau Tilda Brenner.txt\"\r\n\r\n\
+Siehe Anlage.\r\n--b1--\r\n";
+        let r = process(&engine(), mail.as_bytes(), true).unwrap();
+        let out = String::from_utf8(r.output).unwrap();
+        assert!(!out.contains("Brenner"), "{out}");
+    }
+
+    #[test]
+    fn a_comment_after_a_self_closing_script_is_removed() {
+        let mail = "From: a@b.example\r\nSubject: x\r\nMIME-Version: 1.0\r\n\
+Content-Type: text/html; charset=utf-8\r\n\r\n\
+<html><head><script src=\"t.js\"/></head><body><!-- Entwurf, intern freigegeben --><p>Anbei.</p></body></html>\r\n";
+        let r = process(&engine(), mail.as_bytes(), true).unwrap();
+        let out = String::from_utf8(r.output).unwrap();
+        // A comment says what no detector takes: it goes, as any other.
+        assert!(!out.contains("intern freigegeben"), "{out}");
     }
 }
