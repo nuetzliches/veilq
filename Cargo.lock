@@ -5311,7 +5311,7 @@ dependencies = [
 
 [[package]]
 name = "veilq"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "age",
  "anyhow",
@@ -5339,7 +5339,7 @@ dependencies = [
 
 [[package]]
 name = "veilq-core"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "age",
  "base64 0.23.1",
@@ -5364,7 +5364,7 @@ dependencies = [
 
 [[package]]
 name = "veilq-eval"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "ab_glyph",
  "anyhow",
