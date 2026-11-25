@@ -684,6 +684,179 @@ fn letter_en(r: &mut Rng) -> (String, Vec<Truth>) {
     t.finish()
 }
 
+/// A file note of a law office (#161): the words that the patches of the
+/// detection were written for, in the sentences they come in. A contact
+/// person, a kin word, a saint's feast and a field's label are no names; a
+/// name with a particle, a surname that is a kin word or starts like a
+/// saint after `Herrn` or `Frau`, and a name in the genitive before a noun
+/// are, and the noun is not (it stands again on its own).
+fn memo_de(r: &mut Rng) -> (String, Vec<Truth>) {
+    let (p, q, s, w) = (Person::de(r), Person::de(r), Person::de(r), Person::de(r));
+    let x = Lookalikes::new(r);
+    let particle = r.pick(&["von der", "van", "de"]);
+    let mut t = Text::default();
+    t.lit(&format!(
+        "Aktennotiz vom {}, Vorgang {}\n\n",
+        x.date, x.invoice
+    ));
+    t.lit("Telefonat mit Frau ")
+        .pii("PERSON", &p.name())
+        .lit(", der Kontaktperson der Gegenseite. Die Fahrzeugbesitzer seien informiert, die Kundennummer werde nachgereicht.\n");
+    t.lit("Herr ")
+        .pii("PERSON", &format!("{} {particle} {}", q.first, q.last))
+        .lit(" übernimmt die Vertretung; ")
+        .pii("PERSON", &format!("{}s", q.last))
+        .lit(" Unterlagen liegen vor.\n");
+    t.lit("Der Vater der Mandantin hat angerufen, die Tochter kommt zum Termin mit.\n");
+    t.lit("Wir haben Ihre Nachricht erhalten; das Schreiben an Herrn ")
+        .pii("PERSON", "Vater")
+        .lit(" geht morgen raus.\n");
+    t.lit("Rückruf von Frau ")
+        .pii("PERSON", &format!("Santa {}", s.last))
+        .lit(" erbeten, der Termin vor Sankt Martin entfällt.\n");
+    t.lit("Die Unterlagen sind vollständig, das Aktenzeichen bitte angeben.\n");
+    t.lit("\nMit freundlichen Grüßen\n")
+        .pii("PERSON", &w.name())
+        .lit("\n");
+    t.finish()
+}
+
+/// A ticket of an IT support desk (#161): product and brand names,
+/// a system account's path, package tags after an `@`, a domain, a menu's
+/// words, a first person's absence, and the output of an earlier redaction.
+/// Only the person who reports it is personal data.
+fn ticket_de(r: &mut Rng) -> (String, Vec<Truth>) {
+    let (p, x) = (Person::de(r), Lookalikes::new(r));
+    let mut t = Text::default();
+    t.lit(&format!("Ticket {}: Export bricht ab\n", x.invoice));
+    t.lit("Gemeldet von: ")
+        .pii("PERSON", &p.name())
+        .lit(" <")
+        .pii("EMAIL_ADDRESS", &p.email)
+        .lit(">\n\n");
+    t.lit("Das Skript läuft in PowerShell und schreibt nach C:\\Users\\Public\\Documents\\export.csv.\n");
+    t.lit("Abhängigkeiten: lodash@latest, actions/checkout@v4, node@sha256:");
+    t.lit(&r.digits(12));
+    t.lit(
+        "\nDie Hilfe von Lesehaus.de nennt unter Personalisieren > Namespace eine Einstellung.\n",
+    );
+    t.lit("Ich bin Montag und Dienstag nicht da, bitte solange Copilot fragen.\n");
+    t.lit("Der letzte Export war geschwärzt: Kunde <PERSON>, Konto [IBAN_CODE:");
+    t.lit(&format!("{:08x}", r.below(u64::from(u32::MAX))));
+    t.lit("].\n\nGruß ").pii("PERSON", &p.first).lit("\n");
+    t.finish()
+}
+
+/// `digits` and its Luhn check digit.
+fn with_luhn(digits: &str) -> String {
+    let sum: u32 = digits
+        .bytes()
+        .rev()
+        .enumerate()
+        .map(|(i, b)| {
+            let d = u32::from(b - b'0');
+            if i % 2 == 0 {
+                let x = d * 2;
+                x / 10 + x % 10
+            } else {
+                d
+            }
+        })
+        .sum();
+    format!("{digits}{}", (10 - sum % 10) % 10)
+}
+
+/// An application form as text (#161): each value after its label, the
+/// labels that lift a number whose shape alone says too little (pension
+/// insurance, identity card, credit card, a mistyped IBAN, a dunning
+/// order's number).
+fn application_de(r: &mut Rng) -> (String, Vec<Truth>) {
+    let (p, x) = (Person::de(r), Lookalikes::new(r));
+    use veilq_core::detect::validate::{id_card_check_digit, ssn_de_check_digit};
+    let letter = (b'A' + r.below(26) as u8) as char;
+    let first11 = format!(
+        "{}{:02}{:02}{:02}{letter}{}",
+        r.digits(2),
+        p.day,
+        p.month,
+        p.year % 100,
+        r.digits(2)
+    );
+    let ssn = format!("{first11}{}", ssn_de_check_digit(&first11));
+    let alphabet = b"CFGHJKLMNPRTVWXYZ0123456789";
+    let first9: String = (0..9)
+        .map(|i| {
+            let set = if i == 0 {
+                &alphabet[..17]
+            } else {
+                &alphabet[..]
+            };
+            set[r.below(set.len() as u64) as usize] as char
+        })
+        .collect();
+    let id = format!("{first9}{}", id_card_check_digit(&first9));
+    let card = with_luhn(&format!("4{}", r.digits(14)));
+    let card = format!(
+        "{} {} {} {}",
+        &card[..4],
+        &card[4..8],
+        &card[8..12],
+        &card[12..]
+    );
+    let dunning = format!("{}-{}-{}-0", r.digits(2), r.digits(7), r.below(10));
+    let mut t = Text::default();
+    t.lit("Antrag auf Ratenzahlung\n\nName: ")
+        .pii("PERSON", &p.name())
+        .lit("\nwohnt in ")
+        .pii("ADDRESS", &p.street)
+        .lit("\nTel. ")
+        .pii("PHONE_NUMBER", &p.phone)
+        .lit("\nVersicherungsnummer der Rentenversicherung: ")
+        .pii("SOCIAL_SECURITY_NUMBER", &ssn)
+        .lit("\nAusweisnummer: ")
+        .pii("ID_CARD_NUMBER", &id)
+        .lit("\nKreditkarte: ")
+        .pii("CREDIT_CARD", &card)
+        .lit("\nIBAN: ")
+        .pii("IBAN_CODE", &x.bad_iban)
+        .lit("\nKfz-Kennzeichen: ")
+        .pii("LICENSE_PLATE", &p.plate)
+        .lit("\nMahnbescheid, Geschäftsnummer ")
+        .pii("COURT_FILE_NUMBER", &dunning)
+        .lit(&format!(
+            "\n\nNicht personenbezogen: Antrag {}, Betrag {} EUR.\n",
+            x.invoice, x.amount
+        ));
+    t.finish()
+}
+
+/// A letter about a debt with its parties (#161): a creditor that is a
+/// firm with its trade and legal form, a debtor who trades as a sole
+/// trader, and both named again on their own; another firm without a
+/// party's label, and the trade's word without the firm, are no personal
+/// data.
+fn parties_de(r: &mut Rng) -> (String, Vec<Truth>) {
+    let (p, q, x) = (Person::de(r), Person::de(r), Lookalikes::new(r));
+    let trade = r.pick(&["Hausverwaltung", "Malerbetrieb", "Gebäudetechnik"]);
+    // A sole trader's surname that ends like a trade (`Fernbau`, #138).
+    let owner: String = q.last.chars().take(4).collect::<String>() + "bau";
+    let mut t = Text::default();
+    t.lit(&format!("Forderungssache {}\n\nGläubiger: ", x.invoice))
+        .pii("PERSON", &format!("{} {trade} GmbH", p.last))
+        .lit("\nSchuldner: ")
+        .pii("PERSON", &format!("{} {owner} e.K.", q.first))
+        .lit("\n\nDie ")
+        .lit(trade)
+        .lit(" bittet um Zahlung bis zum ")
+        .lit(&x.date)
+        .lit(". Die Rechnung an ")
+        .pii("PERSON", &owner)
+        .lit(" ist zugestellt, Frau ")
+        .pii("PERSON", &p.last)
+        .lit(" bestätigt den Eingang.\nDie Weststrom Energie GmbH ist nicht beteiligt.\n");
+    t.finish()
+}
+
 /// Minutes of a meeting (#95): the people in it are personal data, and so is
 /// a phone number for a call back; a ticket number written like a phone
 /// number, an order number that starts like an international one, a build
@@ -1105,6 +1278,37 @@ pub fn corpus(seed: u64) -> Vec<Doc> {
     let (content, truth) = visual::headlines_png(&mut r);
     docs.push(Doc {
         path: "de/png/headlines-1.png".to_owned(),
+        content,
+        truth,
+    });
+    // The cases of the patches of the detection (#161), each document from
+    // a stream of its own.
+    for (path, salt, make) in [
+        (
+            "de/text/memo-1.txt",
+            0x3E30_7000_0000_0000,
+            memo_de as fn(&mut Rng) -> (String, Vec<Truth>),
+        ),
+        ("de/text/ticket-1.txt", 0x71C4_7000_0000_0000, ticket_de),
+        (
+            "de/text/application-1.txt",
+            0xA991_7000_0000_0000,
+            application_de,
+        ),
+        ("de/text/parties-1.txt", 0x9A27_7000_0000_0000, parties_de),
+    ] {
+        let mut r = Rng::new(seed ^ salt);
+        let (content, truth) = make(&mut r);
+        docs.push(Doc {
+            path: path.to_owned(),
+            content: content.into_bytes(),
+            truth,
+        });
+    }
+    let mut r = Rng::new(seed ^ 0x3D0C_7000_0000_0000);
+    let (content, truth) = visual::workspace_png(&mut r);
+    docs.push(Doc {
+        path: "de/png/workspace-1.png".to_owned(),
         content,
         truth,
     });

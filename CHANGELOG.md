@@ -20,6 +20,12 @@ Notable changes per release. The format follows
   the case each protects, and `veilq-eval ablate` measures each one by
   switching it off. Only the eval's build can switch one off; the release
   has no such switch.
+- The corpus holds the cases of the patches (#161): a file note, an IT
+  ticket, an application form, a letter with its parties and a word
+  processor with its formatting marks. Measured: 27 patches guard
+  something, 34 change nothing although their case is there (candidates
+  for removal), 5 have no case yet. A firm under `Gläubiger:` in running
+  text is not found today (the pattern reads fields and cells only).
 
 ## [0.8.0] - 2026-11-24
 

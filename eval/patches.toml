@@ -4,13 +4,15 @@
 # `veilq-eval ablate eval --ner --ocr` reads the corpus once per patch with
 # it off and prints what changed; `ablation` records the last verdict:
 # `guards` (switching it off loses a value or adds a false finding), `dead`
-# (nothing changes: the patch does nothing today, or its case is missing
-# from the corpus) or `unmeasured`. A patch is removed only when a
-# measurement says the structure carries its case (#161).
+# (its case is in the corpus and switching it off changes nothing: a
+# candidate for removal, the owner decides), `uncovered` (no corpus file
+# holds its case yet) or `unmeasured`. A patch is removed only when a
+# measurement says nothing that works breaks (#161).
 #
-# Last ablation: 2026-11-25 on the corpus of seed 1 as of main c3bf6b4,
-# scan, NER and OCR, run per format (`--only de/png` and so on). 16 guard
-# something, 50 change nothing in the corpus. `column-head-context` and
+# Last ablation: 2026-11-25, seed 1, scan, NER and OCR, run per format
+# (`--only de/png` and so on): 27 guard something, 34 are dead, 5 are
+# uncovered (their cases need a verify round, an OCR misreading or a
+# picture model's false box). `column-head-context` and
 # `context:intl.name-column` guard values in `de/png/list` and make the 9
 # false findings of `de/png/desk`.
 #
@@ -25,7 +27,7 @@ where = "crates/veilq-core/src/detect/mod.rs: NOT_CONTEXT, has_context"
 what = "a context word at the start of these words gives no boost"
 origin = ["#133"]
 case = "Personalisieren, Namespace, Steuerung, Bytes"
-corpus = []
+corpus = ["de/text/ticket-1.txt"]
 ablation = "dead"
 
 [[patch]]
@@ -79,7 +81,7 @@ where = "crates/veilq-core/src/detect/mod.rs: POSSESSIVES, after_possessive, rol
 what = "a possessive and one noun inside a sentence is dropped; a sign-off is cut to the name"
 origin = ["ADR-0052", "#105"]
 case = "Wir haben Ihre Nachricht erhalten; kept: Ihr Jonas Brandt"
-corpus = ["de/png/inbox-1.png"]
+corpus = ["de/png/inbox-1.png", "de/text/memo-1.txt"]
 ablation = "guards"
 
 [[patch]]
@@ -88,7 +90,7 @@ where = "crates/veilq-core/src/detect/mod.rs: LABEL_ENDINGS, role_word"
 what = "a word ending in nummer, zeichen or number is a role word"
 origin = ["ADR-0055", "#112", "#115"]
 case = "Kundennummer <ACCOUNT_ID>, Aktenzeichen; kept: Lena Nummerow"
-corpus = []
+corpus = ["de/text/memo-1.txt"]
 ablation = "dead"
 
 [[patch]]
@@ -97,7 +99,7 @@ where = "crates/veilq-core/src/detect/mod.rs: saint, resolve"
 what = "Sankt, St., Saint, Santa or Heilige and a word is no person"
 origin = ["ADR-0061", "#140"]
 case = "Die Geschichte von Sankt Martin"
-corpus = ["de/png/news-1.png"]
+corpus = ["de/png/news-1.png", "de/text/memo-1.txt"]
 ablation = "dead"
 
 [[patch]]
@@ -106,7 +108,7 @@ where = "crates/veilq-core/src/detect/mod.rs: after_salutation, salutation"
 what = "after Frau or Herrn a saint's word is a surname"
 origin = ["ADR-0069", "#159"]
 case = "Frau Santa Cruz, Herrn Saint-Exupéry"
-corpus = []
+corpus = ["de/text/memo-1.txt"]
 ablation = "dead"
 
 [[patch]]
@@ -115,8 +117,8 @@ where = "crates/veilq-core/src/detect/mod.rs: ACCOUNTS, resolve; names.rs learna
 what = "a system account's name in a path is no person"
 origin = ["#32"]
 case = "C:\\Users\\Public\\Documents, /home/runner/work"
-corpus = []
-ablation = "dead"
+corpus = ["de/text/ticket-1.txt"]
+ablation = "guards"
 
 [[patch]]
 id = "brand-word"
@@ -124,7 +126,7 @@ where = "crates/veilq-core/src/detect/mod.rs: brand_word, resolve; names.rs lear
 what = "one word with a capital inside after four letters is a brand, not a person"
 origin = ["#32"]
 case = "PowerShell, LinkedIn; kept: McDonald, DeVries"
-corpus = []
+corpus = ["de/text/ticket-1.txt"]
 ablation = "dead"
 
 [[patch]]
@@ -133,7 +135,7 @@ where = "crates/veilq-core/src/detect/mod.rs: PRODUCTS, resolve"
 what = "product names NER takes for persons are dropped"
 origin = ["#79"]
 case = "Copilot fragen"
-corpus = []
+corpus = ["de/text/ticket-1.txt"]
 ablation = "dead"
 
 [[patch]]
@@ -142,7 +144,7 @@ where = "crates/veilq-core/src/detect/mod.rs: PERSON_NOUNS, PERSON_NOUN_ENDINGS,
 what = "a noun that means a person, inflected or ending a compound, is no name and never learned"
 origin = ["#79"]
 case = "Kein Inhalt mit Personen., Kontaktperson, Fahrzeugbesitzer (not listed: found)"
-corpus = ["de/png/headlines-1.png"]
+corpus = ["de/png/headlines-1.png", "de/text/memo-1.txt"]
 ablation = "dead"
 
 [[patch]]
@@ -151,8 +153,8 @@ where = "crates/veilq-core/src/detect/mod.rs: the kin words of PERSON_NOUNS"
 what = "a kin word is no name"
 origin = ["ADR-0061", "#140"]
 case = "… kann Vater nicht vergeben, Zwillinge"
-corpus = ["de/png/news-1.png"]
-ablation = "dead"
+corpus = ["de/png/news-1.png", "de/text/memo-1.txt"]
+ablation = "guards"
 
 [[patch]]
 id = "genitive-cut"
@@ -160,7 +162,7 @@ where = "crates/veilq-core/src/detect/mod.rs: genitive_head; ner.rs cut_genitive
 what = "a span that starts with the genitive of another name found is cut to that word"
 origin = ["#63"]
 case = "Brandts Kapuze beside Jonas Brandt"
-corpus = []
+corpus = ["de/text/memo-1.txt"]
 ablation = "dead"
 
 [[patch]]
@@ -178,7 +180,7 @@ where = "crates/veilq-core/src/detect/mod.rs: PARTICLES; ner.rs can_be_name; nam
 what = "a name's lowercase particle is allowed in a span and never learned"
 origin = ["3d04545"]
 case = "Ursula von der Leyen, Von Hagen, Ole"
-corpus = []
+corpus = ["de/text/memo-1.txt"]
 ablation = "dead"
 
 # --- detect/validate.rs -----------------------------------------------------
@@ -189,8 +191,8 @@ where = "crates/veilq-core/src/detect/validate.rs: given_name_de"
 what = "function words, weekdays and months after ich heiße or ich bin are no name"
 origin = ["ADR-0043", "#73"]
 case = "ich heiße nicht so, Ich bin Montag und Dienstag weg"
-corpus = ["de/text/chat-1.txt"]
-ablation = "dead"
+corpus = ["de/text/chat-1.txt", "de/text/ticket-1.txt"]
+ablation = "guards"
 
 [[patch]]
 id = "email-host-tags"
@@ -198,8 +200,8 @@ where = "crates/veilq-core/src/detect/validate.rs: email_host"
 what = "a package tag, a version, a commit or a digest after @ is no mail address"
 origin = ["ADR-0025", "#7"]
 case = "lodash@latest, actions/checkout@v4, node@sha256:…"
-corpus = []
-ablation = "dead"
+corpus = ["de/text/ticket-1.txt"]
+ablation = "guards"
 
 # --- ner.rs -----------------------------------------------------------------
 
@@ -218,7 +220,7 @@ where = "crates/veilq-core/src/ner.rs: can_be_name"
 what = "a dot before a lowercase letter makes a span a domain"
 origin = ["#63"]
 case = "Lesehaus.de, Mira.albers"
-corpus = []
+corpus = ["de/text/ticket-1.txt"]
 ablation = "dead"
 
 [[patch]]
@@ -227,7 +229,7 @@ where = "crates/veilq-core/src/ner.rs: can_be_name"
 what = "after a salutation a kin word or a person's noun is a surname"
 origin = ["ADR-0069", "#159"]
 case = "Herrn Vater, Frau Tante"
-corpus = []
+corpus = ["de/text/memo-1.txt"]
 ablation = "dead"
 
 # --- names.rs ---------------------------------------------------------------
@@ -238,8 +240,8 @@ where = "crates/veilq-core/src/names.rs: learnable"
 what = "no particle, legal form, role word, person's noun, brand or account goes on the file's list"
 origin = ["ADR-0047", "#82"]
 case = "von in Ursula von der Leyen"
-corpus = []
-ablation = "dead"
+corpus = ["de/text/memo-1.txt"]
+ablation = "guards"
 
 [[patch]]
 id = "legal-forms"
@@ -247,7 +249,7 @@ where = "crates/veilq-core/src/names.rs: LEGAL_FORMS, is_firm"
 what = "a legal form is not learned and marks a span as a firm"
 origin = ["ADR-0059", "#126"]
 case = "Kessler Hausverwaltung GmbH"
-corpus = ["de/png/list-1.png"]
+corpus = ["de/png/list-1.png", "de/text/parties-1.txt"]
 ablation = "dead"
 
 [[patch]]
@@ -256,7 +258,7 @@ where = "crates/veilq-core/src/names.rs: TRADE_ENDINGS, TRADE_WORDS, trade_word"
 what = "a firm's trade words are not learned"
 origin = ["#130"]
 case = "Hausverwaltung, Malerbetrieb, Söhne"
-corpus = []
+corpus = ["de/text/parties-1.txt"]
 ablation = "dead"
 
 [[patch]]
@@ -265,7 +267,7 @@ where = "crates/veilq-core/src/names.rs: SOLE_TRADER, sole_trader"
 what = "in an e.K. firm a trade-like word after a name's word is the surname"
 origin = ["ADR-0062", "#138", "#143"]
 case = "Ilka Fernbau e.K."
-corpus = []
+corpus = ["de/text/parties-1.txt"]
 ablation = "dead"
 
 [[patch]]
@@ -274,7 +276,7 @@ where = "crates/veilq-core/src/names.rs: Inner::cut, head and tail"
 what = "in OCR text a name's start before dots, or its end at a line's start, counts"
 origin = ["ADR-0047", "#82"]
 case = "Brand.., randt,, Brandtmeier, Jon.."
-corpus = []
+corpus = ["de/png/workspace-1.png"]
 ablation = "dead"
 
 [[patch]]
@@ -293,7 +295,7 @@ what = "in OCR text a word one edit off a learned name of six letters or more is
 origin = ["ADR-0059", "#126", "#138"]
 case = "Severln"
 corpus = []
-ablation = "dead"
+ablation = "uncovered"
 
 [[patch]]
 id = "values-learnable"
@@ -302,7 +304,7 @@ what = "a value goes on the list only with five characters or more and a digit o
 origin = ["ADR-0059", "#126"]
 case = "an IBAN or a file number found once"
 corpus = []
-ablation = "dead"
+ablation = "uncovered"
 
 # --- engine.rs --------------------------------------------------------------
 
@@ -321,7 +323,7 @@ where = "crates/veilq-core/src/engine.rs: PLACEHOLDER, decisions"
 what = "a finding inside veilq's own placeholder is dropped"
 origin = ["ADR-0001"]
 case = "NER reading <PERSON> as a name"
-corpus = []
+corpus = ["de/text/ticket-1.txt"]
 ablation = "dead"
 
 [[patch]]
@@ -331,7 +333,7 @@ what = "verify rounds and re-readings learn no names"
 origin = ["ADR-0055", "ADR-0067", "#112", "#115"]
 case = "Kundennummer <ACCOUNT_ID> in veilq's own output"
 corpus = []
-ablation = "dead"
+ablation = "uncovered"
 
 # --- visual.rs --------------------------------------------------------------
 
@@ -341,7 +343,7 @@ where = "crates/veilq-core/src/visual.rs: page, cut"
 what = "a wrapped table cell is read whole, cut at the rows beside it"
 origin = ["ADR-0041", "#70"]
 case = "BHS Bad / Homburger / Servicegesellschaft"
-corpus = []
+corpus = ["de/png/workspace-1.png"]
 ablation = "dead"
 
 [[patch]]
@@ -359,8 +361,8 @@ where = "crates/veilq-core/src/visual.rs: unmarked"
 what = "a text with Word's marks is read again with them as spaces"
 origin = ["ADR-0032", "#30"]
 case = "Rückruf·an·Herr·Jonas·Brandt·heute"
-corpus = []
-ablation = "dead"
+corpus = ["de/png/workspace-1.png"]
+ablation = "guards"
 
 [[patch]]
 id = "iban-rest-widen"
@@ -425,7 +427,7 @@ what = "a signature box found by one tile only needs a score of 0.95"
 origin = ["ADR-0068", "#155"]
 case = "false boxes on charts and lettering"
 corpus = []
-ablation = "dead"
+ablation = "uncovered"
 
 [[patch]]
 id = "signature-min-width"
@@ -433,8 +435,8 @@ where = "crates/veilq-core/src/signature.rs: MIN_WIDTH"
 what = "a signature box narrower than 40 pixels is dropped"
 origin = ["ADR-0048", "#81"]
 case = "a box on empty space or a mouse pointer"
-corpus = ["de/gif/recording-1.gif"]
-ablation = "dead"
+corpus = ["de/gif/recording-1.gif", "de/png/workspace-1.png"]
+ablation = "guards"
 
 [[patch]]
 id = "face-verify-gate"
@@ -443,7 +445,7 @@ what = "a weak face box the verifier calls no face is dropped"
 origin = ["ADR-0065", "#147"]
 case = "an icon or a hand taken for a face"
 corpus = []
-ablation = "dead"
+ablation = "uncovered"
 
 # --- context boosts of the locales' patterns --------------------------------
 
@@ -453,8 +455,8 @@ where = "crates/veilq-core/locales/de/patterns.toml: street"
 what = "0.5, +0.35 after Anschrift, wohnt and the like"
 origin = ["M1"]
 case = "a street and number alone after Anschrift"
-corpus = ["de/json/customer-1.json"]
-ablation = "dead"
+corpus = ["de/json/customer-1.json", "de/text/application-1.txt"]
+ablation = "guards"
 
 [[patch]]
 id = "context:de.street-field"
@@ -480,7 +482,7 @@ where = "crates/veilq-core/locales/de/patterns.toml: phone"
 what = "0.75, +0.2 after tel, rückruf and the like"
 origin = ["M1"]
 case = "Tel. 030 1234567"
-corpus = ["de/text/letter-1.txt"]
+corpus = ["de/text/letter-1.txt", "de/text/application-1.txt"]
 ablation = "dead"
 
 [[patch]]
@@ -507,7 +509,7 @@ where = "crates/veilq-core/locales/de/patterns.toml: social-security"
 what = "0.7, +0.25 after rentenversicherung and the like"
 origin = ["M1"]
 case = "Rentenversicherungsnummer 65 170839 J 003"
-corpus = []
+corpus = ["de/text/application-1.txt"]
 ablation = "dead"
 
 [[patch]]
@@ -516,8 +518,8 @@ where = "crates/veilq-core/locales/de/patterns.toml: id-card"
 what = "0.35, +0.55 after ausweis and the like"
 origin = ["M1"]
 case = "Ausweisnummer T22000129"
-corpus = []
-ablation = "dead"
+corpus = ["de/text/application-1.txt"]
+ablation = "guards"
 
 [[patch]]
 id = "context:de.licence-plate"
@@ -525,7 +527,7 @@ where = "crates/veilq-core/locales/de/patterns.toml: licence-plate"
 what = "0.7, +0.3 after kennzeichen, kfz and the like"
 origin = ["M1"]
 case = "Kennzeichen OL-JP 352"
-corpus = ["de/text/letter-2.txt", "de/ndjson/events-1.ndjson"]
+corpus = ["de/text/letter-2.txt", "de/ndjson/events-1.ndjson", "de/text/application-1.txt"]
 ablation = "dead"
 
 [[patch]]
@@ -543,7 +545,7 @@ where = "crates/veilq-core/locales/de/patterns.toml: dunning-number"
 what = "0.4, +0.4 after mahn, vollstreckungsbescheid and the like"
 origin = ["ADR-0051", "#102"]
 case = "26-4319077-2-0; not: Ihre Bestellung"
-corpus = ["de/png/dunning-1.png"]
+corpus = ["de/png/dunning-1.png", "de/text/application-1.txt"]
 ablation = "dead"
 
 [[patch]]
@@ -579,8 +581,8 @@ where = "crates/veilq-core/locales/intl/patterns.toml: iban"
 what = "0.95, +0.05 after iban or konto: lifts a failed checksum"
 origin = ["M1"]
 case = "IBAN: DE89 3704 0044 0532 0130 01, mistyped"
-corpus = ["de/png/transfer-1.png", "de/text/letter-1.txt"]
-ablation = "dead"
+corpus = ["de/png/transfer-1.png", "de/text/letter-1.txt", "de/text/application-1.txt"]
+ablation = "guards"
 
 [[patch]]
 id = "context:intl.credit-card"
@@ -588,8 +590,8 @@ where = "crates/veilq-core/locales/intl/patterns.toml: credit-card"
 what = "0.6, +0.35 after card, karte and the like"
 origin = ["M1"]
 case = "Karte 4111 1111 1111 1111"
-corpus = []
-ablation = "dead"
+corpus = ["de/text/application-1.txt"]
+ablation = "guards"
 
 [[patch]]
 id = "context:intl.ipv4"
@@ -615,7 +617,7 @@ where = "crates/veilq-core/locales/intl/patterns.toml: name-field"
 what = "0.35, +0.5 under a name's or a party's key or column"
 origin = ["M1", "ADR-0042", "ADR-0059"]
 case = "Mira Albers under the column name"
-corpus = ["de/csv/customers-1.csv", "de/json/customer-1.json", "en/csv/customers-1.csv"]
+corpus = ["de/csv/customers-1.csv", "de/json/customer-1.json", "en/csv/customers-1.csv", "de/text/application-1.txt"]
 ablation = "dead"
 
 [[patch]]

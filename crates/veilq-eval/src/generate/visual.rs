@@ -535,6 +535,64 @@ pub(super) fn headlines_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
     (png(&c.img), c.truth)
 }
 
+/// A word processor with its formatting marks shown (#161): a tab whose
+/// label the window cuts short (`Brandtmeier, Jon..`), a line whose spaces
+/// are drawn as `·`, and a table whose holder's cell wraps over two lines
+/// beside the amounts of its rows. Each holds a person.
+pub(super) fn workspace_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
+    let (p, q, s) = (Person::de(r), Person::de(r), Person::de(r));
+    let mut c = Canvas::new(1100, 460, [255, 255, 255]);
+    c.rect(0, 0, 1100, 34, [232, 234, 240]);
+    c.lit(14.0, 9.0, 13.0, "Notiz.docx – Textverarbeitung", INK);
+    // The tabs: the second's label cut by its width.
+    c.rect(0, 34, 1100, 30, [244, 245, 248]);
+    c.lit(14.0, 42.0, 13.0, "Übersicht", INK);
+    let cut: String = p.first.chars().take(3).collect();
+    let end = c.lit(140.0, 42.0, 13.0, "Akte ", INK);
+    let end = c.pii(
+        "PERSON",
+        end,
+        42.0,
+        13.0,
+        &format!("{}, {cut}", p.last),
+        INK,
+    );
+    c.lit(end, 42.0, 13.0, "..", INK);
+    c.lit(340.0, 42.0, 13.0, "Vorlagen", INK);
+    // The page.
+    let end = c.lit(60.0, 96.0, 15.0, "Betreff: Akte ", INK);
+    c.pii("PERSON", end, 96.0, 15.0, &p.name(), INK);
+    let end = c.lit(60.0, 132.0, 15.0, "Rückruf·an·Herrn·", INK);
+    let end = c.pii(
+        "PERSON",
+        end,
+        132.0,
+        15.0,
+        &format!("{}·{}", q.first, q.last),
+        INK,
+    );
+    c.lit(end, 132.0, 15.0, "·heute¶", INK);
+    for (t, x) in [
+        ("Kontoinhaber", 60.0),
+        ("Verwendung", 330.0),
+        ("Betrag", 700.0),
+    ] {
+        c.lit(x, 190.0, 13.0, t, MUTED);
+    }
+    for (i, amount) in ["2.247,43", "1.661,55"].iter().enumerate() {
+        let y = 222.0 + 56.0 * i as f32;
+        if i == 0 {
+            c.pii("PERSON", 60.0, y, 14.0, &s.first, INK);
+            c.pii("PERSON", 60.0, y + 17.0, 14.0, &s.last, INK);
+        } else {
+            c.lit(60.0, y + 8.0, 14.0, "Hausverwaltung Nord", INK);
+        }
+        c.lit(330.0, y + 8.0, 14.0, "Miete November", INK);
+        c.lit(700.0, y + 8.0, 14.0, amount, INK);
+    }
+    (png(&c.img), c.truth)
+}
+
 /// Blue ink of a ballpoint pen.
 const PEN: [u8; 3] = [24, 46, 128];
 /// How large a hand writes on a form's line.

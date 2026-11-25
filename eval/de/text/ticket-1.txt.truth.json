@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 54,
+        "end": 65,
+        "line": 2,
+        "column": 15
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 67,
+        "end": 92,
+        "line": 2,
+        "column": 28
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 499,
+        "end": 505,
+        "line": 10,
+        "column": 6
+      }
+    }
+  ]
+}

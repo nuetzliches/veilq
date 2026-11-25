@@ -1,0 +1,12 @@
+Antrag auf Ratenzahlung
+
+Name: <PERSON>
+wohnt in <ADDRESS>Tel. <PHONE_NUMBER>
+Versicherungsnummer der Rentenversicherung: <SOCIAL_SECURITY_NUMBER>
+Ausweisnummer: <ID_CARD_NUMBER>
+Kreditkarte: <CREDIT_CARD>
+IBAN: <IBAN_CODE>
+Kfz-Kennzeichen: <LICENSE_PLATE>
+Mahnbescheid, Geschäftsnummer <COURT_FILE_NUMBER>
+
+Nicht personenbezogen: Antrag 2026-6959-5555, Betrag 606,79 EUR.
