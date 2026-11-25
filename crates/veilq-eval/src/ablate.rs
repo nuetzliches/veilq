@@ -40,7 +40,9 @@ pub struct Patch {
     /// The corpus files that hold the case; empty when none does.
     #[serde(default)]
     pub corpus: Vec<String>,
-    /// The last ablation's verdict: `guards`, `dead` or `unmeasured`.
+    /// The last ablation's verdict: `guards`, `dead` (its case is in the
+    /// corpus, and it changes nothing), `uncovered` (no case in the corpus)
+    /// or `unmeasured`.
     #[serde(default = "unmeasured")]
     pub ablation: String,
 }
@@ -58,12 +60,31 @@ impl Inventory {
             if !seen.insert(p.id.as_str()) {
                 anyhow::bail!("{}: the patch {} is listed twice", path.display(), p.id);
             }
-            if !matches!(p.ablation.as_str(), "guards" | "dead" | "unmeasured") {
+            if !matches!(
+                p.ablation.as_str(),
+                "guards" | "dead" | "uncovered" | "unmeasured"
+            ) {
                 anyhow::bail!(
-                    "{}: the patch {} has the verdict {:?}; guards, dead or unmeasured",
+                    "{}: the patch {} has the verdict {:?}; guards, dead, uncovered or unmeasured",
                     path.display(),
                     p.id,
                     p.ablation
+                );
+            }
+            // Dead says the case was there and nothing changed; without a
+            // case the patch is uncovered, not dead.
+            let consistent = match p.ablation.as_str() {
+                "dead" => !p.corpus.is_empty(),
+                "uncovered" => p.corpus.is_empty(),
+                _ => true,
+            };
+            if !consistent {
+                anyhow::bail!(
+                    "{}: the patch {} is {} with {} corpus files",
+                    path.display(),
+                    p.id,
+                    p.ablation,
+                    p.corpus.len()
                 );
             }
         }
@@ -222,6 +243,13 @@ mod tests {
                 "{} is not in veilq_core::patch::PATCHES",
                 p.id
             );
+            for f in &p.corpus {
+                assert!(
+                    path.with_file_name(f).is_file(),
+                    "{}: {f} is not in the corpus",
+                    p.id
+                );
+            }
         }
         for id in veilq_core::patch::PATCHES {
             assert!(

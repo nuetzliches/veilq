@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 44,
+        "end": 68,
+        "line": 3,
+        "column": 12
+      },
+      "confidence": 0.8,
+      "detector": "pattern:de.name-role"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 81,
+        "end": 95,
+        "line": 4,
+        "column": 12
+      },
+      "confidence": 0.8,
+      "detector": "pattern:de.name-role"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 106,
+        "end": 120,
+        "line": 6,
+        "column": 5
+      },
+      "confidence": 0.8,
+      "detector": "names:file"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 175,
+        "end": 182,
+        "line": 6,
+        "column": 74
+      },
+      "confidence": 0.8,
+      "detector": "names:file"
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "span",
+        "start": 204,
+        "end": 209,
+        "line": 6,
+        "column": 103
+      },
+      "confidence": 0.85,
+      "detector": "pattern:de.name-salutation"
+    }
+  ],
+  "review_required": true,
+  "review_reasons": [
+    "NER did not run: names without a word that marks them (`Frau`, `Hallo`, a column `name`) may be left; `veilq models fetch ner`"
+  ],
+  "purposes": [
+    "general"
+  ]
+}

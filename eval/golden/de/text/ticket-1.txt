@@ -1,0 +1,10 @@
+Ticket 2026-8467-6159: Export bricht ab
+Gemeldet von: Niklas Haas <<EMAIL_ADDRESS>>
+
+Das Skript läuft in PowerShell und schreibt nach C:\Users\Public\Documents\export.csv.
+Abhängigkeiten: lodash@latest, actions/checkout@v4, node@sha256:344082014504
+Die Hilfe von Lesehaus.de nennt unter Personalisieren > Namespace eine Einstellung.
+Ich bin Montag und Dienstag nicht da, bitte solange Copilot fragen.
+Der letzte Export war geschwärzt: Kunde <PERSON>, Konto [IBAN_CODE:a0a75f65].
+
+Gruß Niklas

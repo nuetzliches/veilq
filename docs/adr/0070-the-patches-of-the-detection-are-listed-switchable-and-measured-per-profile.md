@@ -32,9 +32,11 @@ patch could be switched off, and nobody knew which case each one guards.
 1. **The patches are listed** in `eval/patches.toml`: id, place, what it
    does, the ADRs and issues that brought it, the case it protects (a
    synthetic example), the corpus files that hold it, and the verdict of
-   the last ablation (`guards`, `dead`, `unmeasured`). A test holds the
-   list, `veilq_core::patch::PATCHES` and the context boosts of the locales
-   equal.
+   the last ablation: `guards`, `dead` (its case is in the corpus and
+   switching it off changes nothing: a candidate for removal),
+   `uncovered` (no corpus file holds its case) or `unmeasured`. A test
+   holds the list, `veilq_core::patch::PATCHES` and the context boosts of
+   the locales equal, and every corpus file it names present.
 2. **Each patch can be switched off**, at its switch point, by
    `veilq_core::patch::on("<id>")` (a context boost by
    `context:<locale>.<name>`). Only a build with the cargo feature

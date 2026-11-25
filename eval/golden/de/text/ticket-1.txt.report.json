@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "span",
+        "start": 67,
+        "end": 92,
+        "line": 2,
+        "column": 28
+      },
+      "confidence": 0.95,
+      "detector": "pattern:intl.email"
+    }
+  ],
+  "review_required": true,
+  "review_reasons": [
+    "NER did not run: names without a word that marks them (`Frau`, `Hallo`, a column `name`) may be left; `veilq models fetch ner`"
+  ],
+  "purposes": [
+    "general"
+  ]
+}

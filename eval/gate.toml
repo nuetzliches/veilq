@@ -15,3 +15,19 @@ PERSON = 0.85
 # A version number after `client=` reads as an IP address: left in the corpus
 # as a known ambiguity.
 min = 0.97
+
+# Profiles measured apart (ADR-0070): the cases of the patches (#161), held
+# at what the patterns alone reached on the corpus and the held-out seeds
+# when they were added. Their names have no word that marks them, or a
+# firm under a party's label stands in running text, not in a field.
+[profiles."de/text/memo"]
+recall = 0.66
+precision = 1.0
+
+[profiles."de/text/ticket"]
+recall = 0.33
+precision = 1.0
+
+[profiles."de/text/parties"]
+recall = 0.5
+precision = 0.8
