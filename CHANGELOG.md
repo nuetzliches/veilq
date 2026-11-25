@@ -6,6 +6,22 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- 11 hand-written rules that drop or cut a candidate and, with their case
+  in the corpus, changed nothing on any seed, and one exception to them
+  (ADR-0071, #161): the lists of product and brand names, field labels,
+  saints, firms' trade words, the genitive cut, a domain in a NER span and
+  others. The NER name-shape filter, the nouns that mean a person and the
+  drop of veilq's own placeholders stay: removed, they let false findings
+  through in combination or in a redaction's verify round, or break a
+  redacted text redacted again. The corpus gates are as before. In
+  documents the corpus does not show, a false finding may appear where one
+  of the removed rules used to drop it; nothing is left open by it. The
+  rules that lift or add a finding stay.
+- `veilq-eval ablate --redact` measures a patch in a redaction, whose
+  verify rounds read veilq's own output.
+
 ### Added
 
 - The corpus measures per profile (ADR-0070, #161): `veilq-eval check`

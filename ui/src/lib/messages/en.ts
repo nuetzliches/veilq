@@ -91,7 +91,6 @@ export const en = {
   'verdict.overlap': 'inside a longer find',
   'verdict.role_words': 'only role words',
   'verdict.account': 'a system account',
-  'verdict.brand_word': 'a product name',
   'verdict.placeholder': 'a placeholder',
 
   'where.span': 'line {line}, column {column}',

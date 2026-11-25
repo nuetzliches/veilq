@@ -834,14 +834,8 @@ fn candidates(
     let p = page(&first);
     let others: Vec<Rect> = first.iter().map(|l| l.rect).collect();
     let mut out = Vec::new();
-    // The names the page holds: a line read alone does not know them, and
-    // `Brandts Kapuze` there is cut to `Brandts` by them.
-    let mut names: Vec<String> = Vec::new();
     for text in std::iter::once(p.text.clone()).chain(unmarked(&p.text)) {
         for c in read(&text, "")? {
-            if c.entity.as_str() == "PERSON" {
-                names.extend(crate::detect::name_words(&text[c.start..c.end]).map(str::to_owned));
-            }
             let rects = boxes(&p, c.start, c.end, w, h);
             let rects = with_rest(&c, &text[c.start..c.end], rects, &others, w);
             out.push((c, rects));
@@ -863,7 +857,7 @@ fn candidates(
         };
         let context = neighbours(lines, &heads, i);
         for text in std::iter::once(line.text.clone()).chain(unmarked(&line.text)) {
-            for mut c in read(&text, &context)? {
+            for c in read(&text, &context)? {
                 if c.entity.as_str() == "PERSON"
                     && text == line.text
                     && !text[c.end..].chars().any(char::is_alphanumeric)
@@ -871,15 +865,6 @@ fn candidates(
                     ends_in_name[i] = true;
                 }
                 if c.entity.as_str() == "PERSON" {
-                    let span = &text[c.start..c.end];
-                    let own: Vec<&str> = crate::detect::name_words(span).collect();
-                    let others = names
-                        .iter()
-                        .map(String::as_str)
-                        .filter(|n| !own.contains(n));
-                    if let Some(n) = crate::detect::genitive_head(span, others) {
-                        c.end = c.start + n;
-                    }
                     let weak = if crate::patch::on("weak-neighbours") {
                         weak_neighbours(line, &text, c.start, c.end)
                     } else {
@@ -938,10 +923,8 @@ fn candidates(
         }
     }
     // A line read badly read again in black and white (ADR-0067), with the
-    // context of the line it reads again. What it finds counts where it
-    // covers a character the first reading read badly: elsewhere that
-    // reading read well, and one that differs there is noise. It learns no
-    // names of the file.
+    // context of the line it reads again. Everything it finds counts. It
+    // learns no names of the file.
     for a in &agains {
         let Some(i) = lines
             .iter()
@@ -949,7 +932,6 @@ fn candidates(
         else {
             continue;
         };
-        let weak: Vec<Rect> = lines[i].weak().copied().collect();
         let one = Page {
             text: a.text.clone(),
             chars: a.chars.clone(),
@@ -957,11 +939,7 @@ fn candidates(
         let context = neighbours(lines, &heads, i);
         for c in engine.ocr_findings_read_again(&a.text, &context, "contrast")? {
             let rects = boxes(&one, c.start, c.end, w, h);
-            if !crate::patch::on("contrast-only-where-weak")
-                || rects.iter().any(|r| weak.iter().any(|k| r.intersects(k)))
-            {
-                out.push((c, rects));
-            }
+            out.push((c, rects));
         }
     }
     Ok(out)
@@ -2272,7 +2250,7 @@ mod tests {
     }
 
     #[test]
-    fn a_reading_in_black_and_white_counts_where_the_line_was_read_badly() {
+    fn a_reading_in_black_and_white_counts() {
         // The first reading misread the given name (read badly); the line
         // read again in black and white has it right (ADR-0067). A rule
         // stands in for NER.
@@ -2304,10 +2282,10 @@ mod tests {
                 .map(|(c, _)| c.detector)
                 .collect()
         };
-        // Read badly at the given name: the other reading's name counts.
+        // Read badly at the given name or elsewhere: the other reading's
+        // name counts.
         assert_eq!(found(first("Jcnas")), ["policy:two-names"]);
-        // Read badly elsewhere only: the name it differs in is noise.
-        assert!(found(first("Akte")).is_empty());
+        assert_eq!(found(first("Akte")), ["policy:two-names"]);
     }
 
     #[test]
@@ -2459,60 +2437,6 @@ mod tests {
         let found = iban(&gap);
         assert!(found.iter().any(|r| r.right() >= 410), "{found:?}");
         assert!(found.iter().all(|r| r.right() < 600), "{found:?}");
-    }
-
-    /// With the real NER model (VEILQ_NER_DIR, VEILQ_ORT_DYLIB): a line
-    /// read alone takes what a name owns for the name; the names of the
-    /// page cut it off.
-    #[cfg(feature = "ner")]
-    #[test]
-    fn a_line_does_not_take_what_a_name_owns() {
-        let (Ok(dir), Ok(dylib)) = (
-            std::env::var("VEILQ_NER_DIR"),
-            std::env::var("VEILQ_ORT_DYLIB"),
-        ) else {
-            return;
-        };
-        let dir = std::path::Path::new(&dir);
-        let ner = crate::ner::Ner::load(&crate::ner::ModelFiles {
-            model: &dir.join("model.onnx"),
-            tokenizer: &dir.join("tokenizer.json"),
-            runtime: std::path::Path::new(&dylib),
-        })
-        .unwrap();
-        let engine = Engine::new(&crate::Policy::default(), None, b"test", None)
-            .unwrap()
-            .with_ner(std::sync::Arc::new(ner));
-        let lines = [
-            line(
-                "Mira Albers trifft Jonas Brandt: alle starrten auf die Kapuze",
-                0,
-                0,
-            ),
-            line(
-                "Brandts Kapuze, seine Hände und einen vierfarbigen Kugelschreiber.",
-                0,
-                40,
-            ),
-        ];
-        let found: Vec<Rect> = candidates(&engine, &lines, 2000, 100, false)
-            .unwrap()
-            .into_iter()
-            .filter(|(c, _)| c.entity.as_str() == "PERSON")
-            .flat_map(|(_, rects)| rects)
-            .collect();
-        // `Mira Albers` on the first line; on the second, `Brandts` is
-        // characters 0 to 7 (x 0 to 70), `Kapuze` starts at x 80; the box's
-        // margin is a quarter of the line's 20 pixels.
-        assert!(found.iter().any(|r| r.y < 20 && r.x == 0), "{found:?}");
-        assert!(found.iter().any(|r| r.y >= 38), "{found:?}");
-        assert!(
-            found
-                .iter()
-                .filter(|r| r.y >= 38)
-                .all(|r| r.right() <= 70 + 20 / 4),
-            "{found:?}"
-        );
     }
 
     #[test]

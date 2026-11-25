@@ -239,7 +239,6 @@ export type Verdict =
   | 'overlap'
   | 'role_words'
   | 'account'
-  | 'brand_word'
   | 'placeholder';
 
 /** A candidate in a reading, with the policy's verdict on it. */

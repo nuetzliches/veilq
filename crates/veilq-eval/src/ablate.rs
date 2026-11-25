@@ -137,19 +137,22 @@ pub fn effect(id: &str, base: &Evaluation, off: &Evaluation) -> Effect {
 
 /// Reads the corpora `dirs` with every patch on, then once per patch of
 /// `ids` with it off. The corpora are read one after another: the switch
-/// holds for the whole process.
+/// holds for the whole process. With `redact` the findings are a
+/// redaction's: its verify rounds read veilq's own output, where a patch
+/// may matter that a scan never needs (ADR-0071).
 pub fn run(
     dirs: &[std::path::PathBuf],
     ids: &[String],
     only: Option<&str>,
     ner: bool,
     ocr: bool,
+    redact: bool,
 ) -> anyhow::Result<Vec<Effect>> {
     let read = |off: &[String]| -> anyhow::Result<Evaluation> {
         veilq_core::patch::switch_off(off)?;
         let mut all = Evaluation::default();
         for d in dirs {
-            let (e, _) = check::evaluate(d, only, ner, ocr, false, &Default::default())?;
+            let (e, _) = check::evaluate(d, only, ner, ocr, redact, &Default::default())?;
             merge(&mut all, e);
         }
         Ok(all)

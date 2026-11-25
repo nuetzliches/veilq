@@ -103,6 +103,10 @@ enum Command {
         /// Read the pictures too, with the installed OCR and PDFium.
         #[arg(long)]
         ocr: bool,
+        /// Measure what a redaction finds, as `check --redact`: its verify
+        /// rounds read veilq's own output (ADR-0071).
+        #[arg(long)]
+        redact: bool,
         /// The effects as JSON, one line per patch.
         #[arg(long)]
         json: bool,
@@ -155,6 +159,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             held_out,
             ner,
             ocr,
+            redact,
             json,
         } => {
             let inventory = veilq_eval::ablate::Inventory::read(&dir.join("patches.toml"))?;
@@ -171,7 +176,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 generate::write(&tmp, *seed)?;
                 dirs.push(tmp);
             }
-            let effects = veilq_eval::ablate::run(&dirs, &ids, only.as_deref(), ner, ocr);
+            let effects = veilq_eval::ablate::run(&dirs, &ids, only.as_deref(), ner, ocr, redact);
             for d in &dirs[1..] {
                 let _ = std::fs::remove_dir_all(d);
             }

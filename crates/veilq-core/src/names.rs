@@ -3,7 +3,7 @@
 //!
 //! Each person a detector finds at or above its threshold puts the words of
 //! its name on a list of the run: three letters or more, no role word, no
-//! brand, no system account, and no small word inside a capitalised name
+//! word for kin, no system account, and no small word inside a capitalised name
 //! (`von` in `Ursula von der Leyen`). Every text read after that finds each
 //! word again as a whole word, matched like a deny list's value (ADR-0044):
 //! any case, Turkish `İ`/`ı` folded, NFC and NFD, with the genitive. It is a
@@ -60,52 +60,6 @@ const LEGAL_FORMS: &[&str] = &[
     "haftungsbeschränkt",
     "kfm",
     "kfr",
-];
-/// The ends of the words a firm's name shares with every firm of its trade
-/// (`Kessler Hausverwaltung GmbH`, `Albers Malerbetrieb`), and such words
-/// whole: learned from a firm, they would make every `Hausverwaltung` of
-/// the file a person. Only a firm's own word goes on the list.
-const TRADE_ENDINGS: &[&str] = &[
-    "verwaltung",
-    "betrieb",
-    "betriebe",
-    "bau",
-    "handel",
-    "service",
-    "services",
-    "technik",
-    "immobilien",
-    "beratung",
-    "dienst",
-    "dienste",
-    "dienstleistungen",
-    "gesellschaft",
-    "gruppe",
-    "holding",
-    "consulting",
-    "versicherung",
-    "logistik",
-    "kanzlei",
-    "praxis",
-    "apotheke",
-    "bäckerei",
-    "metzgerei",
-    "werkstatt",
-    "transporte",
-    "systeme",
-    "solutions",
-    "partner",
-];
-const TRADE_WORDS: &[&str] = &[
-    "söhne",
-    "sohn",
-    "gebrüder",
-    "gebr",
-    "erben",
-    "nachf",
-    "co",
-    "und",
-    "group",
 ];
 /// Characters a value needs to go on the list, its spaces left out.
 const MIN_VALUE: usize = 5;
@@ -443,22 +397,9 @@ impl Names {
         for &(start, end, confidence) in found {
             let span = &text[start..end];
             let capitalised = detect::name_words(span).any(starts_upper);
-            let firm = is_firm(span);
-            let sole = firm && crate::patch::on("sole-trader") && sole_trader(span);
-            // A sole trader's firm holds the owner's name: a word after
-            // another of its name words is the surname, whatever it ends in
-            // (`Fernbau` in `Ilka Fernbau e.K.`, #138).
-            let mut named = false;
             for w in detect::name_words(span) {
                 if !learnable(w, capitalised) {
                     continue;
-                }
-                if firm && crate::patch::on("trade-words") && trade_word(w) {
-                    if !(sole && named) {
-                        continue;
-                    }
-                } else {
-                    named = true;
                 }
                 let k = key(w);
                 match inner.words.get(&k).copied() {
@@ -681,38 +622,7 @@ fn learnable(w: &str, capitalised: bool) -> bool {
                 && !(crate::patch::on("legal-forms") && LEGAL_FORMS.contains(&key(w).as_str()))
                 && !detect::only_role_words(w)
                 && !detect::person_noun(w)
-                && !detect::brand_word(w)
                 && !detect::account(w)))
-}
-
-/// The legal forms of a sole trader, as [`key`] has the last word of
-/// `e.K.`, `eK`, `e. Kfm.` and `e. Kfr.`.
-const SOLE_TRADER: &[&str] = &["ek", "k", "kfm", "kfr"];
-
-/// Whether a person's span is a firm: it ends in a legal form.
-fn is_firm(span: &str) -> bool {
-    let k = key(last_word(span));
-    (crate::patch::on("legal-forms") && LEGAL_FORMS.contains(&k.as_str()))
-        || ["ag", "kg", "ug"].contains(&k.as_str())
-        || SOLE_TRADER.contains(&k.as_str())
-}
-
-/// Whether a firm is a sole trader's ([`SOLE_TRADER`]).
-fn sole_trader(span: &str) -> bool {
-    SOLE_TRADER.contains(&key(last_word(span)).as_str())
-}
-
-fn last_word(span: &str) -> &str {
-    span.trim_end_matches(|c: char| !c.is_alphanumeric())
-        .rsplit(|c: char| !c.is_alphanumeric())
-        .next()
-        .unwrap_or("")
-}
-
-/// Whether a word of a firm's name is its trade's ([`TRADE_ENDINGS`]).
-fn trade_word(w: &str) -> bool {
-    let k = key(w);
-    TRADE_WORDS.contains(&k.as_str()) || TRADE_ENDINGS.iter().any(|e| k.ends_with(e))
 }
 
 fn starts_upper(w: &str) -> bool {
@@ -794,18 +704,13 @@ mod tests {
     }
 
     #[test]
-    fn role_words_brands_and_particles_stay_off_the_list() {
+    fn role_words_accounts_and_particles_stay_off_the_list() {
         let names = Names::default();
         learn(&names, "Herr Ole von Hagen", "Herr Ole von Hagen");
-        learn(&names, "PowerShell", "PowerShell");
         learn(&names, "root", "root");
         // `Ole` has three letters, `von` is a particle, `Herr` a role word.
         assert_eq!(
-            found(
-                &names,
-                "Herr Ole sprach von Hagen und PowerShell als root",
-                Source::Text
-            ),
+            found(&names, "Herr Ole sprach von Hagen als root", Source::Text),
             ["Ole", "Hagen"]
         );
         // A kin word beside a name stays off the list (`Albers-Zwillinge`).
@@ -837,52 +742,6 @@ mod tests {
         assert_eq!(
             found(&names, "Wendrich GmbH, haftungsbeschränkt", Source::Text),
             ["Wendrich"]
-        );
-        // Nor the words it shares with every firm of its trade.
-        let names = Names::default();
-        learn(
-            &names,
-            "Kessler Hausverwaltung GmbH",
-            "Kessler Hausverwaltung GmbH",
-        );
-        learn(
-            &names,
-            "Albers & Söhne Malerbetrieb KG",
-            "Albers & Söhne Malerbetrieb KG",
-        );
-        assert_eq!(
-            found(
-                &names,
-                "die Hausverwaltung, Kessler, der Malerbetrieb und Söhne von Albers",
-                Source::Text
-            ),
-            ["Kessler", "Albers"]
-        );
-        // A person's name keeps such a word: `Bau` is a surname too.
-        let person = Names::default();
-        learn(&person, "Herr Jonas Bau", "Jonas Bau");
-        assert_eq!(found(&person, "Grüße an Bau", Source::Text), ["Bau"]);
-    }
-
-    #[test]
-    fn a_sole_traders_surname_ending_like_a_trade_is_learned() {
-        // A sole trader's firm holds the owner's name: a word after another
-        // name word is the surname, whatever it ends in (#138).
-        let names = Names::default();
-        learn(&names, "Ilka Fernbau e.K.", "Ilka Fernbau e.K.");
-        learn(&names, "Timo Wessdienst e. Kfm.", "Timo Wessdienst e. Kfm.");
-        assert_eq!(
-            found(&names, "Frau Fernbau und Herr Wessdienst", Source::Text),
-            ["Fernbau", "Wessdienst"]
-        );
-        // A firm of the trade word alone keeps the filter, and so does any
-        // other legal form.
-        let trade = Names::default();
-        learn(&trade, "Holzbau e.K.", "Holzbau e.K.");
-        learn(&trade, "Kessler Holzbau GmbH", "Kessler Holzbau GmbH");
-        assert_eq!(
-            found(&trade, "der Holzbau von Kessler", Source::Text),
-            ["Kessler"]
         );
     }
 

@@ -40,33 +40,6 @@ pub const OCR_CHECKSUM_PENALTY: f32 = 0.15;
 /// shorter one (`ip`, `tel`, `name`) would sit inside too many others.
 const COMPOUND_TAIL: usize = 5;
 
-/// Starts of words that begin like a context word and name nothing of it:
-/// `Personalisieren`, a web page's button, is no `person`; `Namespace` is
-/// no `name`, `Steuerung` no `steuer`, `Bytes` no `by`. A context word at
-/// the start of one of them is no context.
-const NOT_CONTEXT: &[&str] = &[
-    "personalis",
-    "personaliz",
-    "namespace",
-    "authori",
-    "authent",
-    "byte",
-    "bypass",
-    "steuerung",
-    "telekom",
-    "televis",
-    "taxi",
-];
-
-/// The built-in rules that read text from a picture only (ADR-0051): what
-/// they look for is how a screen cuts a value, or how OCR loses a space in
-/// small print (ADR-0066), and written text rarely holds it.
-const OCR_ONLY: &[&str] = &[
-    "pattern:de.name-cut",
-    "pattern:de.address-glued",
-    "pattern:de.address-lines-glued",
-];
-
 /// Where a text comes from: written, or read from a picture by OCR.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Source {
@@ -121,8 +94,6 @@ pub enum Verdict {
     RoleWords,
     /// An account a system makes (`Public`, `root`).
     Account,
-    /// One word with a capital inside, which NER took for a name.
-    BrandWord,
     /// Inside one of veilq's own placeholders.
     Placeholder,
 }
@@ -152,8 +123,6 @@ pub const FEATURES: &[&str] = &[
     "role_words",
     // An account a system makes (`Public`, `root`).
     "account",
-    // One word with a capital inside, or a product's name.
-    "brand_word",
     // A date that can be a birth date: valid, its year at least ten years back.
     "can_be_birth_date",
     // A date beside a name found in the same text.
@@ -344,12 +313,6 @@ impl Detector {
             out.extend(ner.candidates(text)?);
         }
         for rule in &self.rules {
-            if source != Source::Ocr
-                && crate::patch::on("ocr-only-rules")
-                && OCR_ONLY.contains(&rule.detector.as_str())
-            {
-                continue;
-            }
             for caps in rule.regex.captures_iter(text) {
                 let m = match rule.group {
                     Some(g) => match caps.get(g) {
@@ -464,17 +427,10 @@ impl Detector {
             let value = &text[c.start..c.end];
             let dropped = if !person {
                 None
-            } else if only_role_words(value)
-                || (crate::patch::on("saint")
-                    && saint(value)
-                    && !(crate::patch::on("saint-after-salutation")
-                        && after_salutation(&text[..c.start])))
-            {
+            } else if only_role_words(value) {
                 Some(Verdict::RoleWords)
             } else if account(value) {
                 Some(Verdict::Account)
-            } else if c.detector == "ner" && (brand_word(value) || product(value)) {
-                Some(Verdict::BrandWord)
             } else {
                 None
             };
@@ -579,9 +535,6 @@ impl Detector {
                 }
                 if account(value) {
                     out.push("account");
-                }
-                if brand_word(value) || product(value) {
-                    out.push("brand_word");
                 }
             }
             "DATE_OF_BIRTH" => {
@@ -751,36 +704,6 @@ fn can_be_birth_date(value: &str) -> bool {
         && validate::date(value)
 }
 
-/// Whether `span` is one word with a capital inside after four letters or
-/// more (`PowerShell`, `LinkedIn`): a product's or a company's name, which
-/// NER takes for a person's in a logo or a title bar. A name's prefix is
-/// shorter (`McDonald`, `DeVries`, `MacArthur`).
-pub(crate) fn brand_word(span: &str) -> bool {
-    let chars: Vec<char> = span.chars().collect();
-    crate::patch::on("brand-word")
-        && chars.iter().all(|c| c.is_alphabetic())
-        && chars.first().is_some_and(|c| c.is_uppercase())
-        && (4..chars.len()).any(|i| chars[i].is_uppercase() && chars[i - 1].is_lowercase())
-}
-
-/// Products a screenshot's window shows (`Copilot fragen`) that NER takes
-/// for a person and [`brand_word`] does not know: one word, no capital
-/// inside. None of them is a given name; `Alexa` or `Claude` would be.
-const PRODUCTS: &[&str] = &[
-    "copilot",
-    "outlook",
-    "excel",
-    "firefox",
-    "chrome",
-    "safari",
-    "thunderbird",
-];
-
-/// Whether `value` is one of the [`PRODUCTS`].
-fn product(value: &str) -> bool {
-    crate::patch::on("products") && PRODUCTS.contains(&value.to_lowercase().as_str())
-}
-
 /// Whether `value` is one of the [`ACCOUNTS`].
 pub(crate) fn account(value: &str) -> bool {
     crate::patch::on("accounts") && ACCOUNTS.contains(&value.to_lowercase().as_str())
@@ -934,12 +857,60 @@ pub(crate) const NOT_NAMES: &[&str] = &[
     "team",
 ];
 
+/// Stems of words for kin. A headline's `… kann Vater nicht vergeben` was a
+/// name to NER, and the word went on the file's list (`Zwillinge` too).
+/// Each takes the endings in [`KIN_ENDINGS`] and may end a compound
+/// (`Stiefvater`). `Sohn`, `Bruder`, `Oma` and `Opa` end common surnames
+/// (`Mendelssohn`, `Thoma`) and are left out: a name is not dropped to
+/// spare a false positive.
+const KIN_WORDS: &[&str] = &[
+    "vater",
+    "väter",
+    "mutter",
+    "mütter",
+    "tochter",
+    "töchter",
+    "schwester",
+    "zwilling",
+    "tante",
+    "neffe",
+    "nichte",
+    "witwe",
+    "witwer",
+    "ehefrau",
+    "father",
+    "mother",
+    "daughter",
+    "sister",
+    "twin",
+];
+
+/// The endings of [`KIN_WORDS`]: plural, feminine, case.
+const KIN_ENDINGS: &[&str] = &[
+    "", "e", "en", "er", "ern", "em", "es", "n", "s", "in", "innen",
+];
+
+/// Whether `word` is a word for kin ([`KIN_WORDS`]), alone, inflected or at
+/// the end of a compound.
+pub(crate) fn kin_word(word: &str) -> bool {
+    let w = word.to_lowercase();
+    crate::patch::on("kin-words")
+        && KIN_WORDS.iter().any(|stem| {
+            w.ends_with(stem)
+                || KIN_ENDINGS
+                    .iter()
+                    .any(|e| !e.is_empty() && w.strip_suffix(e).is_some_and(|s| s.ends_with(stem)))
+        })
+}
+
 /// Stems of German words that mean a person or a group of people. German
 /// writes every noun with a capital, and NER calls a word that means a
-/// person one (`Kein Inhalt mit Personen.`). Each takes the endings in
-/// [`PERSON_NOUN_ENDINGS`] and may end a compound (`Kontaktperson`). Words
-/// that are common surnames as well (`Richter`, `Schüler`, `Bürger`,
-/// `Gast`) are left out: a name is not dropped to spare a false positive.
+/// person one (`Kein Inhalt mit Personen.`); a redaction's verify round
+/// reads `Ansprechpartner` alone once the name after it is filled
+/// (ADR-0071). Each takes the endings in [`KIN_ENDINGS`] and may end a
+/// compound (`Kontaktperson`). Words that are common surnames as well
+/// (`Richter`, `Schüler`, `Bürger`, `Gast`) are left out: a name is not
+/// dropped to spare a false positive.
 const PERSON_NOUNS: &[&str] = &[
     "person",
     "mensch",
@@ -994,80 +965,22 @@ const PERSON_NOUNS: &[&str] = &[
     "angehörig",
     "bevollmächtigt",
     "teilnehmend",
-    // Kin: a headline's `… kann Vater nicht vergeben` was a name to NER, and
-    // the word went on the file's list (`Zwillinge` too). `Sohn`, `Bruder`,
-    // `Oma` and `Opa` end common surnames (`Mendelssohn`, `Thoma`) and are
-    // left out.
-    "vater",
-    "väter",
-    "mutter",
-    "mütter",
-    "tochter",
-    "töchter",
-    "schwester",
-    "zwilling",
-    "tante",
-    "neffe",
-    "nichte",
-    "witwe",
-    "witwer",
-    "ehefrau",
-    "father",
-    "mother",
-    "daughter",
-    "sister",
-    "twin",
-];
-
-/// The endings of [`PERSON_NOUNS`]: plural, feminine, case.
-const PERSON_NOUN_ENDINGS: &[&str] = &[
-    "", "e", "en", "er", "ern", "em", "es", "n", "s", "in", "innen",
 ];
 
 /// Whether `word` means a person or a group of people ([`PERSON_NOUNS`]),
-/// alone, inflected or at the end of a compound, or starts with `Personen`.
+/// alone, inflected or at the end of a compound, starts with `Personen`, or
+/// is a word for kin ([`kin_word`]).
 pub(crate) fn person_noun(word: &str) -> bool {
     let w = word.to_lowercase();
-    let nouns = crate::patch::on("person-nouns");
-    let kin = crate::patch::on("kin-words");
-    let first_kin = PERSON_NOUNS
-        .iter()
-        .position(|s| *s == "vater")
-        .expect("the kin block");
-    (nouns && w.starts_with("personen"))
-        || PERSON_NOUNS.iter().enumerate().any(|(i, stem)| {
-            if !(if i < first_kin { nouns } else { kin }) {
-                return false;
-            }
-            w.ends_with(stem)
-                || PERSON_NOUN_ENDINGS
-                    .iter()
-                    .any(|e| !e.is_empty() && w.strip_suffix(e).is_some_and(|s| s.ends_with(stem)))
-        })
-}
-
-/// The length in bytes of `span`'s first word when it is the genitive of
-/// one of `names` (`Brandts`, `Albers'` beside `Jonas Brandt`, `Mira
-/// Albers`) and more words follow: German puts what a name owns after it
-/// (`Brandts Kapuze`), and NER takes both for the name. `None` otherwise.
-pub(crate) fn genitive_head<'a>(
-    span: &str,
-    mut names: impl Iterator<Item = &'a str>,
-) -> Option<usize> {
-    if !crate::patch::on("genitive-cut") {
-        return None;
-    }
-    let end = span.find(char::is_whitespace)?;
-    if !span[end..].chars().any(char::is_alphabetic) {
-        return None;
-    }
-    let word = &span[..end];
-    let stems: Vec<&str> = ["'s", "’s", "s", "'", "’"]
-        .iter()
-        .filter_map(|s| word.strip_suffix(s))
-        .filter(|s| s.chars().count() >= 2 && s.chars().all(char::is_alphabetic))
-        .collect();
-    names.any(|n| stems.contains(&n)).then_some(end)
+    let noun = crate::patch::on("person-nouns")
+        && (w.starts_with("personen")
+            || PERSON_NOUNS.iter().any(|stem| {
+                w.ends_with(stem)
+                    || KIN_ENDINGS.iter().any(|e| {
+                        !e.is_empty() && w.strip_suffix(e).is_some_and(|s| s.ends_with(stem))
+                    })
+            }));
+    noun || kin_word(word)
 }
 
 /// The words of a name: its runs of letters, two or more long.
@@ -1087,69 +1000,20 @@ const POSSESSIVES: &[&str] = &[
     "our", "their",
 ];
 
-/// The endings of a form's field labels (`Kundennummer`, `Aktenzeichen`,
-/// `Kennzeichen`, `number`): a model reads one beside a value or beside a
-/// placeholder in veilq's own output as a name (#112). No name ends so.
-const LABEL_ENDINGS: &[&str] = &["nummer", "zeichen", "number"];
-
-/// Whether `word` is a role, title or greeting word ([`NOT_NAMES`]), a
-/// possessive ([`POSSESSIVES`]) or a field label ([`LABEL_ENDINGS`]),
-/// whatever its case.
-pub(crate) fn role_word(word: &str) -> bool {
-    let w = word.to_lowercase();
-    (crate::patch::on("role-words") && NOT_NAMES.contains(&w.as_str()))
-        || (crate::patch::on("possessive-drop") && POSSESSIVES.contains(&w.as_str()))
-        || (crate::patch::on("label-endings") && LABEL_ENDINGS.iter().any(|e| w.ends_with(e)))
-}
-
-/// Whether `span` names a saint, and with it a town, a church or a feast:
-/// it starts with `Sankt`, `St.`, `Saint`, `Santa` or `Heilige`
-/// (`Die Geschichte von Sankt Martin` on a book's cover). An address with
-/// one is found by the address patterns, not as a person. Joined by a hyphen
-/// it is a surname (`Saint-Exupéry`), and so is one after a salutation
-/// ([`after_salutation`]: `Frau Santa Cruz`; review before 0.8.0).
-pub(crate) fn saint(span: &str) -> bool {
-    let first = span.trim_start_matches(|c: char| !c.is_alphabetic());
-    if first
-        .trim_start_matches(char::is_alphabetic)
-        .starts_with('-')
-    {
-        return false;
-    }
-    span.split(|c: char| !c.is_alphabetic())
-        .find(|w| !w.is_empty())
-        .is_some_and(|w| {
-            matches!(
-                w.to_lowercase().as_str(),
-                "sankt" | "st" | "saint" | "santa" | "heilige" | "heiliger" | "heiligen"
-            )
-        })
-        && span
-            .split(|c: char| !c.is_alphabetic())
-            .filter(|w| !w.is_empty())
-            .count()
-            > 1
-}
-
-/// Whether `before` ends with a salutation (`Frau`, `Herrn`, `Hr.`): what
-/// follows names a person, even a word that names a saint or kin
-/// (`Frau Santa Cruz`, `Herrn Vater`).
-pub(crate) fn after_salutation(before: &str) -> bool {
-    before
-        .trim_end()
-        .trim_end_matches('.')
-        .rsplit(|c: char| !c.is_alphabetic())
-        .next()
-        .is_some_and(salutation)
-}
-
-/// Whether `word` is a salutation: `Herr`, `Herrn`, `Frau`, `Hr`, `Fr`,
-/// `Mr`, `Mrs`, `Ms`.
+/// Whether `word` is a salutation: after one a kin word is a surname.
 pub(crate) fn salutation(word: &str) -> bool {
     matches!(
         word.to_lowercase().as_str(),
         "herr" | "herrn" | "frau" | "hr" | "fr" | "mr" | "mrs" | "ms"
     )
+}
+
+/// Whether `word` is a role, title or greeting word ([`NOT_NAMES`]) or a
+/// possessive ([`POSSESSIVES`]), whatever its case.
+pub(crate) fn role_word(word: &str) -> bool {
+    let w = word.to_lowercase();
+    (crate::patch::on("role-words") && NOT_NAMES.contains(&w.as_str()))
+        || (crate::patch::on("possessive-drop") && POSSESSIVES.contains(&w.as_str()))
 }
 
 /// Whether `span` is nothing but role, title and greeting words
@@ -1312,9 +1176,7 @@ fn has_context(c: &Context, context: &str, before: &str) -> bool {
                 .chars()
                 .next()
                 .is_none_or(|n| !n.is_alphanumeric());
-            let other_word = crate::patch::on("not-context")
-                && NOT_CONTEXT.iter().any(|n| window[i..].starts_with(n));
-            !other_word && (!starts_word || at_start || (tail && at_end))
+            !starts_word || at_start || (tail && at_end)
         })
     })
 }
@@ -1492,7 +1354,7 @@ mod tests {
     }
 
     #[test]
-    fn a_name_cut_short_is_read_from_a_picture_only() {
+    fn a_name_cut_short_is_read() {
         let legal = Policy::parse("version = 1\npurposes = [\"legal\"]\n").unwrap();
         let d = Detector::new(&legal).unwrap();
         let read = |text: &str, source| -> Vec<String> {
@@ -1510,8 +1372,6 @@ mod tests {
             ["Albers, M"]
         );
         assert_eq!(read("Lindqvist-Ober,…", Source::Ocr), ["Lindqvist-Ober,"]);
-        // Written text is not cut by a screen.
-        assert!(read("Albers,...", Source::Text).is_empty());
         // A list of words goes on after its comma: no dots, no cut.
         assert!(read("Albers, Brandt und Vogt", Source::Ocr).is_empty());
         // Below the default threshold.
@@ -1525,7 +1385,7 @@ mod tests {
     }
 
     #[test]
-    fn a_street_glued_to_its_number_is_read_from_a_picture_only() {
+    fn a_street_glued_to_its_number_is_an_address() {
         let d = Detector::new(&Policy::default()).unwrap();
         let read = |text: &str, source| -> Vec<String> {
             d.findings(text, "", source)
@@ -1550,8 +1410,6 @@ mod tests {
             read("LindenstraRe61\n30159 Hannover", Source::Ocr),
             ["LindenstraRe61\n30159 Hannover"]
         );
-        // Written text that glues them is a code.
-        assert!(read("Am Anger7\n15938 Lindau", Source::Text).is_empty());
         // A code of capitals and digits is no street.
         assert!(read("REF12, 28195 Bremen", Source::Ocr).is_empty());
     }
@@ -1606,24 +1464,7 @@ mod tests {
     }
 
     #[test]
-    fn a_saint_and_a_kin_word_are_no_person() {
-        for s in [
-            "Sankt Martin",
-            "St. Martin",
-            "Saint Pauli",
-            "Heilige Elisabeth",
-        ] {
-            assert!(saint(s), "{s}");
-        }
-        // A name that only starts like one, and the word alone, are not.
-        for s in [
-            "Sanktjohann Brandt",
-            "Martin Sankt",
-            "Sankt",
-            "Stefanie Vogt",
-        ] {
-            assert!(!saint(s), "{s}");
-        }
+    fn a_kin_word_is_known() {
         for w in [
             "Vater",
             "Mutter",
@@ -1632,51 +1473,13 @@ mod tests {
             "Schwestern",
             "Twins",
         ] {
-            assert!(person_noun(w), "{w}");
+            assert!(kin_word(w), "{w}");
         }
-        // Surnames that end like kin stay names.
-        for w in ["Mendelssohn", "Thoma", "Henkel", "Bruder"] {
-            assert!(!person_noun(w), "{w}");
+        // Surnames that end like kin stay names, and so does a word for a
+        // person that is no kin.
+        for w in ["Mendelssohn", "Thoma", "Henkel", "Bruder", "Kontaktperson"] {
+            assert!(!kin_word(w), "{w}");
         }
-    }
-
-    #[test]
-    fn a_surname_that_starts_like_a_saint_is_a_person() {
-        // Review before 0.8.0: `Frau Santa Cruz` and `Saint-Exupéry` were
-        // taken for saints and kept. A pattern stands for the detector that
-        // finds the name.
-        let policy = Policy::parse(
-            "version = 1\n[[patterns]]\nname = \"n\"\nentity = \"PERSON\"\nregex = '(Santa Cruz|Saint-Exupéry|Sankt Martin)'\n",
-        )
-        .unwrap();
-        let d = Detector::new(&policy).unwrap();
-        let found = |text: &str| -> Vec<String> {
-            d.findings(text, "", Source::Text)
-                .unwrap()
-                .into_iter()
-                .filter(|c| c.entity.as_str() == "PERSON")
-                .map(|c| text[c.start..c.end].to_owned())
-                .collect()
-        };
-        assert_eq!(found("Frau Santa Cruz hat angerufen"), ["Santa Cruz"]);
-        assert_eq!(found("Herrn Saint-Exupéry zur Kenntnis"), ["Saint-Exupéry"]);
-        // A saint stays none: a feast, a church.
-        assert!(found("Am Tag von Sankt Martin ziehen die Kinder").is_empty());
-    }
-
-    #[test]
-    fn a_field_label_is_no_name() {
-        // A model reads `Kundennummer <ACCOUNT_ID>` as a name (#112).
-        for label in [
-            "Kundennummer",
-            "Vertragsnummer",
-            "Aktenzeichen",
-            "Kennzeichen",
-            "Customer number",
-        ] {
-            assert!(only_role_words(label), "{label}");
-        }
-        assert!(!only_role_words("Lena Nummerow"), "a name that starts so");
     }
 
     #[test]
@@ -1839,24 +1642,6 @@ mod tests {
             "PHONE_NUMBER",
             "0049 30 1234567"
         ));
-    }
-
-    #[test]
-    fn a_word_with_a_capital_inside_is_a_brand() {
-        for word in ["PowerShell", "WordPress", "LinkedIn", "CloudDesk"] {
-            assert!(brand_word(word), "{word}");
-        }
-        for name in [
-            "McDonald",
-            "MacArthur",
-            "DeVries",
-            "DiCaprio",
-            "Brandt",
-            "Mira Albers",
-            "JBrandt",
-        ] {
-            assert!(!brand_word(name), "{name}");
-        }
     }
 
     #[test]
@@ -2029,23 +1814,17 @@ mod tests {
     }
 
     #[test]
-    fn a_word_that_only_starts_like_a_context_word_is_none() {
+    fn a_word_that_starts_with_a_context_word_is_context() {
         let c = Context {
             words: vec!["person".into(), "name".into()],
             boost: 0.5,
             window: 32,
         };
-        // A web page's button beside a game's title: no person named.
-        assert!(!has_context(&c, "", "Personalisieren INTELLECT "));
-        assert!(!has_context(&c, "", "personalized feed "));
-        assert!(!has_context(&c, "", "Namespace: "));
         let tax = Context {
             words: vec!["steuer".into(), "by".into()],
             boost: 0.5,
             window: 32,
         };
-        assert!(!has_context(&tax, "", "Steuerung der Heizung "));
-        assert!(!has_context(&tax, "", "1024 bytes "));
         assert!(has_context(&tax, "", "Steuernummer "));
         assert!(has_context(&tax, "", "written by "));
         // A compound of the word still is, and so are a person's details.
@@ -2159,20 +1938,6 @@ values = ["Mira Albers"]
             ibans("Wir: DE89 3704 0044 0532 0130 00, Kunde: DE02 1203 0000 0000 2020 51"),
             ["DE02 1203 0000 0000 2020 51"]
         );
-    }
-
-    #[test]
-    fn a_genitive_of_a_name_is_its_head() {
-        let names = ["Mira", "Albers", "Jonas", "Brandt"];
-        let head = |span: &str| genitive_head(span, names.iter().copied());
-        assert_eq!(head("Brandts Kapuze"), Some("Brandts".len()));
-        assert_eq!(head("Albers’ Hut"), Some("Albers’".len()));
-        assert_eq!(head("Brandt's Hut"), Some("Brandt's".len()));
-        // A name of its own, one word, or a genitive of no name found.
-        assert_eq!(head("Jonas Brandt"), None);
-        assert_eq!(head("Brandts"), None);
-        assert_eq!(head("Vogts Kapuze"), None);
-        assert_eq!(head("Brandts  4,6"), None);
     }
 
     #[test]
@@ -2458,14 +2223,14 @@ parts = false
     #[cfg(feature = "ablation")]
     #[test]
     fn a_patch_switched_off_is_gone() {
-        assert!(person_noun("Kontaktperson"));
-        crate::patch::switch_off(&["person-nouns".into()]).unwrap();
-        let off = person_noun("Kontaktperson");
-        let kin = person_noun("Vater");
+        assert!(kin_word("Vater"));
+        crate::patch::switch_off(&["kin-words".into()]).unwrap();
+        let off = kin_word("Vater");
+        let role = role_word("Herr");
         crate::patch::switch_off(&[]).unwrap();
-        assert!(!off, "person-nouns off");
-        assert!(kin, "kin-words stay on");
-        assert!(person_noun("Kontaktperson"));
+        assert!(!off, "kin-words off");
+        assert!(role, "role-words stay on");
+        assert!(kin_word("Vater"));
         assert!(crate::patch::switch_off(&["no-such-patch".into()]).is_err());
     }
 }

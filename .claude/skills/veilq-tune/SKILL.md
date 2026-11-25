@@ -70,8 +70,10 @@ structure (#161) would carry it instead. An approved patch is listed in
 `eval/patches.toml` with its case and corpus file, gets an id in
 `veilq_core::patch::PATCHES` and a `crate::patch::on("<id>")` at its switch
 point. `veilq-eval ablate eval --ner --ocr --patch <id>` then shows what it
-is worth; a patch whose ablation shows nothing is dead or its case is
-missing from the corpus.
+is worth, with `--redact` in a redaction's verify rounds too; a patch whose
+ablation shows nothing is dead or its case is missing from the corpus.
+Removing patches is measured as a whole afterwards, scan and redaction:
+two dead ones can guard together (ADR-0071).
 
 ## 3. Pin it with a test
 
