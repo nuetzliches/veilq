@@ -43,6 +43,24 @@ Notable changes per release. The format follows
   for removal), 5 have no case yet. A firm under `Gläubiger:` in running
   text is not found today (the pattern reads fields and cells only).
 
+### Fixed
+
+- A printed line in a picture that OCR read well but for one letter is no
+  longer read again into a false finding (ADR-0072): its second reading as
+  handwriting counts only where it comes near OCR's (at most half its
+  characters other, spaces aside) or where OCR read a quarter of the line
+  badly. A screenshot's line of small print had come back from the
+  handwriting recogniser as a row of digits, filled as a phone number.
+  The handwriting gate is unchanged on every seed.
+- The fill over a line cut by a picture's bottom or top edge no longer
+  runs across a panel in another shade of the background (ADR-0072): it
+  grows over ink only, a pixel more than 60 off the background in a
+  channel, as a box over handwriting already did. In a dark settings
+  window it had covered the whole width of the picture.
+- A new profile, `de/png/settings`: two settings windows in a dark theme
+  with an account and a paired phone named after its owner, cut by the
+  bottom edge.
+
 ## [0.8.0] - 2026-11-24
 
 ### Added

@@ -344,6 +344,98 @@ pub(super) fn news_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
     (png(&c.img), c.truth)
 }
 
+/// Two settings windows side by side in a dark theme (ADR-0072): a device
+/// manager's rows of printed small print on the left, and on the right an
+/// account with name and e-mail over panels a few shades off the window's
+/// background, one reaching the bottom edge. The bottom edge cuts the left
+/// window's last line, a paired phone named after its owner.
+pub(super) fn settings_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
+    let (user, owner) = (Person::de(r), Person::de(r));
+    let (w, h) = (1200, 400);
+    let mut c = Canvas::new(w, h, [44, 48, 56]);
+    let (white, grey) = ([235, 235, 238], [196, 198, 204]);
+    c.lit(20.0, 10.0, 13.0, "Geräte-Center", grey);
+    c.lit(20.0, 40.0, 26.0, "Geräteeinstellungen", white);
+    for (i, (label, lines)) in [
+        (
+            "Ruhezustand",
+            [
+                "Wählen Sie, wann sich das Gerät",
+                "nach einer Pause abschaltet.",
+            ],
+        ),
+        (
+            "Signaltöne",
+            [
+                "Ist es eingeschaltet, hören Sie Töne",
+                "bei jeder Aktion des Geräts.",
+            ],
+        ),
+        (
+            "Statuslicht",
+            [
+                "Ist es eingeschaltet, leuchtet das",
+                "Licht während eines Anrufs.",
+            ],
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let y = 100.0 + i as f32 * 80.0;
+        c.lit(20.0, y, 15.0, label, white);
+        c.lit(200.0, y, 13.0, lines[0], grey);
+        c.lit(200.0, y + 17.0, 13.0, lines[1], grey);
+    }
+    c.lit(20.0, 345.0, 15.0, "Gekoppelte Geräte", white);
+    // Its lower half is past the edge: the truth is what is left of it.
+    let end = c.lit(200.0, h as f32 - 9.0, 15.0, "Smartphone von ", white);
+    c.pii("PERSON", end, h as f32 - 9.0, 15.0, &owner.first, white);
+    if let Some(Truth {
+        location: Location::Region { y, height, .. },
+        ..
+    }) = c.truth.last_mut()
+    {
+        *height = (*height).min(h - *y);
+    }
+    c.rect(620, 0, w - 620, h, [32, 32, 36]);
+    c.pii("PERSON", 690.0, 26.0, 15.0, &user.name(), white);
+    c.pii("EMAIL_ADDRESS", 690.0, 48.0, 12.0, &user.email, white);
+    for (i, item) in [
+        "Startseite",
+        "System",
+        "Bluetooth und Geräte",
+        "Netzwerk und Internet",
+        "Datenschutz",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        c.lit(640.0, 100.0 + i as f32 * 40.0, 14.0, item, white);
+    }
+    for (i, (title, under)) in [
+        ("Lautsprecher", "Standardgerät"),
+        ("Digitaler Ausgang", "Aktiviert"),
+        ("Monitor", "Aktiviert"),
+        ("Lautstärke", ""),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let y = 90 + i as u32 * 72;
+        c.rect(
+            860,
+            y,
+            w - 860,
+            if i == 3 { h - y } else { 66 },
+            [43, 43, 48],
+        );
+        c.lit(880.0, y as f32 + 12.0, 14.0, title, white);
+        c.lit(880.0, y as f32 + 34.0, 12.0, under, grey);
+    }
+    (png(&c.img), c.truth)
+}
+
 /// Creditors as a debt advice application lists them: firms, which are no
 /// personal data where no party's label stands beside them (ADR-0059), and
 /// some named like a person.

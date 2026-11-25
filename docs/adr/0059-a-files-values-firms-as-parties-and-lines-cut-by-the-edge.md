@@ -1,6 +1,6 @@
 # ADR-0059: A file's values, firms as parties, and lines cut by the edge
 
-- **Status:** Accepted (card in the conversation, points R1 to R5, approved by the owner 2026-11-18); amends [ADR-0047](0047-a-name-found-once-is-found-wherever-the-file-names-it.md) (the list holds values and finds a name read one letter off) and [ADR-0045](0045-text-read-badly-is-reviewed-filled-or-stops-the-run.md) (a line cut by the edge is filled whatever the policy says)
+- **Status:** Accepted (card in the conversation, points R1 to R5, approved by the owner 2026-11-18); amends [ADR-0047](0047-a-name-found-once-is-found-wherever-the-file-names-it.md) (the list holds values and finds a name read one letter off) and [ADR-0045](0045-text-read-badly-is-reviewed-filled-or-stops-the-run.md) (a line cut by the edge is filled whatever the policy says); amended by [ADR-0072](0072-a-second-reading-as-handwriting-near-the-first-and-a-cut-line-over-ink.md) (a cut line grows over ink only)
 - **Date:** 2026-11-18
 - **Deciders:** project owner
 - **Related:** [ADR-0023](0023-pictures-are-read-with-ocr-and-redacted-with-black-boxes.md), [ADR-0042](0042-a-column-of-a-list-names-what-its-cells-hold.md), [ADR-0051](0051-file-numbers-by-their-label-cut-names-and-boxes-that-grow.md)
