@@ -91,7 +91,6 @@ export const de: Record<MessageKey, string> = {
   'verdict.overlap': 'in einem längeren Fund',
   'verdict.role_words': 'nur Rollenwörter',
   'verdict.account': 'ein Systemkonto',
-  'verdict.brand_word': 'ein Produktname',
   'verdict.placeholder': 'ein Platzhalter',
 
   'where.span': 'Zeile {line}, Spalte {column}',

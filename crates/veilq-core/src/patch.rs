@@ -2,7 +2,7 @@
 //! measurement can switch one off (#161).
 //!
 //! A patch is a rule written for one case: a word list that drops a
-//! candidate (`PERSON_NOUNS`), a cut (`genitive_head`), a context boost of a
+//! candidate (`KIN_WORDS`), a cut of a wrapped table cell, a context boost of a
 //! locale's pattern. Each is listed in `eval/patches.toml` with the case it
 //! protects; `veilq-eval ablate` reads the corpus once per patch with it
 //! off and shows what it is worth.
@@ -15,33 +15,22 @@
 /// A context boost of a pattern is `context:<locale>.<name>` and is not
 /// listed here: every pattern's boost can be switched off.
 pub const PATCHES: &[&str] = &[
-    "not-context",
     "compound-tail",
     "ocr-checksum-penalty",
-    "ocr-only-rules",
     "zero-rule-column-head",
     "role-words",
     "possessive-drop",
-    "label-endings",
-    "saint",
-    "saint-after-salutation",
     "accounts",
-    "brand-word",
-    "products",
     "person-nouns",
     "kin-words",
-    "genitive-cut",
     "birth-date-beside-name",
     "particles",
+    "ner-name-shape",
+    "ner-saluted-kin",
     "given-name-stopwords",
     "email-host-tags",
-    "ner-name-shape",
-    "ner-domain-dot",
-    "ner-saluted-kin",
     "names-learn-filter",
     "legal-forms",
-    "trade-words",
-    "sole-trader",
     "names-cut-edge",
     "names-glued",
     "names-similar",
@@ -56,7 +45,6 @@ pub const PATCHES: &[&str] = &[
     "weak-neighbours",
     "line-ends-in-name-pair",
     "address-block-pair",
-    "contrast-only-where-weak",
     "office-person-metadata",
     "signature-tile-alone",
     "signature-min-width",

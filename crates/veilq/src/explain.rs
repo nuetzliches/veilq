@@ -107,7 +107,6 @@ fn verdict(v: Verdict) -> &'static str {
         Verdict::Overlap => "overlapped",
         Verdict::RoleWords => "role words",
         Verdict::Account => "system account",
-        Verdict::BrandWord => "brand word",
         Verdict::Placeholder => "placeholder",
     }
 }

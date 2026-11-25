@@ -110,3 +110,4 @@ keep it to about a page.
 | [0068](0068-a-wide-picture-is-read-in-tiles-for-signatures.md) | A wide picture is read in tiles for signatures | Accepted |
 | [0069](0069-points-from-the-review-before-0-8-0.md) | Points from the review before 0.8.0 | Accepted |
 | [0070](0070-the-patches-of-the-detection-are-listed-switchable-and-measured-per-profile.md) | The patches of the detection are listed, switchable, and measured per profile | Accepted |
+| [0071](0071-precision-patches-that-change-nothing-are-removed.md) | Precision patches that change nothing are removed | Accepted |
