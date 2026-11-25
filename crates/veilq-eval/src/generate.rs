@@ -1092,6 +1092,22 @@ pub fn corpus(seed: u64) -> Vec<Doc> {
         content,
         truth,
     });
+    // The record view of an application and headline tiles (#161): the
+    // words of the rules where they mean no name, from streams of their own.
+    let mut r = Rng::new(seed ^ 0x0D35_7000_0000_0000);
+    let (content, truth) = visual::desk_png(&mut r);
+    docs.push(Doc {
+        path: "de/png/desk-1.png".to_owned(),
+        content,
+        truth,
+    });
+    let mut r = Rng::new(seed ^ 0x4EAD_7000_0000_0000);
+    let (content, truth) = visual::headlines_png(&mut r);
+    docs.push(Doc {
+        path: "de/png/headlines-1.png".to_owned(),
+        content,
+        truth,
+    });
     // Forms filled in by hand (#59), from a stream of their own, in a track
     // of their own: `check` reads them only when asked (`--only
     // handwriting`), against a gate of their own.

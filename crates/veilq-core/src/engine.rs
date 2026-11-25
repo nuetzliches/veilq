@@ -1368,7 +1368,7 @@ impl Engine {
                 );
             }
             let mut decisions = self.detector.resolve(text, all, self.explain.is_some());
-            if placeholders && text.contains(['<', '[']) {
+            if placeholders && crate::patch::on("placeholder-drop") && text.contains(['<', '[']) {
                 let spans: Vec<Range<usize>> =
                     PLACEHOLDER.find_iter(text).map(|m| m.range()).collect();
                 for d in &mut decisions {
@@ -1385,7 +1385,11 @@ impl Engine {
         let mut decisions = decide(self.names.as_deref())?;
         // The file's names (ADR-0047): a person found in the input goes on
         // the list, and a name new to it is looked for in this text too.
-        if let Some(names) = self.names.as_ref().filter(|_| pass == Pass::First) {
+        if let Some(names) = self
+            .names
+            .as_ref()
+            .filter(|_| pass == Pass::First || !crate::patch::on("verify-learns-no-names"))
+        {
             let kept = |d: &&crate::detect::Decision| d.verdict == Verdict::Kept;
             let own = |d: &&crate::detect::Decision| {
                 d.candidate.detector != crate::names::DETECTOR
@@ -1405,7 +1409,11 @@ impl Engine {
                 .iter()
                 .filter(kept)
                 .filter(own)
-                .filter(|d| !matches!(d.candidate.entity.as_str(), "PERSON" | "IP_ADDRESS"))
+                .filter(|d| match d.candidate.entity.as_str() {
+                    "PERSON" => false,
+                    "IP_ADDRESS" => !crate::patch::on("values-skip-ip"),
+                    _ => true,
+                })
                 .map(|d| {
                     let c = &d.candidate;
                     (c.start, c.end, &c.entity, c.confidence)

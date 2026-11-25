@@ -344,6 +344,197 @@ pub(super) fn news_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
     (png(&c.img), c.truth)
 }
 
+/// Creditors as a debt advice application lists them: firms, which are no
+/// personal data where no party's label stands beside them (ADR-0059), and
+/// some named like a person.
+const CREDITORS: &[&str] = &[
+    "Nordwerk Inkasso GmbH",
+    "Elbtal Kredit AG",
+    "Kessler Finance GmbH",
+    "Rheinmark Bank AG",
+    "Weststrom Energie GmbH",
+    "Hansaruf Mobilfunk GmbH",
+    "Seeblick Versand GmbH",
+    "Lindgrün Versicherung AG",
+    "Brückner Forderungsmanagement GmbH",
+    "Ostkap Leasing GmbH",
+];
+
+/// The record view of a debt advice application (#161): a side bar whose
+/// entries are the words that make a column's cells names (`Gläubiger`,
+/// `Mandanten`, `Schuldner`), a header with two clients, their birth date
+/// and phone, and a table of creditors, firms and two persons among them,
+/// beside the side bar. Only the persons and their data are personal data.
+pub(super) fn desk_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
+    let (user, a, b) = (Person::de(r), Person::de(r), Person::de(r));
+    let (lawyer, notary) = (Person::de(r), Person::de(r));
+    let mut c = Canvas::new(1400, 760, [255, 255, 255]);
+    c.rect(0, 0, 200, 760, [247, 248, 250]);
+    // The application's name in the logo, not read as text: the side bar's
+    // first entry heads the column of entries below it.
+    c.rect(14, 12, 24, 24, [26, 84, 150]);
+    c.pii(
+        "PERSON",
+        1080.0,
+        14.0,
+        13.0,
+        &format!("{}, {}", user.last, user.first),
+        INK,
+    );
+    let menu = [
+        "Gläubiger",
+        "Mandanten",
+        "Wiedervorlagen",
+        "Fristen",
+        "Dokumente",
+        "Zahlungen",
+        "Berichte",
+    ];
+    // The first entry stands in the row of the header's fields, each a
+    // column's head: the entries below are read as that column's cells.
+    for (i, item) in menu.iter().enumerate() {
+        c.lit(16.0, 50.0 + 26.0 * i as f32, 13.0, item, INK);
+    }
+    for (x, label, value) in [
+        (760.0, "STATUS", "Warten auf Unterlagen"),
+        (960.0, "BEARBEITER", "KMW"),
+    ] {
+        c.lit(x, 52.0, 10.0, label, MUTED);
+        c.lit(x, 70.0, 12.0, value, INK);
+    }
+    let y = 50.0 + 26.0 * menu.len() as f32 + 14.0;
+    let end = c.lit(16.0, y, 12.0, "Akte ", MUTED);
+    c.pii(
+        "PERSON",
+        end,
+        y,
+        12.0,
+        &format!("{}, {}", a.last, a.first),
+        INK,
+    );
+    let sub = [
+        "Stammdaten",
+        "Einnahmen",
+        "Schuldner & Vergleiche",
+        "Ablage",
+    ];
+    for (i, item) in sub.iter().enumerate() {
+        c.lit(28.0, y + 26.0 * (i + 1) as f32, 13.0, item, INK);
+    }
+    // The header: two clients, the first with birth date and phone.
+    let end = c.lit(230.0, 52.0, 10.0, "HERR ", MUTED);
+    c.pii(
+        "PERSON",
+        end,
+        50.0,
+        13.0,
+        &format!("{}, {}", a.last, a.first),
+        INK,
+    );
+    let small = [72, 78, 92];
+    let end = c.pii("DATE_OF_BIRTH", 230.0, 70.0, 11.0, &a.dob_de(r), small);
+    let end = c.lit(end, 70.0, 11.0, " · ", small);
+    c.pii("PHONE_NUMBER", end, 70.0, 11.0, &a.phone, small);
+    let end = c.lit(480.0, 52.0, 10.0, "FRAU ", MUTED);
+    c.pii(
+        "PERSON",
+        end,
+        50.0,
+        13.0,
+        &format!("{}, {}", b.last, b.first),
+        INK,
+    );
+    c.lit(230.0, 110.0, 20.0, "Vergleichsberechnung", INK);
+    // The table of creditors, its rows beside the side bar's entries.
+    for (t, x) in [
+        ("Name", 240.0),
+        ("Forderung", 700.0),
+        ("Rate", 880.0),
+        ("Laufzeit", 1000.0),
+    ] {
+        c.lit(x, 160.0, 12.0, t, MUTED);
+    }
+    c.lit(240.0, 186.0, 12.0, "Einzelforderungen", INK);
+    let rows = CREDITORS.len() + 2;
+    let at = (r.below(4) + 2) as usize;
+    for i in 0..rows {
+        let y = 212.0 + 26.0 * i as f32;
+        if i == at {
+            let end = c.lit(256.0, y, 12.0, "Rechtsanwältin ", INK);
+            c.pii("PERSON", end, y, 12.0, &lawyer.name(), INK);
+        } else if i == at + 3 {
+            let end = c.pii(
+                "PERSON",
+                256.0,
+                y,
+                12.0,
+                &format!("{} {}", notary.last, notary.first),
+                INK,
+            );
+            c.lit(end, y, 12.0, " Notar", INK);
+        } else {
+            let k = i - usize::from(i > at) - usize::from(i > at + 3);
+            c.lit(256.0, y, 12.0, CREDITORS[k % CREDITORS.len()], INK);
+        }
+        let amount = 400 + r.below(14_000);
+        c.lit(
+            700.0,
+            y,
+            12.0,
+            &format!("{}.{:03},00 €", amount / 1000, amount % 1000),
+            INK,
+        );
+        c.lit(
+            880.0,
+            y,
+            12.0,
+            &format!("{},{:02} €", 1 + r.below(30), r.below(100)),
+            INK,
+        );
+        c.lit(1000.0, y, 12.0, "36", INK);
+    }
+    (png(&c.img), c.truth)
+}
+
+/// Headline tiles of a news page (#161): a name in the genitive at the end
+/// of a headline's line with a compound after it on the next, nouns that
+/// mean persons (`Fahrzeugbesitzer`, `Rentner`), a bookmark bar of product
+/// names, and a source line above each headline. Only the persons are
+/// personal data.
+pub(super) fn headlines_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
+    let (p, q, s) = (Person::de(r), Person::de(r), Person::de(r));
+    let mut c = Canvas::new(1200, 300, [36, 36, 42]);
+    let white = [248, 248, 248];
+    let grey = [170, 170, 176];
+    for (i, mark) in ["Kalender", "Notizen", "Wetterdienst", "Ablage", "Fahrplan"]
+        .iter()
+        .enumerate()
+    {
+        c.lit(300.0 + 120.0 * i as f32, 12.0, 12.0, mark, grey);
+    }
+    let size = 19.0;
+    let gap = 26.0;
+    c.lit(20.0, 60.0, 12.0, "Morgenblatt · 3 Std.", grey);
+    let end = c.lit(20.0, 84.0, size, "Kommentar: ", white);
+    let end = c.pii("PERSON", end, 84.0, size, &p.last, white);
+    c.lit(end, 84.0, size, "s", white);
+    c.lit(20.0, 84.0 + gap, size, "Sommer-Bilanz bleibt offen", white);
+    c.lit(420.0, 60.0, 12.0, "Kreisanzeiger · 1 Std.", grey);
+    c.lit(420.0, 84.0, size, "Neue Regeln: Was", white);
+    c.lit(420.0, 84.0 + gap, size, "Fahrzeugbesitzer jetzt", white);
+    c.lit(420.0, 84.0 + 2.0 * gap, size, "wissen müssen", white);
+    c.lit(820.0, 60.0, 12.0, "Abendkurier · 5 Std.", grey);
+    let end = c.lit(820.0, 84.0, size, "Wirt ", white);
+    let end = c.pii("PERSON", end, 84.0, size, &q.name(), white);
+    c.lit(end, 84.0, size, " über", white);
+    c.lit(820.0, 84.0 + gap, size, "Rentner und Stammgäste", white);
+    c.lit(20.0, 200.0, 12.0, "Lokales · 2 Std.", grey);
+    let end = c.lit(20.0, 224.0, size, "Bürgermeisterin ", white);
+    let end = c.pii("PERSON", end, 224.0, size, &s.last, white);
+    c.lit(end, 224.0, size, " eröffnet den Wochenmarkt", white);
+    (png(&c.img), c.truth)
+}
+
 /// Blue ink of a ballpoint pen.
 const PEN: [u8; 3] = [24, 46, 128];
 /// How large a hand writes on a form's line.

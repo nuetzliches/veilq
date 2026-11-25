@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "x": 105,
+        "y": 88,
+        "width": 53,
+        "height": 15
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "x": 849,
+        "y": 88,
+        "width": 72,
+        "height": 15
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "x": 132,
+        "y": 228,
+        "width": 65,
+        "height": 12
+      }
+    }
+  ]
+}

@@ -136,7 +136,9 @@ impl Ner {
                     confidence: confidence(score),
                     detector: "ner".into(),
                 };
-                if can_be_name(&text[s..e]) && out.iter().all(|o| o.end <= s || o.start >= e) {
+                if (!crate::patch::on("ner-name-shape") || can_be_name(&text[s..e]))
+                    && out.iter().all(|o| o.end <= s || o.start >= e)
+                {
                     out.push(c);
                 }
             }
@@ -316,7 +318,9 @@ pub(crate) fn cut_genitives(text: &str, found: &mut [Candidate]) {
 /// (`Lesehaus.de`), never a name's: an initial has a space after it.
 fn can_be_name(span: &str) -> bool {
     let chars: Vec<char> = span.chars().collect();
-    if chars.windows(2).any(|p| p[0] == '.' && p[1].is_lowercase()) {
+    if crate::patch::on("ner-domain-dot")
+        && chars.windows(2).any(|p| p[0] == '.' && p[1].is_lowercase())
+    {
         return false;
     }
     let words: Vec<&str> = span
@@ -326,16 +330,16 @@ fn can_be_name(span: &str) -> bool {
     let capital = |w: &str| w.chars().next().is_some_and(char::is_uppercase);
     // After a salutation a kin word is a surname (`Herrn Vater`; review
     // before 0.8.0).
-    let saluted = words.iter().any(|w| crate::detect::salutation(w));
-    words
-        .iter()
-        .all(|w| capital(w) || crate::detect::PARTICLES.contains(w))
-        && words.iter().any(|w| {
-            capital(w)
-                && w.chars().skip(1).any(char::is_lowercase)
-                && !crate::detect::role_word(w)
-                && (saluted || !crate::detect::person_noun(w))
-        })
+    let saluted =
+        crate::patch::on("ner-saluted-kin") && words.iter().any(|w| crate::detect::salutation(w));
+    words.iter().all(|w| {
+        capital(w) || (crate::patch::on("particles") && crate::detect::PARTICLES.contains(w))
+    }) && words.iter().any(|w| {
+        capital(w)
+            && w.chars().skip(1).any(char::is_lowercase)
+            && !crate::detect::role_word(w)
+            && (saluted || !crate::detect::person_noun(w))
+    })
 }
 
 /// The person spans of the logits `[1, words, max_width, labels]`.

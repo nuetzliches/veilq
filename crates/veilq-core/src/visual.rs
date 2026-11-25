@@ -145,7 +145,12 @@ fn page(lines: &[Line]) -> Page {
             None => stacks.push(vec![l]),
         }
     }
-    let cells: Vec<(Rect, Vec<&Line>)> = cut(&stacks)
+    let stacks = if crate::patch::on("table-cell-cut") {
+        cut(&stacks)
+    } else {
+        stacks
+    };
+    let cells: Vec<(Rect, Vec<&Line>)> = stacks
         .into_iter()
         .map(|c| (c.iter().skip(1).fold(c[0].rect, |r, l| r.union(&l.rect)), c))
         .collect();
@@ -333,7 +338,7 @@ fn neighbours(lines: &[Line], heads: &[bool], i: usize) -> String {
         .min_by_key(|(_, o)| l.y.saturating_sub(o.rect.bottom()));
     let head = column(lines, i, true)
         .min_by_key(|&j| lines[j].rect.y)
-        .filter(|&j| in_head_row(lines, heads, j))
+        .filter(|&j| crate::patch::on("column-head-context") && in_head_row(lines, heads, j))
         .map_or("", |j| lines[j].text.as_str());
     let near = [above, left]
         .into_iter()
@@ -648,7 +653,7 @@ const EDGE: u32 = 2;
 /// finding's range is the same in both and its boxes stay its own. `None`
 /// when there is nothing to change.
 fn unmarked(text: &str) -> Option<String> {
-    if !text.contains(['·', '-']) {
+    if !crate::patch::on("formatting-marks") || !text.contains(['·', '-']) {
         return None;
     }
     let chars: Vec<char> = text.chars().collect();
@@ -703,7 +708,10 @@ fn with_rest(
     others: &[Rect],
     w: u32,
 ) -> Vec<Rect> {
-    if c.entity.as_str() != "IBAN_CODE" || crate::detect::validate::iban(value) {
+    if !crate::patch::on("iban-rest-widen")
+        || c.entity.as_str() != "IBAN_CODE"
+        || crate::detect::validate::iban(value)
+    {
         return rects;
     }
     let read = crate::detect::validate::compact(value);
@@ -872,7 +880,12 @@ fn candidates(
                     if let Some(n) = crate::detect::genitive_head(span, others) {
                         c.end = c.start + n;
                     }
-                    for (start, end) in weak_neighbours(line, &text, c.start, c.end) {
+                    let weak = if crate::patch::on("weak-neighbours") {
+                        weak_neighbours(line, &text, c.start, c.end)
+                    } else {
+                        Vec::new()
+                    };
+                    for (start, end) in weak {
                         let rects = boxes(&one, start, end, w, h);
                         let n = crate::detect::Candidate {
                             start,
@@ -899,8 +912,13 @@ fn candidates(
     // `Kellermann!: …`), whose lines stand further apart than a cell's.
     for (i, line) in lines.iter().enumerate() {
         let next = lines.iter().filter(|l| {
-            (l.text.starts_with(|c: char| c.is_ascii_digit()) && below(line, l))
-                || (ends_in_name[i] && l.text.starts_with(char::is_uppercase) && under(line, l))
+            (crate::patch::on("address-block-pair")
+                && l.text.starts_with(|c: char| c.is_ascii_digit())
+                && below(line, l))
+                || (crate::patch::on("line-ends-in-name-pair")
+                    && ends_in_name[i]
+                    && l.text.starts_with(char::is_uppercase)
+                    && under(line, l))
         });
         for l in next {
             let base = line.text.len() + 1;
@@ -939,7 +957,9 @@ fn candidates(
         let context = neighbours(lines, &heads, i);
         for c in engine.ocr_findings_read_again(&a.text, &context, "contrast")? {
             let rects = boxes(&one, c.start, c.end, w, h);
-            if rects.iter().any(|r| weak.iter().any(|k| r.intersects(k))) {
+            if !crate::patch::on("contrast-only-where-weak")
+                || rects.iter().any(|r| weak.iter().any(|k| r.intersects(k)))
+            {
                 out.push((c, rects));
             }
         }
