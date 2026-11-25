@@ -175,7 +175,11 @@ impl Faces {
     /// holds for no face ([`NO_FACE`]), and how many it left out. Without a
     /// verifier, all of them.
     pub fn verify(&self, img: &RgbImage, faces: Vec<Face>) -> Result<(Vec<Face>, usize), Error> {
-        let Some(verifier) = &self.verifier else {
+        let Some(verifier) = self
+            .verifier
+            .as_ref()
+            .filter(|_| crate::patch::on("face-verify-gate"))
+        else {
             return Ok((faces, 0));
         };
         let mut kept = Vec::with_capacity(faces.len());

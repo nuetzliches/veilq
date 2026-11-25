@@ -12,3 +12,20 @@ default = 0.98
 [precision]
 # A version number after `client=` reads as an IP address (see gate.toml).
 min = 0.97
+
+# Profiles measured apart (#161, ADR-0070): left out of the totals above,
+# each held at what main reached on the corpus and the held-out seeds
+# 7001 to 7005 when it was added, scan and redaction alike. They measure
+# what veilq does badly today; a change may raise a floor, never lower it.
+#
+# The record view of an application: the entries of a side bar under
+# `Gläubiger` read as a column of names (9 to 12 false findings).
+[profiles."de/png/desk"]
+recall = 1.0
+precision = 0.5
+
+# Headline tiles: a genitive at a line's end unfound on some seeds,
+# `Fahrzeugbesitzer` taken for a name.
+[profiles."de/png/headlines"]
+recall = 0.66
+precision = 0.8

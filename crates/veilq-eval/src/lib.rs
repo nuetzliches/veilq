@@ -1,6 +1,8 @@
 //! The synthetic evaluation corpus of veilq (ADR-0013): the generator, the
 //! ground truth and the measurement against it.
 
+#[cfg(feature = "ablation")]
+pub mod ablate;
 pub mod candidates;
 pub mod check;
 pub mod generate;

@@ -21,7 +21,10 @@ veilq-core.workspace = true
 zip = { version = "9.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [features]
-default = ["ner", "ocr"]
+default = ["ner", "ocr", "ablation"]
+# `ablate` switches the hand-written patches off one by one (#161). The
+# release builds `-p veilq` alone, so its engine has no such switch.
+ablation = ["veilq-core/ablation"]
 # `check --ner` runs the NER model when it is installed.
 ner = ["veilq-core/ner"]
 # `check --ocr` reads the corpus's pictures with the installed OCR (and

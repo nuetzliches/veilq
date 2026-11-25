@@ -435,7 +435,9 @@ fn segments(name: &str, s: &str, fields: Option<&[String]>) -> Result<Vec<Segmen
                 for (a, v) in attrs {
                     let al = xml::local(a);
                     let value = &s[v.clone()];
-                    let forced = if PERSON_ATTRS.contains(&al) || (comment_authors && al == "name")
+                    let forced = if (crate::patch::on("office-person-metadata")
+                        && PERSON_ATTRS.contains(&al))
+                        || (comment_authors && al == "name")
                     {
                         Some("PERSON")
                     } else {
@@ -536,7 +538,9 @@ fn segments(name: &str, s: &str, fields: Option<&[String]>) -> Result<Vec<Segmen
                 let (element, start_tag, space) = stack.last().cloned().unwrap_or_default();
                 let forced = if custom && stack.iter().any(|(e, _, _)| e == "property") {
                     Some("METADATA")
-                } else if PERSON_ELEMENTS.contains(&element.as_str()) {
+                } else if crate::patch::on("office-person-metadata")
+                    && PERSON_ELEMENTS.contains(&element.as_str())
+                {
                     Some("PERSON")
                 } else if element == "Company" {
                     Some("ORGANIZATION")

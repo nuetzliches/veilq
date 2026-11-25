@@ -6,6 +6,21 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The corpus measures per profile (ADR-0070, #161): `veilq-eval check`
+  prints recall, precision and false findings per file for each kind of
+  document (`de/pdf/scan-fax`, `de/png/news`), and a profile with a gate
+  of its own is measured apart from the totals. Two profiles join the
+  corpus: the record view of an application, whose side bar entries
+  veilq reads as a column of names today (precision 0.5), and headline
+  tiles. Detection is unchanged.
+- The hand-written patches of the detection are listed in
+  `eval/patches.toml` (66: word lists, cuts, pairings, context boosts) with
+  the case each protects, and `veilq-eval ablate` measures each one by
+  switching it off. Only the eval's build can switch one off; the release
+  has no such switch.
+
 ## [0.8.0] - 2026-11-24
 
 ### Added

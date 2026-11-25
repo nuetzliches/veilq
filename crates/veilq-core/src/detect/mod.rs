@@ -344,7 +344,10 @@ impl Detector {
             out.extend(ner.candidates(text)?);
         }
         for rule in &self.rules {
-            if source != Source::Ocr && OCR_ONLY.contains(&rule.detector.as_str()) {
+            if source != Source::Ocr
+                && crate::patch::on("ocr-only-rules")
+                && OCR_ONLY.contains(&rule.detector.as_str())
+            {
                 continue;
             }
             for caps in rule.regex.captures_iter(text) {
@@ -363,13 +366,15 @@ impl Detector {
                 // the context's last line, a column's name: a picture's
                 // line puts the head of its table's column there, after
                 // the lines beside it (`visual::neighbours`).
-                let (context, before) = if rule.confidence <= 0.0 {
-                    (context.rsplit('\n').next().unwrap_or(""), "")
-                } else {
-                    (context, &text[..m.start()])
-                };
+                let (context, before) =
+                    if rule.confidence <= 0.0 && crate::patch::on("zero-rule-column-head") {
+                        (context.rsplit('\n').next().unwrap_or(""), "")
+                    } else {
+                        (context, &text[..m.start()])
+                    };
                 let mut confidence = rule.confidence;
                 if let Some(c) = &rule.context
+                    && crate::patch::context_on(&rule.detector)
                     && has_context(c, context, before)
                 {
                     confidence += c.boost;
@@ -380,7 +385,10 @@ impl Detector {
                 if let Some(v) = &rule.validate
                     && !validate::check(v, m.as_str())
                 {
-                    confidence -= if source == Source::Ocr && validate::is_checksum(v) {
+                    confidence -= if source == Source::Ocr
+                        && validate::is_checksum(v)
+                        && crate::patch::on("ocr-checksum-penalty")
+                    {
                         OCR_CHECKSUM_PENALTY
                     } else {
                         VALIDATION_PENALTY
@@ -457,14 +465,15 @@ impl Detector {
             let dropped = if !person {
                 None
             } else if only_role_words(value)
-                || (saint(value) && !after_salutation(&text[..c.start]))
+                || (crate::patch::on("saint")
+                    && saint(value)
+                    && !(crate::patch::on("saint-after-salutation")
+                        && after_salutation(&text[..c.start])))
             {
                 Some(Verdict::RoleWords)
-            } else if ACCOUNTS.contains(&value.to_lowercase().as_str()) {
+            } else if account(value) {
                 Some(Verdict::Account)
-            } else if c.detector == "ner"
-                && (brand_word(value) || PRODUCTS.contains(&value.to_lowercase().as_str()))
-            {
+            } else if c.detector == "ner" && (brand_word(value) || product(value)) {
                 Some(Verdict::BrandWord)
             } else {
                 None
@@ -508,7 +517,9 @@ impl Detector {
         }
         let before: Vec<f32> = chosen.iter().map(|c| c.confidence).collect();
         let names = self.names_found(&chosen);
-        self.birth_dates_beside_names(text, &names, &mut chosen);
+        if crate::patch::on("birth-date-beside-name") {
+            self.birth_dates_beside_names(text, &names, &mut chosen);
+        }
         for (c, before) in chosen.into_iter().zip(before) {
             let raised = c.confidence > before;
             let verdict = if c.confidence < round(self.threshold(&c.entity)) {
@@ -566,10 +577,10 @@ impl Detector {
                 if only_role_words(value) || after_possessive(text, c).is_none() {
                     out.push("role_words");
                 }
-                if ACCOUNTS.contains(&value.to_lowercase().as_str()) {
+                if account(value) {
                     out.push("account");
                 }
-                if brand_word(value) || PRODUCTS.contains(&value.to_lowercase().as_str()) {
+                if brand_word(value) || product(value) {
                     out.push("brand_word");
                 }
             }
@@ -746,7 +757,8 @@ fn can_be_birth_date(value: &str) -> bool {
 /// shorter (`McDonald`, `DeVries`, `MacArthur`).
 pub(crate) fn brand_word(span: &str) -> bool {
     let chars: Vec<char> = span.chars().collect();
-    chars.iter().all(|c| c.is_alphabetic())
+    crate::patch::on("brand-word")
+        && chars.iter().all(|c| c.is_alphabetic())
         && chars.first().is_some_and(|c| c.is_uppercase())
         && (4..chars.len()).any(|i| chars[i].is_uppercase() && chars[i - 1].is_lowercase())
 }
@@ -764,8 +776,18 @@ const PRODUCTS: &[&str] = &[
     "thunderbird",
 ];
 
+/// Whether `value` is one of the [`PRODUCTS`].
+fn product(value: &str) -> bool {
+    crate::patch::on("products") && PRODUCTS.contains(&value.to_lowercase().as_str())
+}
+
+/// Whether `value` is one of the [`ACCOUNTS`].
+pub(crate) fn account(value: &str) -> bool {
+    crate::patch::on("accounts") && ACCOUNTS.contains(&value.to_lowercase().as_str())
+}
+
 /// The accounts a system makes, whose home directory names no person.
-pub(crate) const ACCOUNTS: &[&str] = &[
+const ACCOUNTS: &[&str] = &[
     "public",
     "default",
     "defaultuser0",
@@ -1006,8 +1028,17 @@ const PERSON_NOUN_ENDINGS: &[&str] = &[
 /// alone, inflected or at the end of a compound, or starts with `Personen`.
 pub(crate) fn person_noun(word: &str) -> bool {
     let w = word.to_lowercase();
-    w.starts_with("personen")
-        || PERSON_NOUNS.iter().any(|stem| {
+    let nouns = crate::patch::on("person-nouns");
+    let kin = crate::patch::on("kin-words");
+    let first_kin = PERSON_NOUNS
+        .iter()
+        .position(|s| *s == "vater")
+        .expect("the kin block");
+    (nouns && w.starts_with("personen"))
+        || PERSON_NOUNS.iter().enumerate().any(|(i, stem)| {
+            if !(if i < first_kin { nouns } else { kin }) {
+                return false;
+            }
             w.ends_with(stem)
                 || PERSON_NOUN_ENDINGS
                     .iter()
@@ -1023,6 +1054,9 @@ pub(crate) fn genitive_head<'a>(
     span: &str,
     mut names: impl Iterator<Item = &'a str>,
 ) -> Option<usize> {
+    if !crate::patch::on("genitive-cut") {
+        return None;
+    }
     let end = span.find(char::is_whitespace)?;
     if !span[end..].chars().any(char::is_alphabetic) {
         return None;
@@ -1063,9 +1097,9 @@ const LABEL_ENDINGS: &[&str] = &["nummer", "zeichen", "number"];
 /// whatever its case.
 pub(crate) fn role_word(word: &str) -> bool {
     let w = word.to_lowercase();
-    NOT_NAMES.contains(&w.as_str())
-        || POSSESSIVES.contains(&w.as_str())
-        || LABEL_ENDINGS.iter().any(|e| w.ends_with(e))
+    (crate::patch::on("role-words") && NOT_NAMES.contains(&w.as_str()))
+        || (crate::patch::on("possessive-drop") && POSSESSIVES.contains(&w.as_str()))
+        || (crate::patch::on("label-endings") && LABEL_ENDINGS.iter().any(|e| w.ends_with(e)))
 }
 
 /// Whether `span` names a saint, and with it a town, a church or a feast:
@@ -1140,7 +1174,8 @@ fn after_possessive(text: &str, c: &Candidate) -> Option<Candidate> {
         .split(|ch: char| !ch.is_alphabetic())
         .next()
         .unwrap_or("");
-    if !POSSESSIVES.contains(&first.to_lowercase().as_str()) {
+    if !crate::patch::on("possessive-drop") || !POSSESSIVES.contains(&first.to_lowercase().as_str())
+    {
         return Some(c.clone());
     }
     let rest = value[first.len()..].trim_start_matches(|ch: char| !ch.is_alphabetic());
@@ -1267,7 +1302,7 @@ fn has_context(c: &Context, context: &str, before: &str) -> bool {
     let window = &joined[start..];
     c.words.iter().any(|w| {
         let starts_word = w.chars().next().is_some_and(char::is_alphanumeric);
-        let tail = w.chars().count() >= COMPOUND_TAIL;
+        let tail = crate::patch::on("compound-tail") && w.chars().count() >= COMPOUND_TAIL;
         window.match_indices(w.as_str()).any(|(i, _)| {
             let at_start = window[..i]
                 .chars()
@@ -1277,7 +1312,8 @@ fn has_context(c: &Context, context: &str, before: &str) -> bool {
                 .chars()
                 .next()
                 .is_none_or(|n| !n.is_alphanumeric());
-            let other_word = NOT_CONTEXT.iter().any(|n| window[i..].starts_with(n));
+            let other_word = crate::patch::on("not-context")
+                && NOT_CONTEXT.iter().any(|n| window[i..].starts_with(n));
             !other_word && (!starts_word || at_start || (tail && at_end))
         })
     })
@@ -2417,5 +2453,19 @@ parts = false
         let err = Detector::new(&policy).err().unwrap().to_string();
         assert!(err.contains("not read"), "{err}");
         assert!(Policy::parse("version = 1\n[[deny]]\nentity = \"PERSON\"\n").is_err());
+    }
+
+    #[cfg(feature = "ablation")]
+    #[test]
+    fn a_patch_switched_off_is_gone() {
+        assert!(person_noun("Kontaktperson"));
+        crate::patch::switch_off(&["person-nouns".into()]).unwrap();
+        let off = person_noun("Kontaktperson");
+        let kin = person_noun("Vater");
+        crate::patch::switch_off(&[]).unwrap();
+        assert!(!off, "person-nouns off");
+        assert!(kin, "kin-words stay on");
+        assert!(person_noun("Kontaktperson"));
+        assert!(crate::patch::switch_off(&["no-such-patch".into()]).is_err());
     }
 }

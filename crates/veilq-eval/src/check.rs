@@ -51,12 +51,65 @@ pub struct Item {
     pub detector: Option<String>,
 }
 
+/// What one profile of the corpus reached (#161): its documents, values and
+/// findings over all types.
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct ProfileStat {
+    pub files: usize,
+    pub truth: usize,
+    pub covered: usize,
+    pub findings: usize,
+    pub false_positives: usize,
+}
+
+impl ProfileStat {
+    pub fn recall(&self) -> f64 {
+        if self.truth == 0 {
+            1.0
+        } else {
+            self.covered as f64 / self.truth as f64
+        }
+    }
+
+    pub fn precision(&self) -> f64 {
+        if self.findings == 0 {
+            1.0
+        } else {
+            1.0 - self.false_positives as f64 / self.findings as f64
+        }
+    }
+
+    /// False findings per document.
+    pub fn false_per_file(&self) -> f64 {
+        if self.files == 0 {
+            0.0
+        } else {
+            self.false_positives as f64 / self.files as f64
+        }
+    }
+}
+
 #[derive(Debug, Default, Serialize)]
 pub struct Evaluation {
     pub files: usize,
     pub per_entity: BTreeMap<String, Stat>,
+    /// Per profile ([`profile`]): a kind of document in one language and
+    /// format, the letters, the scans of a fax, a news page.
+    pub per_profile: BTreeMap<String, ProfileStat>,
     pub misses: Vec<Item>,
     pub false_positives: Vec<Item>,
+}
+
+/// The profile of a document in the corpus (#161): its path without the
+/// number of its copy, `de/pdf/scan-fax` for `de/pdf/scan-fax-1.pdf`.
+pub fn profile(name: &str) -> String {
+    let stem = name.rsplit_once('.').map_or(name, |(s, _)| s);
+    match stem.rsplit_once('-') {
+        Some((kind, n)) if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()) => {
+            kind.to_owned()
+        }
+        _ => stem.to_owned(),
+    }
 }
 
 impl Evaluation {
@@ -85,6 +138,21 @@ impl Evaluation {
 pub struct Gate {
     pub recall: RecallGate,
     pub precision: PrecisionGate,
+    /// What a profile must reach on its own (#161). A profile named here is
+    /// measured apart: left out of the totals, so that a profile added to
+    /// measure what veilq does badly today starts at its own numbers and
+    /// the totals hold the rest of the corpus as before.
+    #[serde(default)]
+    pub profiles: BTreeMap<String, ProfileGate>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProfileGate {
+    #[serde(default)]
+    pub recall: Option<f64>,
+    #[serde(default)]
+    pub precision: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -375,12 +443,17 @@ pub fn engine() -> anyhow::Result<Engine> {
 /// picture's faces and signatures are filled as a redaction fills them, and
 /// it is read again until a round finds nothing new (ADR-0026). A scan fills
 /// nothing, so it cannot see a value a filled region took the context of.
+///
+/// The profiles in `apart` (those with a gate of their own, #161) count in
+/// [`Evaluation::per_profile`] only: their documents, values and findings
+/// are left out of the totals, which the gate holds as before.
 pub fn evaluate(
     dir: &Path,
     only: Option<&str>,
     ner: bool,
     ocr: bool,
     redact: bool,
+    apart: &std::collections::BTreeSet<String>,
 ) -> anyhow::Result<(Evaluation, usize)> {
     let engine = engine_for(ner, ocr)?;
     let mut eval = Evaluation::default();
@@ -406,8 +479,15 @@ pub fn evaluate(
             .1
             .report
             .findings;
-        findings_total += found.len();
-        eval.files += 1;
+        let kind = profile(&name);
+        // A profile measured apart (#161) counts in its own numbers only.
+        let shared = !apart.contains(&kind);
+        if shared {
+            findings_total += found.len();
+            eval.files += 1;
+        }
+        let mut stats: BTreeMap<String, Stat> = BTreeMap::new();
+        let false_before = eval.false_positives.len();
         let found_places: Vec<_> = found
             .iter()
             .map(|f| place(&f.location, json_document))
@@ -415,10 +495,7 @@ pub fn evaluate(
         let metadata = |e: &veilq_core::EntityType| e.as_str() == "METADATA";
         for t in &truth.findings {
             let (key, (s, e)) = place(&t.location, json_document);
-            let stat = eval
-                .per_entity
-                .entry(t.entity.as_str().to_owned())
-                .or_default();
+            let stat = stats.entry(t.entity.as_str().to_owned()).or_default();
             stat.truth += 1;
             if let Some((at, tb)) = region(&t.location) {
                 let here: Vec<_> = found
@@ -491,7 +568,7 @@ pub fn evaluate(
                 }),
             };
             if !explained {
-                eval.per_entity
+                stats
                     .entry(f.entity.as_str().to_owned())
                     .or_default()
                     .false_positives += 1;
@@ -502,6 +579,21 @@ pub fn evaluate(
                     value: value_at(&content, format, &f.location),
                     detector: Some(f.detector.clone()),
                 });
+            }
+        }
+        let p = eval.per_profile.entry(kind).or_default();
+        p.files += 1;
+        p.truth += stats.values().map(|s| s.truth).sum::<usize>();
+        p.covered += stats.values().map(|s| s.covered).sum::<usize>();
+        p.findings += found.len();
+        p.false_positives += eval.false_positives.len() - false_before;
+        if shared {
+            for (k, s) in stats {
+                let a = eval.per_entity.entry(k).or_default();
+                a.truth += s.truth;
+                a.covered += s.covered;
+                a.typed += s.typed;
+                a.false_positives += s.false_positives;
             }
         }
     }
@@ -592,5 +684,57 @@ pub fn judge(eval: &Evaluation, findings: usize, gate: &Gate) -> Vec<String> {
     if precision < gate.precision.min {
         failures.push(format!("precision {precision:.3} < {}", gate.precision.min));
     }
+    for (name, g) in &gate.profiles {
+        // A profile the run did not read (`--only`, no `--ocr`) is not judged.
+        let Some(p) = eval.per_profile.get(name) else {
+            continue;
+        };
+        if let Some(min) = g.recall
+            && p.recall() < min
+        {
+            failures.push(format!("recall of {name} {:.3} < {min}", p.recall()));
+        }
+        if let Some(min) = g.precision
+            && p.precision() < min
+        {
+            failures.push(format!("precision of {name} {:.3} < {min}", p.precision()));
+        }
+    }
     failures
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_profile_is_the_path_without_the_copy() {
+        assert_eq!(profile("de/pdf/scan-fax-1.pdf"), "de/pdf/scan-fax");
+        assert_eq!(profile("de/png/news-1.png"), "de/png/news");
+        assert_eq!(profile("de/text/app-3.log"), "de/text/app");
+        assert_eq!(profile("handwriting/form.png"), "handwriting/form");
+    }
+
+    #[test]
+    fn a_profile_below_its_gate_fails_and_one_not_read_does_not() {
+        let gate: Gate = toml::from_str(
+            "[recall]\ndefault = 0.9\n[precision]\nmin = 0.5\n\
+             [profiles.\"de/png/news\"]\nprecision = 0.9\n\
+             [profiles.\"de/png/inbox\"]\nprecision = 0.9\n",
+        )
+        .unwrap();
+        let mut eval = Evaluation::default();
+        eval.per_profile.insert(
+            "de/png/news".into(),
+            ProfileStat {
+                files: 1,
+                truth: 2,
+                covered: 2,
+                findings: 4,
+                false_positives: 2,
+            },
+        );
+        let failures = judge(&eval, 4, &gate);
+        assert_eq!(failures, vec!["precision of de/png/news 0.500 < 0.9"]);
+    }
 }

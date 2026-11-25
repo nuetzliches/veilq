@@ -45,3 +45,6 @@ ocr = ["models"]
 pdf = ["ocr", "dep:pdfium-render"]
 # ONNX Runtime, loaded at run time.
 models = ["dep:ort"]
+# The hand-written patches can be switched off for a measurement (#161):
+# only `veilq-eval` turns it on, the shipped binary has no such switch.
+ablation = []

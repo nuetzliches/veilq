@@ -27,6 +27,7 @@ pub mod ner;
 pub mod ocr;
 pub mod office;
 pub mod outcome;
+pub mod patch;
 #[cfg(feature = "pdf")]
 pub mod pdf;
 pub mod policy;

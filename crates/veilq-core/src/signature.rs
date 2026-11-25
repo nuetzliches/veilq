@@ -103,10 +103,15 @@ impl Signatures {
         let (w, h) = img.dimensions();
         let mut found = Vec::new();
         let tiles = tiles(w, h);
+        let tile_alone = if crate::patch::on("signature-tile-alone") {
+            TILE_ALONE
+        } else {
+            MIN_SCORE
+        };
         let reads = parts(w, h)
             .into_iter()
             .map(|p| (p, MIN_SCORE))
-            .chain(tiles.into_iter().map(|p| (p, TILE_ALONE)));
+            .chain(tiles.into_iter().map(|p| (p, tile_alone)));
         for ((x, y, side_w, side_h), min) in reads {
             let part = imageops::crop_imm(img, x, y, side_w, side_h).to_image();
             for f in self.read(&part)? {
@@ -122,7 +127,9 @@ impl Signatures {
         }
         // Narrow boxes go first: kept, one could take the place of the box
         // of the whole signature and then be dropped itself.
-        found.retain(|f| f.w >= MIN_WIDTH);
+        if crate::patch::on("signature-min-width") {
+            found.retain(|f| f.w >= MIN_WIDTH);
+        }
         Ok(distinct(found)
             .into_iter()
             .filter_map(|f| {

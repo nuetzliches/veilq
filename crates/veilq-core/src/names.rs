@@ -268,7 +268,7 @@ impl Names {
                 detector: DETECTOR.to_owned(),
             });
         };
-        if source == Source::Ocr && self.similar {
+        if source == Source::Ocr && self.similar && crate::patch::on("names-similar") {
             let mut doubtful = false;
             for (start, w) in words_at(text) {
                 match similar_confidence(&words, w) {
@@ -444,7 +444,7 @@ impl Names {
             let span = &text[start..end];
             let capitalised = detect::name_words(span).any(starts_upper);
             let firm = is_firm(span);
-            let sole = firm && sole_trader(span);
+            let sole = firm && crate::patch::on("sole-trader") && sole_trader(span);
             // A sole trader's firm holds the owner's name: a word after
             // another of its name words is the surname, whatever it ends in
             // (`Fernbau` in `Ilka Fernbau e.K.`, #138).
@@ -453,7 +453,7 @@ impl Names {
                 if !learnable(w, capitalised) {
                     continue;
                 }
-                if firm && trade_word(w) {
+                if firm && crate::patch::on("trade-words") && trade_word(w) {
                     if !(sole && named) {
                         continue;
                     }
@@ -472,6 +472,7 @@ impl Names {
                         // before in OCR text: it would be found there. Only
                         // those are compared, not every word seen (#129).
                         let off = self.similar
+                            && crate::patch::on("names-similar")
                             && k.chars().count() >= MIN_SIMILAR
                             && inner
                                 .seen_ocr
@@ -495,6 +496,7 @@ impl Names {
             // As `similar_confidence` would find it.
             if source == Source::Ocr
                 && self.similar
+                && crate::patch::on("names-similar")
                 && k.chars().count() + 1 >= MIN_SIMILAR
                 && starts_upper(w)
             {
@@ -563,19 +565,20 @@ impl Inner {
             })
             .collect();
         let mut parts = Vec::new();
-        if !heads.is_empty() {
+        let edge = crate::patch::on("names-cut-edge");
+        if edge && !heads.is_empty() {
             parts.push(format!(
                 r"\b(?P<head>(?:{}))(?:\.{{2,}}|…)",
                 detect::alternation(heads)
             ));
         }
-        if !tails.is_empty() {
+        if edge && !tails.is_empty() {
             parts.push(format!(
                 r"(?m:^)[^\p{{L}}\p{{N}}\n]{{0,3}}(?P<tail>(?:{}))\b",
                 detect::alternation(tails)
             ));
         }
-        if !self.order.is_empty() {
+        if crate::patch::on("names-glued") && !self.order.is_empty() {
             parts.push(format!(
                 r"(?-i:\p{{Ll}})(?P<glued>(?:{})(?:s|'s|’s)?)\b",
                 detect::alternation(self.order.clone())
@@ -599,6 +602,9 @@ fn value_key(v: &str) -> String {
 /// Whether a value (its key) goes on the list: five characters or more, one
 /// of them a digit or an `@`. A word alone is a name's to learn, or none.
 fn value_learnable(k: &str) -> bool {
+    if !crate::patch::on("values-learnable") {
+        return k.chars().count() <= MAX_VALUE;
+    }
     (MIN_VALUE..=MAX_VALUE).contains(&k.chars().count())
         && k.chars().any(|c| c.is_numeric() || c == '@')
 }
@@ -668,13 +674,15 @@ fn confidence_of(words: &HashMap<String, f32>, m: &str) -> Option<f32> {
 /// learned, it would make every `von` of the file a person.
 fn learnable(w: &str, capitalised: bool) -> bool {
     w.chars().count() >= MIN_WORD
-        && (!capitalised || starts_upper(w))
-        && !detect::PARTICLES.contains(&key(w).as_str())
-        && !LEGAL_FORMS.contains(&key(w).as_str())
-        && !detect::only_role_words(w)
-        && !detect::person_noun(w)
-        && !detect::brand_word(w)
-        && !detect::ACCOUNTS.contains(&w.to_lowercase().as_str())
+        && (!crate::patch::on("names-learn-filter")
+            || ((!capitalised || starts_upper(w))
+                && !(crate::patch::on("particles")
+                    && detect::PARTICLES.contains(&key(w).as_str()))
+                && !(crate::patch::on("legal-forms") && LEGAL_FORMS.contains(&key(w).as_str()))
+                && !detect::only_role_words(w)
+                && !detect::person_noun(w)
+                && !detect::brand_word(w)
+                && !detect::account(w)))
 }
 
 /// The legal forms of a sole trader, as [`key`] has the last word of
@@ -684,7 +692,7 @@ const SOLE_TRADER: &[&str] = &["ek", "k", "kfm", "kfr"];
 /// Whether a person's span is a firm: it ends in a legal form.
 fn is_firm(span: &str) -> bool {
     let k = key(last_word(span));
-    LEGAL_FORMS.contains(&k.as_str())
+    (crate::patch::on("legal-forms") && LEGAL_FORMS.contains(&k.as_str()))
         || ["ag", "kg", "ug"].contains(&k.as_str())
         || SOLE_TRADER.contains(&k.as_str())
 }

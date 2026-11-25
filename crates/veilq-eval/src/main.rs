@@ -7,6 +7,8 @@
 //!   (`eval/gate.toml`) fails.
 //! - `candidates <dir> --out <file>` writes every candidate with its label,
 //!   one JSON line each, for measuring a decider's models (#95).
+//! - `ablate <dir>` reads the corpus once per hand-written patch with it
+//!   off (#161).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -79,6 +81,32 @@ enum Command {
         #[arg(long, default_value_t = 1)]
         jobs: usize,
     },
+    /// Measure what each hand-written patch of the detection is worth
+    /// (#161): the corpus once with every patch on, then once per patch with
+    /// it off. The patches are those of `patches.toml` in the corpus.
+    #[cfg(feature = "ablation")]
+    Ablate {
+        /// The corpus, `eval/` in the repository.
+        dir: PathBuf,
+        /// Only these patches (ids of `patches.toml`); default all.
+        #[arg(long, value_delimiter = ',')]
+        patch: Vec<String>,
+        /// Only documents under this path in the corpus (`de/png`).
+        #[arg(long)]
+        only: Option<String>,
+        /// Seeds of corpora generated for this run, read beside the corpus.
+        #[arg(long, value_delimiter = ',')]
+        held_out: Vec<u64>,
+        /// Run the installed NER model too.
+        #[arg(long)]
+        ner: bool,
+        /// Read the pictures too, with the installed OCR and PDFium.
+        #[arg(long)]
+        ocr: bool,
+        /// The effects as JSON, one line per patch.
+        #[arg(long)]
+        json: bool,
+    },
     /// Write every candidate the detectors proposed, kept or not, with its
     /// label from the truth: one JSON line each (text, CSV, JSON, NDJSON).
     Candidates {
@@ -119,6 +147,62 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             println!("a recording written to {}", out.display());
             Ok(true)
         }
+        #[cfg(feature = "ablation")]
+        Command::Ablate {
+            dir,
+            patch,
+            only,
+            held_out,
+            ner,
+            ocr,
+            json,
+        } => {
+            let inventory = veilq_eval::ablate::Inventory::read(&dir.join("patches.toml"))?;
+            let ids: Vec<String> = if patch.is_empty() {
+                inventory.patch.iter().map(|p| p.id.clone()).collect()
+            } else {
+                patch
+            };
+            let mut dirs = vec![dir.clone()];
+            for seed in &held_out {
+                let tmp =
+                    std::env::temp_dir().join(format!("veilq-eval-{seed}-{}", std::process::id()));
+                let _ = std::fs::remove_dir_all(&tmp);
+                generate::write(&tmp, *seed)?;
+                dirs.push(tmp);
+            }
+            let effects = veilq_eval::ablate::run(&dirs, &ids, only.as_deref(), ner, ocr);
+            for d in &dirs[1..] {
+                let _ = std::fs::remove_dir_all(d);
+            }
+            let effects = effects?;
+            if !json {
+                println!(
+                    "{:<28} {:>8} {:>7} {:>6}  profiles (misses, fp)",
+                    "patch off", "verdict", "misses", "fp"
+                );
+            }
+            for e in &effects {
+                if json {
+                    println!("{}", serde_json::to_string(e)?);
+                    continue;
+                }
+                let profiles: Vec<String> = e
+                    .profiles
+                    .iter()
+                    .map(|(n, (m, f))| format!("{n} ({m:+}, {f:+})"))
+                    .collect();
+                println!(
+                    "{:<28} {:>8} {:>+7} {:>+6}  {}",
+                    e.id,
+                    e.verdict(),
+                    e.misses,
+                    e.false_positives,
+                    profiles.join(", ")
+                );
+            }
+            Ok(true)
+        }
         Command::Candidates {
             dir,
             only,
@@ -153,6 +237,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             let gate_path = gate.unwrap_or_else(|| dir.join("gate.toml"));
             let gate: check::Gate = toml::from_str(&std::fs::read_to_string(&gate_path)?)
                 .map_err(|e| anyhow::anyhow!("{}: {e}", gate_path.display()))?;
+            let apart: std::collections::BTreeSet<String> = gate.profiles.keys().cloned().collect();
             let mut ok = true;
             let mut runs = vec![("corpus".to_owned(), dir.clone())];
             for seed in &held_out {
@@ -171,7 +256,9 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                     let handles: Vec<_> = chunk
                         .iter()
                         .map(|(_, d)| {
-                            s.spawn(|| check::evaluate(d, only.as_deref(), ner, ocr, redact))
+                            s.spawn(|| {
+                                check::evaluate(d, only.as_deref(), ner, ocr, redact, &apart)
+                            })
                         })
                         .collect();
                     handles
@@ -234,6 +321,21 @@ fn print_table(label: &str, eval: &check::Evaluation, findings: usize, list: usi
         t.false_positives,
         eval.precision(findings)
     );
+    println!(
+        "{:<24} {:>6} {:>8} {:>8} {:>9} {:>5} {:>9}",
+        "profile", "files", "truth", "recall", "precision", "fp", "fp/file"
+    );
+    for (name, p) in &eval.per_profile {
+        println!(
+            "{name:<24} {:>6} {:>8} {:>8.3} {:>9.3} {:>5} {:>9.2}",
+            p.files,
+            p.truth,
+            p.recall(),
+            p.precision(),
+            p.false_positives,
+            p.false_per_file()
+        );
+    }
     for m in eval.misses.iter().take(list) {
         println!(
             "  miss {} {} at {}: {:?}",

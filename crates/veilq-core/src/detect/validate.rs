@@ -356,7 +356,10 @@ pub fn email_host(value: &str) -> bool {
     let commit = host.len() >= 7
         && host.chars().all(|c| c.is_ascii_hexdigit())
         && host.chars().any(|c| c.is_ascii_digit());
-    !digest && !version && !commit && !TAGS.contains(&host.as_str())
+    !digest
+        && !version
+        && !commit
+        && !(crate::patch::on("email-host-tags") && TAGS.contains(&host.as_str()))
 }
 
 /// A word after `ich heiße` or `ich bin` can be a given name: not a word
@@ -415,7 +418,7 @@ pub fn given_name_de(value: &str) -> bool {
     ];
     // Months that are given names as well (`April`, `Juni`, `August`) stay
     // names.
-    !WORDS.contains(&value.to_lowercase().as_str())
+    !(crate::patch::on("given-name-stopwords") && WORDS.contains(&value.to_lowercase().as_str()))
 }
 
 #[cfg(test)]

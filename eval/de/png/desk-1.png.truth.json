@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "x": 1080,
+        "y": 16,
+        "width": 59,
+        "height": 10
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "x": 37,
+        "y": 248,
+        "width": 56,
+        "height": 9
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "x": 251,
+        "y": 52,
+        "width": 61,
+        "height": 10
+      }
+    },
+    {
+      "entity": "DATE_OF_BIRTH",
+      "location": {
+        "kind": "region",
+        "x": 230,
+        "y": 72,
+        "width": 52,
+        "height": 7
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "region",
+        "x": 289,
+        "y": 72,
+        "width": 72,
+        "height": 8
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "x": 501,
+        "y": 52,
+        "width": 63,
+        "height": 10
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "x": 322,
+        "y": 318,
+        "width": 46,
+        "height": 8
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "x": 256,
+        "y": 396,
+        "width": 53,
+        "height": 8
+      }
+    }
+  ]
+}

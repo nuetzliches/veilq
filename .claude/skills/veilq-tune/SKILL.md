@@ -64,6 +64,15 @@ Fix the class: one change that covers every case of it, in the right place:
 Edit regexes in TOML files with the editor tool, never through a script's
 string literal: `\b` in a Python string is a backspace.
 
+**A new word list, list entry or special case is a patch (#161, ADR-0070)**
+and needs the owner's approval: name the class first and say where the
+structure (#161) would carry it instead. An approved patch is listed in
+`eval/patches.toml` with its case and corpus file, gets an id in
+`veilq_core::patch::PATCHES` and a `crate::patch::on("<id>")` at its switch
+point. `veilq-eval ablate eval --ner --ocr --patch <id>` then shows what it
+is worth; a patch whose ablation shows nothing is dead or its case is
+missing from the corpus.
+
 ## 3. Pin it with a test
 
 Every fix gets a test that fails without it, next to the code it changed
