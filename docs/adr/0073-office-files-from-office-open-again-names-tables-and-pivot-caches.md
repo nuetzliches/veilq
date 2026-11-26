@@ -1,6 +1,6 @@
 # ADR-0073: Office files from Office open again: fonts, tables and pivot caches
 
-- **Status:** Accepted (card in the conversation, six points, approved by the owner 2026-11-26; point 4 replaced and points N2 to N4 added after a round trip through Excel, approved the same day)
+- **Status:** Accepted (card in the conversation, six points, approved by the owner 2026-11-26; point 4 replaced and points N2 to N4 added after a round trip through Excel, approved the same day); amended by [ADR-0074](0074-points-from-the-review-before-0-9-0.md)
 - **Date:** 2026-11-26
 - **Deciders:** project owner
 - **Related:** #156, #157, #158, [ADR-0063](0063-what-a-document-says-besides-its-text-is-read-removed-or-reported.md) (amended: which attributes are read, a table's name)
@@ -38,7 +38,7 @@ replaced.
 1. **Font attributes and calculation features are not read (N2).**
    `typeface`, `panose`, `pitchFamily` and `charset` are structural, as
    ids and relationship types are (ADR-0063); a `feature` element's
-   `name` is too.
+   `name` in `xl/workbook.xml` is too (only there: ADR-0074).
 2. **A table's name is renamed, as a sheet's (N3).** A table's `name` and
    `displayName` are no person's; they are read where tables are named
    (`table_names`): one that holds personal data becomes a name Excel
@@ -71,8 +71,10 @@ replaced.
 
 ## Alternatives considered
 
-- **An error for every table name with a finding:** NER takes a default
-  name such as `Tabelle1` for a person; every German table would fail.
+- **An error for every table name with a finding:** a workbook with a
+  table named after a client could then not be redacted at all. (The card
+  said NER takes `Tabelle1` for a person; it does not: the default name
+  was replaced because `displayName` always counted as a person's.)
 - **Not reading a table's name:** a table named after a client would keep
   the name.
 - **Renaming a column apart (`<PERSON> (2)`):** its header cell holds the

@@ -186,21 +186,29 @@ pub fn process(engine: &Engine, input: &[u8], apply: bool) -> Result<Outcome, Er
     let mut workbook = Workbook::read(&entries)?;
     // Before any sheet is read: a renamed sheet is reported by its new name.
     let mut workbook_edits = Some(workbook.names(engine, &entries, apply, &mut out)?);
-    let mut table_edits = table_names(engine, &entries, apply, &mut out)?;
+    // Read when the first table or pivot cache's definition comes, after
+    // the cells: a name they hold is then one of the file's (ADR-0047).
+    let mut table_edits: Option<PartEdits> = None;
     let pivots = pivot_fields(&entries)?;
     let mut new_data: HashMap<String, Vec<u8>> = HashMap::new();
     let mut blanked = 0;
     // What became of each pivot cache's fields, by its definition (#157).
     let mut pivot_changes: HashMap<String, FieldChanges> = HashMap::new();
-    // The shared strings last: the sheets say first which columns show them.
-    // A pivot cache's definition after its records: they say what became
-    // of its fields.
+    // The shared strings after the sheets: the sheets say first which
+    // columns show them. The tables and pivot caches' definitions after the
+    // cells (ADR-0074), a definition after its records: they say what
+    // became of its fields.
     let mut order: Vec<&(String, Vec<u8>, CompressionMethod)> = entries.iter().collect();
     order.sort_by_key(|e| {
-        (
-            e.0 == "xl/sharedStrings.xml",
-            e.0.starts_with("xl/pivotCache/pivotCacheDefinition"),
-        )
+        if e.0 == "xl/sharedStrings.xml" {
+            1
+        } else if is_table(&e.0) {
+            2
+        } else if is_pivot_definition(&e.0) {
+            3
+        } else {
+            0
+        }
     });
     for (name, data, _) in order {
         if name.ends_with('/') {
@@ -215,22 +223,31 @@ pub fn process(engine: &Engine, input: &[u8], apply: bool) -> Result<Outcome, Er
             } else if name == "xl/sharedStrings.xml" {
                 workbook.shared_strings(engine, text, apply, &mut out)?
             } else {
+                let definition = is_pivot_definition(name);
+                if (is_table(name) || definition) && table_edits.is_none() {
+                    table_edits = Some(table_names(engine, &entries, apply, &mut out)?);
+                }
                 let edits = if name == "xl/workbook.xml" {
                     workbook_edits.take().unwrap_or_default()
                 } else if apply {
-                    table_edits.remove(name).unwrap_or_default()
+                    table_edits
+                        .as_mut()
+                        .and_then(|t| t.remove(name))
+                        .unwrap_or_default()
                 } else {
                     Vec::new()
                 };
                 let records = pivots.get(name);
                 let fields = records.map(|(f, _)| f.as_slice());
                 let (changed, found_at) = part(engine, name, text, fields, edits, apply, &mut out)?;
-                let definition = name.starts_with("xl/pivotCache/pivotCacheDefinition");
-                if let Some((_, def)) = records {
+                // A scan writes nothing: what became of the fields is moot.
+                if !apply {
+                    changed
+                } else if let Some((_, def)) = records {
                     let changes = pivot_changes.entry(def.clone()).or_default();
                     note_fields(text, true, &found_at, changes)?;
                     changed
-                } else if definition && apply {
+                } else if definition {
                     let mut changes = pivot_changes.remove(name).unwrap_or_default();
                     note_fields(text, false, &found_at, &mut changes)?;
                     let now = changed.as_deref().unwrap_or(text);
@@ -396,8 +413,18 @@ fn named_elsewhere(part: &str, element: &str, attr: &str) -> bool {
             && element == "table"
             && matches!(attr, "name" | "displayName"))
         // A calculation feature Excel needs (`microsoft.com:Single`): no
-        // text, and no name a person gave.
-        || (element == "feature" && attr == "name")
+        // text, and no name a person gave. Only there (ADR-0074).
+        || (part == "xl/workbook.xml" && element == "feature" && attr == "name")
+}
+
+/// Whether `part` is a table of a workbook.
+fn is_table(part: &str) -> bool {
+    part.starts_with("xl/tables/") && part.ends_with(".xml")
+}
+
+/// Whether `part` is a pivot cache's definition.
+fn is_pivot_definition(part: &str) -> bool {
+    part.starts_with("xl/pivotCache/pivotCacheDefinition") && part.ends_with(".xml")
 }
 
 /// The segments of a part: paragraphs, other text, attributes, the
@@ -708,10 +735,13 @@ fn note_fields(
             TagKind::Empty => {}
         }
     }
+    // By position: a value's finding by binary search, not a walk over all
+    // of them (a cache of a million values, review before 0.9.0).
+    let mut found_at = found_at.to_vec();
+    found_at.sort_unstable_by_key(|(at, _)| *at);
     for (tag, f, number) in values {
-        let found = found_at
-            .iter()
-            .find(|(at, _)| tag.start <= *at && *at < tag.end);
+        let i = found_at.partition_point(|(at, _)| *at < tag.start);
+        let found = found_at.get(i).filter(|(at, _)| *at < tag.end);
         let e = changes.entry(f).or_default();
         e.found |= found.is_some();
         let retagged = found.is_some_and(|(_, r)| *r);
@@ -766,6 +796,7 @@ fn shared_items(s: &str, changes: &FieldChanges) -> Result<Option<String>, Error
         };
         let mixed = retagged && numbers_left;
         let mut tag = format!("<{name}");
+        let mut changed = mixed;
         for (a, v) in &attrs {
             let gone = (found
                 && matches!(a.as_str(), "minValue" | "maxValue" | "minDate" | "maxDate"))
@@ -782,9 +813,15 @@ fn shared_items(s: &str, changes: &FieldChanges) -> Result<Option<String>, Error
                         a.as_str(),
                         "containsNumber" | "containsInteger" | "containsDate"
                     ));
-            if !gone {
+            if gone {
+                changed = true;
+            } else {
                 tag.push_str(&format!(" {a}=\"{}\"", &s[v.clone()]));
             }
+        }
+        // A tag nothing changes in stays byte for byte.
+        if !changed {
+            continue;
         }
         if mixed {
             tag.push_str(" containsMixedTypes=\"1\"");
@@ -997,7 +1034,8 @@ fn formula_texts(entries: &[(String, Vec<u8>, CompressionMethod)]) -> Result<Vec
                     }
                     for (a, v) in &attrs {
                         let al = xml::local(a);
-                        if (l == "worksheetSource" && al == "sheet")
+                        // A pivot cache over a table names it in `name`.
+                        if (l == "worksheetSource" && matches!(al, "sheet" | "name"))
                             || (l == "hyperlink" && al == "location")
                             || (matches!(l, "cacheField" | "calculatedItem") && al == "formula")
                         {
@@ -1047,9 +1085,9 @@ fn table_names(
     // name.
     let mut tables: Vec<(String, Range<usize>, String)> = Vec::new();
     for (name, data, _) in entries {
-        let (columns, what) = if name.starts_with("xl/tables/") && name.ends_with(".xml") {
+        let (columns, what) = if is_table(name) {
             ("tableColumn", "a table column's name")
-        } else if name.starts_with("xl/pivotCache/pivotCacheDefinition") && name.ends_with(".xml") {
+        } else if is_pivot_definition(name) {
             ("cacheField", "a pivot field's name")
         } else {
             continue;
@@ -1088,7 +1126,11 @@ fn table_names(
         }
         groups.push((name.clone(), what, names));
     }
-    let mut formulas: Option<Vec<String>> = None;
+    // The workbook's formulas, in lower case, read once (review before 0.9.0).
+    let formulas: Vec<String> = formula_texts(entries)?
+        .into_iter()
+        .map(|f| f.to_lowercase())
+        .collect();
     // Tables: renamed where their name holds personal data.
     let mut taken: Vec<String> = tables.iter().map(|t| t.2.to_lowercase()).collect();
     let mut renamed: HashMap<String, String> = HashMap::new();
@@ -1102,12 +1144,8 @@ fn table_names(
                     continue;
                 };
                 let entity = first.entity.as_str().to_owned();
-                let formulas = match &mut formulas {
-                    Some(f) => f,
-                    None => formulas.insert(formula_texts(entries)?),
-                };
                 let lower = text.to_lowercase();
-                if formulas.iter().any(|f| f.to_lowercase().contains(&lower)) {
+                if formulas.iter().any(|f| names_table(f, &lower)) {
                     return Err(error(format!(
                         "{part}: a table's name holds {entity}, and a formula names it; veilq does not rewrite formulas"
                     )));
@@ -1156,39 +1194,80 @@ fn table_names(
     for (part, what, names) in groups {
         let mut seen: Vec<String> = Vec::new();
         for text in names {
-            let mut found = engine.findings(&text, "")?;
+            // Read here only to decide; the part's own reading reports it
+            // (#129: a lifted candidate counts once).
+            let mut found: Vec<Candidate> = engine
+                .findings_uncounted(&text, "")?
+                .into_iter()
+                .map(|(c, _)| c)
+                .collect();
             if found.is_empty() {
                 seen.push(text.to_lowercase());
                 continue;
             }
             let entity = found[0].entity.as_str().to_owned();
-            let formulas = match &mut formulas {
-                Some(f) => f,
-                None => formulas.insert(formula_texts(entries)?),
-            };
             let lower = text.to_lowercase();
-            if formulas.iter().any(|f| f.to_lowercase().contains(&lower)) {
+            if formulas.iter().any(|f| names_column(f, &lower)) {
                 return Err(error(format!(
                     "{part}: {what} holds {entity}, and a formula names it; veilq does not rewrite formulas"
                 )));
             }
-            if apply {
-                let (pieces, _) = engine.replace(&text, "", &mut found, &mut Vec::new())?;
-                let new = pieces
-                    .into_iter()
-                    .map(|(p, _)| p)
-                    .collect::<String>()
-                    .to_lowercase();
-                if seen.contains(&new) {
-                    return Err(error(format!(
-                        "{part}: {what} holds {entity}, and replaced it would become the same as another; veilq does not rename them apart"
-                    )));
-                }
-                seen.push(new);
+            // A scan says so too: it fails where the redaction would.
+            let (pieces, _) = engine.replace(&text, "", &mut found, &mut Vec::new())?;
+            let new = pieces
+                .into_iter()
+                .map(|(p, _)| p)
+                .collect::<String>()
+                .to_lowercase();
+            if seen.contains(&new) {
+                return Err(error(format!(
+                    "{part}: {what} holds {entity}, and replaced it would become the same as another; veilq does not rename them apart"
+                )));
             }
+            seen.push(new);
         }
     }
     Ok(edits)
+}
+
+/// Whether `at` in `formula` starts a name of its own: no letter, digit,
+/// `_`, `.` or `\` of a longer name before it or after `len` bytes.
+fn bounded(formula: &str, at: usize, len: usize) -> bool {
+    let part_of_name = |c: char| c.is_alphanumeric() || matches!(c, '_' | '.' | '\\');
+    !formula[..at].chars().next_back().is_some_and(part_of_name)
+        && !formula[at + len..].chars().next().is_some_and(part_of_name)
+}
+
+/// Whether a formula (in lower case) names the table `table` (in lower
+/// case) as a name of its own: `Tabelle1[Betrag]`, not `Tabelle10[…]`.
+fn names_table(formula: &str, table: &str) -> bool {
+    !table.is_empty()
+        && formula
+            .match_indices(table)
+            .any(|(at, m)| bounded(formula, at, m.len()))
+}
+
+/// Whether a formula (in lower case) names the column or pivot field
+/// `column` (in lower case): in a structured reference (`[Spalte]`,
+/// `[@Spalte]`, with `'` before `'`, `[`, `]` and `#` as Excel writes
+/// them), quoted (`GETPIVOTDATA("Feld", …)`), or as a name of its own (a
+/// calculated field's formula).
+fn names_column(formula: &str, column: &str) -> bool {
+    if column.is_empty() {
+        return false;
+    }
+    let escaped: String = column
+        .chars()
+        .flat_map(|c| {
+            let quote = matches!(c, '\'' | '[' | ']' | '#').then_some('\'');
+            quote.into_iter().chain(std::iter::once(c))
+        })
+        .collect();
+    formula.contains(&format!("[{escaped}]"))
+        || formula.contains(&format!("[@{escaped}]"))
+        || formula.contains(&format!("\"{column}\""))
+        || formula.contains(&format!("'{column}'"))
+        || names_table(formula, column)
 }
 
 /// A table's new name: what Excel allows (letters, digits, `_` and `.`, a
@@ -2257,8 +2336,19 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert!(e.to_string().contains("a formula names it"), "{e}");
+        // The sheet's formula, read first, holds the name itself.
+        assert!(e.to_string().contains("a formula holds PERSON"), "{e}");
         assert!(!e.to_string().contains("Lindqvist"), "{e}");
+        // A table's calculated column names it where no reader finds it.
+        let t = r#"<table id="1" name="Tabelle1" displayName="Tabelle1" ref="A1:B2"><tableColumns count="2"><tableColumn id="1" name="Herr Kai Lindqvist"/><tableColumn id="2" name="Betrag"><calculatedColumnFormula>Tabelle1[[#This Row],[Herr Kai Lindqvist]]*2</calculatedColumnFormula></tableColumn></tableColumns></table>"#;
+        let e = process(
+            &default_engine(),
+            &workbook("", &[("xl/tables/table1.xml", t)]),
+            true,
+        )
+        .err()
+        .unwrap();
+        assert!(e.to_string().contains("a formula names it"), "{e}");
     }
 
     #[test]
@@ -2302,6 +2392,116 @@ mod tests {
             "{out}"
         );
         assert!(r.findings.iter().any(|f| f.entity.as_str() == "PERSON"));
+    }
+
+    /// A workbook whose sheet shows `cell` and holds the parts `more`.
+    fn workbook(cell: &str, more: &[(&str, &str)]) -> Vec<u8> {
+        let wb = r#"<workbook xmlns:r="r"><sheets><sheet name="Daten" sheetId="1" r:id="rId1"/></sheets></workbook>"#;
+        let sheet = format!(
+            r#"<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Akte</t></is></c></row><row r="2">{cell}</row></sheetData></worksheet>"#
+        );
+        let mut parts = vec![
+            ("xl/workbook.xml", wb.as_bytes()),
+            ("xl/_rels/workbook.xml.rels", WB_RELS.as_bytes()),
+            ("xl/worksheets/sheet1.xml", sheet.as_bytes()),
+        ];
+        parts.extend(more.iter().map(|(n, s)| (*n, s.as_bytes())));
+        zip(&parts)
+    }
+
+    #[test]
+    fn a_table_named_after_a_name_the_cells_hold_is_renamed() {
+        // C1: the table is read after the cells, whose names it then knows
+        // (ADR-0047).
+        let t = r#"<table id="1" name="Lindqvist" displayName="Lindqvist" ref="A1:A2"><tableColumns count="1"><tableColumn id="1" name="Akte"/></tableColumns></table>"#;
+        let input = workbook(
+            r#"<c r="A2" t="inlineStr"><is><t>Herr Kai Lindqvist</t></is></c>"#,
+            &[("xl/tables/table1.xml", t)],
+        );
+        let (bytes, _) = default_engine()
+            .run_bytes(&input, crate::Format::Xlsx, true)
+            .unwrap();
+        let out = unzip(&bytes, "xl/tables/table1.xml");
+        assert!(!out.contains("Lindqvist"), "{out}");
+    }
+
+    #[test]
+    fn a_pivot_cache_over_a_table_names_it() {
+        // C2: the cache would point to a table that is no more.
+        let t = r#"<table id="1" name="Faber" displayName="Faber" ref="A1:A2"><tableColumns count="1"><tableColumn id="1" name="Akte"/></tableColumns></table>"#;
+        let def = r#"<pivotCacheDefinition><cacheSource type="worksheet"><worksheetSource name="Faber"/></cacheSource><cacheFields count="1"><cacheField name="Akte"><sharedItems/></cacheField></cacheFields></pivotCacheDefinition>"#;
+        let input = workbook(
+            r#"<c r="A2" t="inlineStr"><is><t>Herr Ole Faber</t></is></c>"#,
+            &[
+                ("xl/tables/table1.xml", t),
+                ("xl/pivotCache/pivotCacheDefinition1.xml", def),
+            ],
+        );
+        let e = default_engine()
+            .run_bytes(&input, crate::Format::Xlsx, true)
+            .err()
+            .unwrap();
+        assert!(e.to_string().contains("a formula names it"), "{e}");
+    }
+
+    #[test]
+    fn formulas_name_a_table_or_column_as_a_name_of_its_own() {
+        // C5, C6.
+        assert!(names_table("sum(tabelle1[betrag])", "tabelle1"));
+        assert!(!names_table("sum(tabelle10[betrag])", "tabelle1"));
+        assert!(!names_table("sum(xtabelle1[betrag])", "tabelle1"));
+        assert!(names_column(
+            "tabelle1[@[kai lindqvist''s akte]]",
+            "kai lindqvist's akte"
+        ));
+        assert!(names_column("tabelle1[@betrag]", "betrag"));
+        assert!(names_column("getpivotdata(\"ole faber\",a1)", "ole faber"));
+        assert!(!names_column("tabelle1[@betrag2]", "betrag"));
+    }
+
+    #[test]
+    fn a_scan_fails_where_the_redaction_would() {
+        // C8.
+        let e = process(
+            &default_engine(),
+            &table(&["Herr Kai Lindqvist", "Herr Ole Faber"], ""),
+            false,
+        )
+        .err()
+        .unwrap();
+        assert!(e.to_string().contains("would become the same"), "{e}");
+    }
+
+    #[test]
+    fn a_feature_outside_the_workbook_part_is_read() {
+        // C4: only Excel's calculation features are left unread.
+        let doc = format!(
+            r#"<w:document {W}><w:body><w:p><w:r><w:t>Hallo</w:t></w:r></w:p></w:body></w:document>"#
+        );
+        let item = r#"<root><feature name="Herr Ole Faber"/></root>"#;
+        let input = zip(&[
+            ("word/document.xml", doc.as_bytes()),
+            ("customXml/item1.xml", item.as_bytes()),
+        ]);
+        let r = process(&default_engine(), &input, true).unwrap();
+        let out = unzip(&r.output, "customXml/item1.xml");
+        assert!(!out.contains("Faber"), "{out}");
+    }
+
+    #[test]
+    fn a_pivot_cache_without_findings_stays_byte_for_byte() {
+        // C9.
+        let def = r#"<pivotCacheDefinition><cacheFields count="1"><cacheField name="anzahl"><sharedItems containsSemiMixedTypes='0' containsNumber='1' minValue='2' maxValue='12'/></cacheField></cacheFields></pivotCacheDefinition>"#;
+        let r = process(
+            &default_engine(),
+            &workbook("", &[("xl/pivotCache/pivotCacheDefinition1.xml", def)]),
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            unzip(&r.output, "xl/pivotCache/pivotCacheDefinition1.xml"),
+            def
+        );
     }
 
     #[test]
