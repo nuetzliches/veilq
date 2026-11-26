@@ -6,6 +6,8 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-26
+
 ### Removed
 
 - 11 hand-written rules that drop or cut a candidate and, with their case
