@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "x": 126,
+        "y": 68,
+        "width": 129,
+        "height": 16
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "region",
+        "x": 126,
+        "y": 102,
+        "width": 222,
+        "height": 17
+      }
+    },
+    {
+      "entity": "PHONE_NUMBER",
+      "location": {
+        "kind": "region",
+        "x": 90,
+        "y": 176,
+        "width": 99,
+        "height": 13
+      }
+    },
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "x": 1995,
+        "y": 368,
+        "width": 48,
+        "height": 15
+      }
+    }
+  ]
+}

@@ -344,6 +344,265 @@ pub(super) fn news_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
     (png(&c.img), c.truth)
 }
 
+/// Brands of the UI screenshots, made up: short capitalised words that are
+/// no person's, as a device maker's in an app's title (#169).
+const BRANDS: &[&str] = &[
+    "Corvex", "Nordwell", "Kestrel", "Brava", "Lumio", "Tavon", "Orbis", "Velora",
+];
+/// What follows a brand in an app's title.
+const APPS: &[&str] = &["Direct", "Hub", "Connect", "Center", "Studio"];
+/// A model's series.
+const SERIES: &[&str] = &["Evo", "Link", "Pro", "Air", "Studio", "Go"];
+/// A settings window's side bar.
+const MENU: &[&str] = &[
+    "Startseite",
+    "System",
+    "Bluetooth und Geräte",
+    "Netzwerk und Internet",
+    "Personalisierung",
+    "Apps",
+    "Konten",
+    "Zeit und Sprache",
+    "Datenschutz und Sicherheit",
+    "Updates",
+    "Barrierefreiheit",
+    "Speicher",
+];
+/// A setting's label and its description.
+const SETTINGS: &[(&str, &str)] = &[
+    (
+        "Ruhezustand",
+        "Wählen Sie, wann sich das Gerät nach einer Pause abschaltet.",
+    ),
+    (
+        "Signaltöne",
+        "Ist es eingeschaltet, hören Sie Töne bei jeder Aktion.",
+    ),
+    (
+        "Statuslicht",
+        "Ist es eingeschaltet, leuchtet das Licht während eines Anrufs.",
+    ),
+    (
+        "Gerätename",
+        "Unter diesem Namen erscheint das Gerät beim Koppeln.",
+    ),
+    (
+        "Erinnerungston",
+        "Ein Ton erinnert daran, dass das Mikrofon stumm ist.",
+    ),
+    (
+        "Automatische Updates",
+        "Neue Versionen werden nachts installiert.",
+    ),
+    (
+        "Energiesparen",
+        "Die Helligkeit sinkt, wenn der Akku schwach ist.",
+    ),
+];
+/// What a device's panel says under its name.
+const STATES: &[&str] = &[
+    "Verbunden",
+    "Aktiviert",
+    "Standardgerät",
+    "Nicht verbunden",
+    "Bereit",
+];
+
+/// `c` with each channel moved by `d`.
+fn shade(c: [u8; 3], d: i32) -> [u8; 3] {
+    c.map(|v| (i32::from(v) + d).clamp(0, 255) as u8)
+}
+
+/// The colour `k` percent of the way from `a` to `b`.
+fn toward(a: [u8; 3], b: [u8; 3], k: u32) -> [u8; 3] {
+    let mut out = a;
+    for i in 0..3 {
+        let (a, b) = (i32::from(a[i]), i32::from(b[i]));
+        out[i] = (a + (b - a) * k as i32 / 100) as u8;
+    }
+    out
+}
+
+/// A made-up brand's model: `Corvex Evo 45`.
+fn model(r: &mut Rng, brand: &str) -> String {
+    format!("{brand} {} {}", r.pick(SERIES), 10 + r.below(90))
+}
+
+/// A screenshot of one to three app windows side by side (#169), drawn
+/// with spread in what decided past cases: light or dark, panels 5 to 60
+/// off their window, pale text beside normal text, screen scaling, brands
+/// and product names beside persons' data, and the picture cut at its
+/// bottom (and at times its top) through whatever stands there. Only the
+/// persons' data are truth; what the cut leaves of a value is its truth.
+pub(super) fn ui_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
+    let scale = [100, 125, 150, 175, 200][r.below(5) as usize] as f32 / 100.0;
+    let px = |v: f32| v * scale;
+    let dark = r.chance(50);
+    let base = if dark {
+        let v = 20 + r.below(50) as u8;
+        [v, v + r.below(8) as u8, v + r.below(14) as u8]
+    } else {
+        let v = 225 + r.below(30) as u8;
+        [v, v, v - r.below(6) as u8]
+    };
+    let ink = if dark { [232, 232, 236] } else { [26, 28, 34] };
+    let windows = 1 + r.below(3) as u32;
+    let ww = (px(300.0 + r.below(260) as f32)) as u32;
+    let (w, full) = (ww * windows, px(380.0 + r.below(260) as f32) as u32);
+    let mut c = Canvas::new(w, full, base);
+    let person = Person::de(r);
+    // The window that shows the account; another may name a phone after
+    // a second person.
+    let account = r.below(u64::from(windows)) as u32;
+    let owner = Person::de(r);
+    for i in 0..windows {
+        let x0 = i * ww;
+        let off = if i == 0 { 0 } else { (r.below(81) as i32) - 40 };
+        let bg = shade(base, off);
+        c.rect(x0, 0, ww, full, bg);
+        let pale = toward(bg, ink, 35 + r.below(35) as u32);
+        let muted = toward(bg, ink, 55 + r.below(25) as u32);
+        let panel = shade(bg, (5 + r.below(56) as i32) * if dark { 1 } else { -1 });
+        let brand = r.pick(BRANDS).to_owned();
+        let x = x0 as f32 + px(16.0);
+        let title = if r.chance(70) {
+            format!("{brand} {}", r.pick(APPS))
+        } else {
+            "Einstellungen".to_owned()
+        };
+        c.lit(x, px(6.0), px(12.0), &title, muted);
+        let mut y = px(34.0);
+        if i == account {
+            // An account: a picture, the name, the e-mail address, at times
+            // the phone number; then the side bar.
+            c.rect(
+                x as u32,
+                y as u32,
+                px(44.0) as u32,
+                px(44.0) as u32,
+                shade(bg, 70),
+            );
+            let tx = x + px(56.0);
+            c.pii("PERSON", tx, y + px(2.0), px(15.0), &person.name(), ink);
+            c.pii(
+                "EMAIL_ADDRESS",
+                tx,
+                y + px(22.0),
+                px(12.0),
+                &person.email,
+                muted,
+            );
+            y += px(64.0);
+            if r.chance(40) {
+                let end = c.lit(x, y, px(12.0), "Telefon: ", muted);
+                c.pii("PHONE_NUMBER", end, y, px(12.0), &person.phone, muted);
+                y += px(26.0);
+            }
+            while y < full as f32 {
+                c.lit(x, y, px(14.0), r.pick(MENU), ink);
+                y += px(34.0 + r.below(10) as f32);
+            }
+        } else if r.chance(50) {
+            // Settings: a heading, then labels with their descriptions, some
+            // in pale text, and a field with the device's model.
+            c.lit(x, y, px(22.0), "Geräteeinstellungen", ink);
+            y += px(44.0);
+            while y < full as f32 {
+                let (label, text) = SETTINGS[r.below(SETTINGS.len() as u64) as usize];
+                c.lit(x, y, px(14.0), label, ink);
+                let colour = if r.chance(30) { pale } else { muted };
+                c.lit(x + px(150.0), y, px(12.0), text, colour);
+                if label == "Gerätename" {
+                    let fy = y + px(20.0);
+                    c.rect(
+                        x as u32 + px(150.0) as u32,
+                        fy as u32,
+                        px(160.0) as u32,
+                        px(24.0) as u32,
+                        panel,
+                    );
+                    c.lit(
+                        x + px(158.0),
+                        fy + px(4.0),
+                        px(12.0),
+                        &model(r, &brand),
+                        ink,
+                    );
+                    y += px(26.0);
+                }
+                y += px(46.0 + r.below(14) as f32);
+            }
+        } else {
+            // Devices: panels a few shades off the window, each a device's
+            // name over its state; one phone named after its owner.
+            c.lit(x, y, px(18.0), "Ausgabegeräte", ink);
+            y += px(36.0);
+            let named = r.below(4);
+            let mut k = 0;
+            while y < full as f32 {
+                let ph = px(58.0) as u32;
+                c.rect(
+                    x0 + px(8.0) as u32,
+                    y as u32,
+                    ww - px(16.0) as u32,
+                    ph,
+                    panel,
+                );
+                let ty = y + px(10.0);
+                if k == named {
+                    let end = c.lit(x, ty, px(14.0), "Smartphone von ", ink);
+                    c.pii("PERSON", end, ty, px(14.0), &owner.first, ink);
+                } else {
+                    let other = r.pick(BRANDS);
+                    c.lit(x, ty, px(14.0), &model(r, other), ink);
+                }
+                c.lit(x, ty + px(20.0), px(11.0), r.pick(STATES), muted);
+                y += ph as f32 + px(6.0);
+                k += 1;
+            }
+        }
+    }
+    // Cut: the bottom through whatever stands there, at times the top.
+    let bottom = full - r.below(u64::from(full / 5)) as u32;
+    let top = if r.chance(30) {
+        r.below(u64::from(px(20.0) as u32)) as u32
+    } else {
+        0
+    };
+    let img = image::imageops::crop_imm(&c.img, 0, top, w, bottom - top).to_image();
+    let truth = c
+        .truth
+        .into_iter()
+        .filter_map(|t| {
+            let Location::Region {
+                part,
+                frame,
+                x,
+                y,
+                width,
+                height,
+            } = t.location
+            else {
+                return Some(t);
+            };
+            let (y0, y1) = (y.max(top), (y + height).min(bottom));
+            // Two rows or fewer left: not readable, and not a value.
+            (y1 >= y0 + 3).then(|| Truth {
+                entity: t.entity,
+                location: Location::Region {
+                    part,
+                    frame,
+                    x,
+                    y: y0 - top,
+                    width,
+                    height: y1 - y0,
+                },
+            })
+        })
+        .collect();
+    (png(&img), truth)
+}
+
 /// Two settings windows side by side in a dark theme (ADR-0072): a device
 /// manager's rows of printed small print on the left, and on the right an
 /// account with name and e-mail over panels a few shades off the window's

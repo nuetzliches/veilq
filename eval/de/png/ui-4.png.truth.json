@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "seed": 1,
+  "findings": [
+    {
+      "entity": "PERSON",
+      "location": {
+        "kind": "region",
+        "x": 983,
+        "y": 49,
+        "width": 87,
+        "height": 11
+      }
+    },
+    {
+      "entity": "EMAIL_ADDRESS",
+      "location": {
+        "kind": "region",
+        "x": 982,
+        "y": 73,
+        "width": 113,
+        "height": 12
+      }
+    }
+  ]
+}
