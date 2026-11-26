@@ -73,6 +73,8 @@ impl Rng {
 
 /// The forms filled in by hand per corpus (#59).
 const HANDWRITTEN_FORMS: usize = 4;
+/// The screenshots of app windows per corpus (#169).
+const UI_SCREENSHOTS: u64 = 8;
 
 const FIRST_DE: &[&str] = &[
     "Lena", "Jonas", "Mira", "Tobias", "Ida", "Felix", "Hanna", "Lukas", "Sophie", "Paul",
@@ -1290,6 +1292,17 @@ pub fn corpus(seed: u64) -> Vec<Doc> {
         content,
         truth,
     });
+    // Screenshots of app windows with spread (#169), each from a stream of
+    // its own: one profile, measured over its pictures and the seeds.
+    for i in 1..=UI_SCREENSHOTS {
+        let mut r = Rng::new(seed ^ 0x0715_7000_0000_0000 ^ (i << 32));
+        let (content, truth) = visual::ui_png(&mut r);
+        docs.push(Doc {
+            path: format!("de/png/ui-{i}.png"),
+            content,
+            truth,
+        });
+    }
     // The cases of the patches of the detection (#161), each document from
     // a stream of its own.
     for (path, salt, make) in [

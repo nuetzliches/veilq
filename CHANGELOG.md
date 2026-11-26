@@ -6,6 +6,15 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The corpus draws screenshots of app windows with spread (ADR-0075,
+  #169): light and dark, panels 5 to 60 off their window, pale text,
+  screen scaling, made-up brands and models beside persons' data, cut at
+  the edge. Eight per corpus form the profile `de/png/ui`, measured over
+  the held-out seeds; it shows brands taken for names and cut chrome
+  filled as unread text. Detection is unchanged.
+
 ### Fixed
 
 - The fill over a line cut by a picture's edge no longer runs across a

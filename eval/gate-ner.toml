@@ -35,3 +35,11 @@ precision = 0.8
 [profiles."de/png/settings"]
 recall = 1.0
 precision = 0.8
+
+# Screenshots of app windows drawn with spread (ADR-0075, #169): a brand
+# or a menu entry taken for a name and repeated by the file's names, and
+# cut chrome at the edge filled as unread text (0 to 14 false findings
+# per seed).
+[profiles."de/png/ui"]
+recall = 1.0
+precision = 0.66
