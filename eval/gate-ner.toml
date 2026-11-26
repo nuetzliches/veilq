@@ -29,3 +29,9 @@ precision = 0.5
 [profiles."de/png/headlines"]
 recall = 0.66
 precision = 0.8
+
+# Settings windows in a dark theme (ADR-0072): the word before the cut
+# phone owner's name taken for a name of the file.
+[profiles."de/png/settings"]
+recall = 1.0
+precision = 0.8

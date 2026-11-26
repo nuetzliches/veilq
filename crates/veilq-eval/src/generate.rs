@@ -1281,6 +1281,15 @@ pub fn corpus(seed: u64) -> Vec<Doc> {
         content,
         truth,
     });
+    // Settings windows in a dark theme, a line cut by the bottom edge
+    // (ADR-0072), from a stream of its own.
+    let mut r = Rng::new(seed ^ 0x5E77_7000_0000_0000);
+    let (content, truth) = visual::settings_png(&mut r);
+    docs.push(Doc {
+        path: "de/png/settings-1.png".to_owned(),
+        content,
+        truth,
+    });
     // The cases of the patches of the detection (#161), each document from
     // a stream of its own.
     for (path, salt, make) in [

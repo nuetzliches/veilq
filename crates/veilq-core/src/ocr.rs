@@ -50,6 +50,12 @@ const REC_HEIGHT: u32 = 48;
 /// tell: misread lines averaged 0.95. Punctuation is left out, as printed
 /// separators (`·`) scored down to 0.53 and hold no personal data.
 pub const WEAK: f32 = 0.7;
+/// The share of a line's letters and digits read badly from which its
+/// reading is no measure of a second one ([`Line::agrees`], ADR-0072).
+const UNREAD: f32 = 0.25;
+/// How far apart a second reading as handwriting may be from the first
+/// ([`Line::agrees`], ADR-0072).
+const APART: f32 = 0.5;
 /// The rows at a picture's top and bottom edge read again for a line the
 /// edge cuts (ADR-0059).
 const EDGE_STRIP: u32 = 48;
@@ -59,14 +65,47 @@ const EDGE_MARGIN: u32 = 48;
 /// How close to the edge a line's box comes to reach it.
 const EDGE_TOUCH: u32 = 2;
 
-/// `r` widened to the left and right over what is not `background` in its
-/// rows, across gaps as wide as it is high: the detector boxes the rest of
-/// a cut line short, and the tops of its last letters stood beside the box.
+/// How far apart two readings of a line are: the characters to change, add
+/// or remove to turn one into the other, per character of the longer one.
+fn apart(a: &str, b: &str) -> f32 {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut diagonal = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let next = (diagonal + usize::from(ca != cb))
+                .min(row[j] + 1)
+                .min(row[j + 1] + 1);
+            diagonal = row[j + 1];
+            row[j + 1] = next;
+        }
+    }
+    row[b.len()] as f32 / a.len().max(b.len()).max(1) as f32
+}
+
+/// How far a pixel's channels lie from the background's for it to be ink.
+const INK: u8 = 60;
+
+/// Whether `p` is ink on `background`: a channel more than [`INK`] off. A
+/// surface in another shade of the background is none (ADR-0072).
+pub(crate) fn is_ink(p: image::Rgb<u8>, background: image::Rgb<u8>) -> bool {
+    p.0.iter()
+        .zip(background.0)
+        .any(|(p, b)| p.abs_diff(b) > INK)
+}
+
+/// `r` widened to the left and right over the ink in its rows, across gaps
+/// as wide as it is high: the detector boxes the rest of a cut line short,
+/// and the tops of its last letters stood beside the box.
 fn over_ink(img: &RgbImage, r: Rect, background: image::Rgb<u8>) -> Rect {
     let w = img.width();
     let gap = r.h.max(8);
     let rows = r.y..r.bottom().min(img.height());
-    let ink = |x: u32| rows.clone().any(|y| *img.get_pixel(x, y) != background);
+    let ink = |x: u32| {
+        rows.clone()
+            .any(|y| is_ink(*img.get_pixel(x, y), background))
+    };
     let mut right = r.right().min(w);
     let mut x = right;
     while x < w && x < right + gap {
@@ -199,6 +238,24 @@ impl Line {
             })
             .map(|((_, _, r), _)| r)
     }
+
+    /// Whether `second`, this line read again as handwriting, counts
+    /// (ADR-0072): when it comes near this reading, at most [`APART`] of
+    /// its characters other, or when this one read at least [`UNREAD`] of
+    /// its letters and digits badly and is no measure. The corpus's
+    /// handwriting was read by both at most a third apart, mostly spaces;
+    /// a printed line OCR read well but for a letter came back from the
+    /// recogniser of handwriting as a row of digits.
+    pub fn agrees(&self, second: &str) -> bool {
+        let letters = self
+            .chars
+            .iter()
+            .filter(|(start, end, _)| self.text[*start..*end].chars().all(char::is_alphanumeric))
+            .count();
+        let unread = self.weak().count() as f32 >= UNREAD * letters as f32;
+        let bare = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+        unread || apart(&bare(&self.text), &bare(second)) <= APART
+    }
 }
 
 pub struct Ocr {
@@ -325,9 +382,12 @@ impl Ocr {
                 .filter(|l| l.weak().next().is_some())
                 .take(HTR_LINES)
             {
+                // A reading far from one OCR made well is no handwriting
+                // (ADR-0072).
                 if let Some(h) = htr.recognise(img, l.rect)?
                     && !h.text.trim().is_empty()
                     && h.text != l.text
+                    && l.agrees(&h.text)
                 {
                     second.push(h);
                 }
@@ -1179,5 +1239,86 @@ mod tests {
             white,
         );
         assert_eq!((r.x, r.right()), (10, 30), "not across a wide gap");
+    }
+
+    #[test]
+    fn a_cut_lines_box_does_not_grow_over_a_surface_of_another_shade() {
+        // A dark settings window: the button's cut text at 10..30, and from
+        // 34 on a panel a few shades lighter, as wide as the picture.
+        let background = image::Rgb([32, 32, 36]);
+        let mut img = RgbImage::from_pixel(300, 10, background);
+        for x in 34..300 {
+            for y in 0..10 {
+                img.put_pixel(x, y, image::Rgb([44, 46, 50]));
+            }
+        }
+        for x in (10..20).chain(24..30) {
+            img.put_pixel(x, 5, image::Rgb([230, 230, 230]));
+        }
+        let r = over_ink(
+            &img,
+            Rect {
+                x: 12,
+                y: 2,
+                w: 6,
+                h: 8,
+            },
+            background,
+        );
+        assert_eq!((r.x, r.right()), (10, 30));
+    }
+
+    fn printed(text: &str, weak: usize) -> Line {
+        let chars: Vec<_> = text
+            .char_indices()
+            .map(|(i, c)| {
+                (
+                    i,
+                    i + c.len_utf8(),
+                    Rect {
+                        x: 0,
+                        y: 0,
+                        w: 1,
+                        h: 1,
+                    },
+                )
+            })
+            .collect();
+        let scores = (0..chars.len())
+            .map(|i| if i < weak { 0.5 } else { 0.95 })
+            .collect();
+        Line {
+            text: text.into(),
+            rect: Rect {
+                x: 0,
+                y: 0,
+                w: 100,
+                h: 10,
+            },
+            chars,
+            score: 0.9,
+            scores,
+            cut: false,
+            handwriting: false,
+            contrast: false,
+        }
+    }
+
+    #[test]
+    fn a_reading_as_handwriting_far_from_a_line_read_well_is_dropped() {
+        let line = printed("when enabled the light is on", 1);
+        assert!(!line.agrees("0077000000000,"));
+        // Near it, spaces lost and a letter other: handwriting read twice.
+        assert!(printed("Ahornweg 4o, 5o667 Köln", 1).agrees("Ahornweg 40,50667Köln"));
+        // OCR read most of it badly: it is no measure.
+        assert!(printed("Ulrike Brandner", 6).agrees("Ulrike Brandmer"));
+        assert!(printed("Ulrike Brandner", 6).agrees("0077000"));
+    }
+
+    #[test]
+    fn readings_apart() {
+        assert_eq!(apart("abc", "abc"), 0.0);
+        assert_eq!(apart("abcd", "abed"), 0.25);
+        assert_eq!(apart("", "ab"), 1.0);
     }
 }

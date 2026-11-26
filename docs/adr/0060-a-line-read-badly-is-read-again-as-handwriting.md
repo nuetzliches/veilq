@@ -1,6 +1,6 @@
 # ADR-0060: A line read badly is read again as handwriting
 
-- **Status:** Accepted (card in the conversation, points 1 to 6, approved by the owner 2026-11-19); a first step of M5 ([#59](https://github.com/nuetzliches/veilq/issues/59), `docs/plan.md` 3.6)
+- **Status:** Accepted (card in the conversation, points 1 to 6, approved by the owner 2026-11-19); a first step of M5 ([#59](https://github.com/nuetzliches/veilq/issues/59), `docs/plan.md` 3.6); amended by [ADR-0072](0072-a-second-reading-as-handwriting-near-the-first-and-a-cut-line-over-ink.md) (a second reading counts near the first)
 - **Date:** 2026-11-19
 - **Deciders:** project owner
 - **Related:** [ADR-0005](0005-models-are-fetched-explicitly-and-pinned-in-the-binary.md), [ADR-0023](0023-pictures-are-read-with-ocr-and-redacted-with-black-boxes.md), [ADR-0045](0045-text-read-badly-is-reviewed-filled-or-stops-the-run.md), [ADR-0059](0059-a-files-values-firms-as-parties-and-lines-cut-by-the-edge.md)

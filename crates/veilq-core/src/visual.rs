@@ -1103,9 +1103,6 @@ fn settle(
     Ok(Some(filled))
 }
 
-/// How far a pixel's channels lie from the background's for it to be ink.
-const INK: u8 = 60;
-
 /// `r` grown up and down while its top or bottom row cuts ink: a hand's
 /// loops and tails reach past the line's box that OCR found, and the rows
 /// of them left unfilled showed part of the value (#59). Printed text has
@@ -1131,15 +1128,7 @@ fn to_ink(img: &image::RgbImage, r: Rect) -> Rect {
     else {
         return r;
     };
-    let ink = |y: u32| {
-        (x0..x1).any(|x| {
-            img.get_pixel(x, y)
-                .0
-                .iter()
-                .zip(bg)
-                .any(|(p, b)| p.abs_diff(b) > INK)
-        })
-    };
+    let ink = |y: u32| (x0..x1).any(|x| crate::ocr::is_ink(*img.get_pixel(x, y), image::Rgb(bg)));
     let limit = r.h / 2;
     let mut top = r.y;
     while top > 0 && r.y - top < limit && ink(top) {
