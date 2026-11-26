@@ -45,6 +45,28 @@ Notable changes per release. The format follows
 
 ### Fixed
 
+- Workbooks, documents and presentations saved by Office open again after
+  a redaction (ADR-0073). Since 0.8.0 veilq read a theme's font names and
+  their PANOSE numbers, and Excel's calculation features, as text, took
+  some for persons and phone numbers, and replaced them; it replaced every
+  table's display name as a person's. Excel then refused the file. Font
+  attributes and calculation features are no longer read; a table named
+  after a person gets a name Excel allows, and is an error when a formula
+  names it.
+- A table column or pivot field named after a person is an error when a
+  formula names it, or when, replaced, it would be the same as another
+  name of its table or cache (#156).
+- A pivot field whose numbers or dates become text gets flags that match
+  its values, and loses its smallest and largest value, which held the
+  values themselves (#157). Excel rejected the cache before.
+- A worksheet is tokenized once (#158).
+- Points from the review before 0.9.0 (ADR-0074): the fill over a line
+  cut by a picture's edge grows over pale text too (ink 24 off the
+  background, not 60); a pivot cache over a table counts as naming it; a
+  formula names a table or column only as a name of its own, with
+  Excel's escapes; a `feature` name is left unread in Excel's workbook
+  part only; `scan` refuses the workbooks `redact` refuses; a pivot
+  cache of many values no longer takes quadratic time.
 - A printed line in a picture that OCR read well but for one letter is no
   longer read again into a false finding (ADR-0072): its second reading as
   handwriting counts only where it comes near OCR's (at most half its

@@ -1,6 +1,6 @@
 # ADR-0063: What a document says besides its text is read, removed or reported
 
-- **Status:** Accepted (card in the conversation, points 1 to 7, approved by the owner 2026-11-20); amends [ADR-0019](0019-office-files-are-edited-in-place-every-part-read.md), [ADR-0020](0020-mail-headers-bodies-and-attachments-are-read-and-written-as-mime.md), [ADR-0023](0023-pictures-are-read-with-ocr-and-redacted-with-black-boxes.md) and [ADR-0028](0028-a-user-policy-edited-in-the-ui-and-folders-redacted-whole.md)
+- **Status:** Accepted (card in the conversation, points 1 to 7, approved by the owner 2026-11-20); amends [ADR-0019](0019-office-files-are-edited-in-place-every-part-read.md), [ADR-0020](0020-mail-headers-bodies-and-attachments-are-read-and-written-as-mime.md), [ADR-0023](0023-pictures-are-read-with-ocr-and-redacted-with-black-boxes.md) and [ADR-0028](0028-a-user-policy-edited-in-the-ui-and-folders-redacted-whole.md); amended by [ADR-0073](0073-office-files-from-office-open-again-names-tables-and-pivot-caches.md) (fonts and calculation features are not read, a table's name is renamed)
 - **Date:** 2026-11-20
 - **Deciders:** project owner
 - **Related:** #142, [plan.md §3.4](../plan.md#34-formats)

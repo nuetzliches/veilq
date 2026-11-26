@@ -112,3 +112,5 @@ keep it to about a page.
 | [0070](0070-the-patches-of-the-detection-are-listed-switchable-and-measured-per-profile.md) | The patches of the detection are listed, switchable, and measured per profile | Accepted |
 | [0071](0071-precision-patches-that-change-nothing-are-removed.md) | Precision patches that change nothing are removed | Accepted |
 | [0072](0072-a-second-reading-as-handwriting-near-the-first-and-a-cut-line-over-ink.md) | A second reading as handwriting counts near the first, and a cut line grows over ink only | Accepted |
+| [0073](0073-office-files-from-office-open-again-names-tables-and-pivot-caches.md) | Office files from Office open again: fonts, tables and pivot caches | Accepted |
+| [0074](0074-points-from-the-review-before-0-9-0.md) | Points from the review before 0.9.0 | Accepted |

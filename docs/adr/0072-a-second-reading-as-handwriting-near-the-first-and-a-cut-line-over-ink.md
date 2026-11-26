@@ -1,6 +1,6 @@
 # ADR-0072: A second reading as handwriting counts near the first, and a cut line grows over ink only
 
-- **Status:** Accepted (card in the conversation, six points, approved by the owner 2026-11-25; point 1 replaced after its measurement failed, the replacement approved 2026-11-26)
+- **Status:** Accepted (card in the conversation, six points, approved by the owner 2026-11-25; point 1 replaced after its measurement failed, the replacement approved 2026-11-26); amended by [ADR-0074](0074-points-from-the-review-before-0-9-0.md) (a cut line grows over ink 24 off)
 - **Date:** 2026-11-26
 - **Deciders:** project owner
 - **Related:** #161, [ADR-0059](0059-a-files-values-firms-as-parties-and-lines-cut-by-the-edge.md) (amended: R4, the widening of a cut line), [ADR-0060](0060-a-line-read-badly-is-read-again-as-handwriting.md) (amended: point 3, which second readings count), [ADR-0067](0067-a-line-read-badly-is-read-again-in-black-and-white.md), [ADR-0070](0070-the-patches-of-the-detection-are-listed-switchable-and-measured-per-profile.md)

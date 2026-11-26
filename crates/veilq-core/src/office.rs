@@ -186,12 +186,30 @@ pub fn process(engine: &Engine, input: &[u8], apply: bool) -> Result<Outcome, Er
     let mut workbook = Workbook::read(&entries)?;
     // Before any sheet is read: a renamed sheet is reported by its new name.
     let mut workbook_edits = Some(workbook.names(engine, &entries, apply, &mut out)?);
+    // Read when the first table or pivot cache's definition comes, after
+    // the cells: a name they hold is then one of the file's (ADR-0047).
+    let mut table_edits: Option<PartEdits> = None;
     let pivots = pivot_fields(&entries)?;
     let mut new_data: HashMap<String, Vec<u8>> = HashMap::new();
     let mut blanked = 0;
-    // The shared strings last: the sheets say first which columns show them.
+    // What became of each pivot cache's fields, by its definition (#157).
+    let mut pivot_changes: HashMap<String, FieldChanges> = HashMap::new();
+    // The shared strings after the sheets: the sheets say first which
+    // columns show them. The tables and pivot caches' definitions after the
+    // cells (ADR-0074), a definition after its records: they say what
+    // became of its fields.
     let mut order: Vec<&(String, Vec<u8>, CompressionMethod)> = entries.iter().collect();
-    order.sort_by_key(|e| e.0 == "xl/sharedStrings.xml");
+    order.sort_by_key(|e| {
+        if e.0 == "xl/sharedStrings.xml" {
+            1
+        } else if is_table(&e.0) {
+            2
+        } else if is_pivot_definition(&e.0) {
+            3
+        } else {
+            0
+        }
+    });
     for (name, data, _) in order {
         if name.ends_with('/') {
             continue;
@@ -205,13 +223,38 @@ pub fn process(engine: &Engine, input: &[u8], apply: bool) -> Result<Outcome, Er
             } else if name == "xl/sharedStrings.xml" {
                 workbook.shared_strings(engine, text, apply, &mut out)?
             } else {
+                let definition = is_pivot_definition(name);
+                if (is_table(name) || definition) && table_edits.is_none() {
+                    table_edits = Some(table_names(engine, &entries, apply, &mut out)?);
+                }
                 let edits = if name == "xl/workbook.xml" {
                     workbook_edits.take().unwrap_or_default()
+                } else if apply {
+                    table_edits
+                        .as_mut()
+                        .and_then(|t| t.remove(name))
+                        .unwrap_or_default()
                 } else {
                     Vec::new()
                 };
-                let fields = pivots.get(name).map(Vec::as_slice);
-                part(engine, name, text, fields, edits, apply, &mut out)?
+                let records = pivots.get(name);
+                let fields = records.map(|(f, _)| f.as_slice());
+                let (changed, found_at) = part(engine, name, text, fields, edits, apply, &mut out)?;
+                // A scan writes nothing: what became of the fields is moot.
+                if !apply {
+                    changed
+                } else if let Some((_, def)) = records {
+                    let changes = pivot_changes.entry(def.clone()).or_default();
+                    note_fields(text, true, &found_at, changes)?;
+                    changed
+                } else if definition {
+                    let mut changes = pivot_changes.remove(name).unwrap_or_default();
+                    note_fields(text, false, &found_at, &mut changes)?;
+                    let now = changed.as_deref().unwrap_or(text);
+                    shared_items(now, &changes)?.or(changed)
+                } else {
+                    changed
+                }
             };
             // Comments and processing instructions go unread (ADR-0063);
             // nothing above reads or edits them.
@@ -328,10 +371,13 @@ fn nested_office(lower: &str) -> Option<&'static str> {
 
 /// An attribute that holds no text for a reader: a namespace, an id, a
 /// reference to another part, a relationship's or content's type, a
-/// revision mark (ADR-0063). Every other attribute is read.
+/// revision mark (ADR-0063), a font's name and classification (a theme's
+/// `MV Boli` was taken for a person, its `panose` for a phone number, and
+/// Excel no longer opened the file). Every other attribute is read.
 fn structural(attr: &str) -> bool {
     let l = xml::local(attr);
     attr.starts_with("xmlns")
+        || matches!(l, "typeface" | "panose" | "pitchFamily" | "charset")
         || attr.starts_with("r:")
         || attr.starts_with("xml:")
         || l.starts_with("rsid")
@@ -361,13 +407,49 @@ fn structural(attr: &str) -> bool {
 /// Attributes another part names (a sheet in a formula, a defined name):
 /// read where their names are decided ([`Workbook::names`]), not here.
 fn named_elsewhere(part: &str, element: &str, attr: &str) -> bool {
-    part == "xl/workbook.xml" && matches!(element, "sheet" | "definedName") && attr == "name"
+    (part == "xl/workbook.xml" && matches!(element, "sheet" | "definedName") && attr == "name")
+        // A table's name ([`table_names`]).
+        || (part.starts_with("xl/tables/")
+            && element == "table"
+            && matches!(attr, "name" | "displayName"))
+        // A calculation feature Excel needs (`microsoft.com:Single`): no
+        // text, and no name a person gave. Only there (ADR-0074).
+        || (part == "xl/workbook.xml" && element == "feature" && attr == "name")
+}
+
+/// Whether `part` is a table of a workbook.
+fn is_table(part: &str) -> bool {
+    part.starts_with("xl/tables/") && part.ends_with(".xml")
+}
+
+/// Whether `part` is a pivot cache's definition.
+fn is_pivot_definition(part: &str) -> bool {
+    part.starts_with("xl/pivotCache/pivotCacheDefinition") && part.ends_with(".xml")
 }
 
 /// The segments of a part: paragraphs, other text, attributes, the
 /// metadata. `fields`: for a pivot cache's records, its fields' names.
 fn segments(name: &str, s: &str, fields: Option<&[String]>) -> Result<Vec<Segment>, Error> {
-    let tokens = xml::tokenize(s)?;
+    segments_of(name, s, &xml::tokenize(s)?, fields, None)
+}
+
+/// [`segments`] of a part tokenized already, without the tokens in `skip`
+/// (a worksheet's `sheetData`, whose cells are read as cells, #158).
+fn segments_of(
+    name: &str,
+    s: &str,
+    tokens: &[Token],
+    fields: Option<&[String]>,
+    skip: Option<Range<usize>>,
+) -> Result<Vec<Segment>, Error> {
+    let skipped = |r: &Range<usize>| {
+        skip.as_ref()
+            .is_some_and(|k| k.start <= r.start && r.end <= k.end)
+    };
+    let tokens = tokens.iter().filter(|t| match t {
+        Token::Tag { range, .. } => !skipped(range),
+        Token::Text(r) | Token::CData(r) => !skipped(r),
+    });
     let mut out: Vec<Segment> = Vec::new();
     // Open paragraphs (nested ones in text boxes), each collecting pieces.
     let mut open: Vec<Vec<Piece>> = Vec::new();
@@ -400,7 +482,7 @@ fn segments(name: &str, s: &str, fields: Option<&[String]>) -> Result<Vec<Segmen
             });
         }
     };
-    for t in &tokens {
+    for t in tokens {
         match t {
             Token::Tag {
                 name: tag,
@@ -435,8 +517,11 @@ fn segments(name: &str, s: &str, fields: Option<&[String]>) -> Result<Vec<Segmen
                 for (a, v) in attrs {
                     let al = xml::local(a);
                     let value = &s[v.clone()];
+                    // A table's display name is no person's: it is read
+                    // where tables are named (`table_names`).
                     let forced = if (crate::patch::on("office-person-metadata")
-                        && PERSON_ATTRS.contains(&al))
+                        && PERSON_ATTRS.contains(&al)
+                        && !named_elsewhere(name, l, al))
                         || (comment_authors && al == "name")
                     {
                         Some("PERSON")
@@ -570,7 +655,12 @@ fn segments(name: &str, s: &str, fields: Option<&[String]>) -> Result<Vec<Segmen
     Ok(out)
 }
 
-/// Redacts one XML part; the new text if it changed.
+/// Where a segment had findings: its first byte, and whether its element
+/// becomes text.
+type FoundAt = Vec<(usize, bool)>;
+
+/// Redacts one XML part; the new text if it changed, and where it had
+/// findings.
 fn part(
     engine: &Engine,
     name: &str,
@@ -579,10 +669,165 @@ fn part(
     mut edits: Vec<(Range<usize>, String)>,
     apply: bool,
     out: &mut Outcome,
-) -> Result<Option<String>, Error> {
-    let segs = segments(name, s, fields)?;
-    for seg in segs {
-        edit_segment(engine, &seg, apply, out, &mut edits)?;
+) -> Result<(Option<String>, FoundAt), Error> {
+    let mut found_at = Vec::new();
+    for seg in segments(name, s, fields)? {
+        if !edit_segment(engine, &seg, apply, out, &mut edits)?.is_empty()
+            && let Some(at) = seg.pieces.iter().find_map(|p| p.raw.as_ref())
+        {
+            found_at.push((at.start, matches!(seg.rewrite, Some(Rewrite::Retag(_)))));
+        }
+    }
+    Ok((apply_edits(s, edits), found_at))
+}
+
+/// What became of a pivot cache's field (#157).
+#[derive(Default, Clone, Copy)]
+struct FieldChange {
+    /// A value of it held a finding.
+    found: bool,
+    /// A number or date of it became text.
+    retagged: bool,
+    /// A number or date of it is left.
+    numbers_left: bool,
+}
+
+/// Per field of a pivot cache, by its place.
+type FieldChanges = BTreeMap<usize, FieldChange>;
+
+/// Adds to `changes` what became of the values of a pivot cache's part,
+/// its findings at `found_at`: in its records, a value's field is its
+/// place in its record; in its definition, the `cacheField` that holds it.
+fn note_fields(
+    s: &str,
+    records: bool,
+    found_at: &[(usize, bool)],
+    changes: &mut FieldChanges,
+) -> Result<(), Error> {
+    // Each value: its tag, its field, whether it is a number or a date.
+    let mut values: Vec<(Range<usize>, usize, bool)> = Vec::new();
+    let (mut in_record, mut field) = (0usize, 0usize);
+    let mut parent: Vec<String> = Vec::new();
+    for t in xml::tokenize(s)? {
+        let Token::Tag {
+            name, kind, range, ..
+        } = t
+        else {
+            continue;
+        };
+        let l = xml::local(&name).to_owned();
+        let under = |p: &str| parent.last().is_some_and(|q| q == p);
+        if records && l == "r" {
+            in_record = 0;
+        } else if records && under("r") && kind != TagKind::End {
+            values.push((range.clone(), in_record, matches!(l.as_str(), "n" | "d")));
+            in_record += 1;
+        } else if !records && under("sharedItems") && kind != TagKind::End {
+            values.push((range.clone(), field, matches!(l.as_str(), "n" | "d")));
+        } else if !records && l == "cacheField" && kind != TagKind::Start {
+            field += 1;
+        }
+        match kind {
+            TagKind::Start => parent.push(l),
+            TagKind::End => {
+                parent.pop();
+            }
+            TagKind::Empty => {}
+        }
+    }
+    // By position: a value's finding by binary search, not a walk over all
+    // of them (a cache of a million values, review before 0.9.0).
+    let mut found_at = found_at.to_vec();
+    found_at.sort_unstable_by_key(|(at, _)| *at);
+    for (tag, f, number) in values {
+        let i = found_at.partition_point(|(at, _)| *at < tag.start);
+        let found = found_at.get(i).filter(|(at, _)| *at < tag.end);
+        let e = changes.entry(f).or_default();
+        e.found |= found.is_some();
+        let retagged = found.is_some_and(|(_, r)| *r);
+        e.retagged |= retagged;
+        e.numbers_left |= number && !retagged;
+    }
+    Ok(())
+}
+
+/// A pivot cache's definition `s` with its fields' `sharedItems` made to
+/// match what became of their values (#157): a field with a finding loses
+/// its smallest and largest value (they are its values), and one whose
+/// numbers or dates became text no longer says it holds no text; where
+/// numbers or dates are left it holds mixed types, where none are it no
+/// longer says it holds any (Excel rejects a cache that does).
+fn shared_items(s: &str, changes: &FieldChanges) -> Result<Option<String>, Error> {
+    let mut edits = Vec::new();
+    let mut field = 0usize;
+    let mut in_field = false;
+    for t in xml::tokenize(s)? {
+        let Token::Tag {
+            name,
+            kind,
+            range,
+            attrs,
+        } = t
+        else {
+            continue;
+        };
+        let l = xml::local(&name);
+        if l == "cacheField" {
+            match kind {
+                TagKind::Start => in_field = true,
+                TagKind::Empty => field += 1,
+                TagKind::End => {
+                    in_field = false;
+                    field += 1;
+                }
+            }
+            continue;
+        }
+        if !(in_field && l == "sharedItems" && kind != TagKind::End) {
+            continue;
+        }
+        let Some(&FieldChange {
+            found,
+            retagged,
+            numbers_left,
+        }) = changes.get(&field)
+        else {
+            continue;
+        };
+        let mixed = retagged && numbers_left;
+        let mut tag = format!("<{name}");
+        let mut changed = mixed;
+        for (a, v) in &attrs {
+            let gone = (found
+                && matches!(a.as_str(), "minValue" | "maxValue" | "minDate" | "maxDate"))
+                || (retagged
+                    && matches!(
+                        a.as_str(),
+                        "containsSemiMixedTypes" | "containsString" | "containsNonDate"
+                    )
+                    && &s[v.clone()] == "0")
+                || (retagged && a == "containsMixedTypes")
+                || (retagged
+                    && !numbers_left
+                    && matches!(
+                        a.as_str(),
+                        "containsNumber" | "containsInteger" | "containsDate"
+                    ));
+            if gone {
+                changed = true;
+            } else {
+                tag.push_str(&format!(" {a}=\"{}\"", &s[v.clone()]));
+            }
+        }
+        // A tag nothing changes in stays byte for byte.
+        if !changed {
+            continue;
+        }
+        if mixed {
+            tag.push_str(" containsMixedTypes=\"1\"");
+        }
+        tag.push_str(if kind == TagKind::Empty { "/>" } else { ">" });
+        edits.push((range, tag));
     }
     Ok(apply_edits(s, edits))
 }
@@ -789,8 +1034,10 @@ fn formula_texts(entries: &[(String, Vec<u8>, CompressionMethod)]) -> Result<Vec
                     }
                     for (a, v) in &attrs {
                         let al = xml::local(a);
-                        if (l == "worksheetSource" && al == "sheet")
+                        // A pivot cache over a table names it in `name`.
+                        if (l == "worksheetSource" && matches!(al, "sheet" | "name"))
                             || (l == "hyperlink" && al == "location")
+                            || (matches!(l, "cacheField" | "calculatedItem") && al == "formula")
                         {
                             out.push(xml::unescape(&s[v.clone()], 0).0);
                         }
@@ -799,7 +1046,12 @@ fn formula_texts(entries: &[(String, Vec<u8>, CompressionMethod)]) -> Result<Vec
                 Token::Text(r) => {
                     if matches!(
                         element.as_str(),
-                        "f" | "definedName" | "formula" | "formula1" | "formula2"
+                        "f" | "definedName"
+                            | "formula"
+                            | "formula1"
+                            | "formula2"
+                            | "calculatedColumnFormula"
+                            | "totalsRowFormula"
                     ) {
                         out.push(xml::unescape(&s[r], 0).0);
                     }
@@ -809,6 +1061,241 @@ fn formula_texts(entries: &[(String, Vec<u8>, CompressionMethod)]) -> Result<Vec
         }
     }
     Ok(out)
+}
+
+/// Edits by part.
+type PartEdits = HashMap<String, Vec<(Range<usize>, String)>>;
+
+/// The names of tables, their columns and pivot caches' fields (#156):
+/// formulas use them (`Tabelle1[@[Spalte]]`), and each must stay apart from
+/// the others of its table or cache. One that holds personal data is an
+/// error when a formula names it. A column's or field's name is otherwise
+/// replaced as any attribute, unless it would become the same as another
+/// (an error); a table's name, a name Excel allows only some characters
+/// in, is renamed as a sheet is ([`table_name`]). The edits to the tables.
+fn table_names(
+    engine: &Engine,
+    entries: &[(String, Vec<u8>, CompressionMethod)],
+    apply: bool,
+    out: &mut Outcome,
+) -> Result<PartEdits, Error> {
+    // Each group: its part, what its names are, and the names.
+    let mut groups: Vec<(String, &'static str, Vec<String>)> = Vec::new();
+    // Each table's name and display name: its part, the value's range, the
+    // name.
+    let mut tables: Vec<(String, Range<usize>, String)> = Vec::new();
+    for (name, data, _) in entries {
+        let (columns, what) = if is_table(name) {
+            ("tableColumn", "a table column's name")
+        } else if is_pivot_definition(name) {
+            ("cacheField", "a pivot field's name")
+        } else {
+            continue;
+        };
+        let s = String::from_utf8_lossy(data);
+        let mut names = Vec::new();
+        for t in xml::tokenize(&s)? {
+            let Token::Tag {
+                name: tag,
+                kind,
+                attrs,
+                ..
+            } = t
+            else {
+                continue;
+            };
+            let l = xml::local(&tag);
+            if kind == TagKind::End || !matches!(l, "table" | "tableColumn" | "cacheField") {
+                continue;
+            }
+            let value = |k: &str| {
+                attrs
+                    .iter()
+                    .find(|(a, _)| a == k)
+                    .map(|(_, v)| xml::unescape(&s[v.clone()], 0).0)
+            };
+            if l == "table" {
+                for (a, v) in &attrs {
+                    if matches!(a.as_str(), "name" | "displayName") {
+                        tables.push((name.clone(), v.clone(), xml::unescape(&s[v.clone()], 0).0));
+                    }
+                }
+            } else if l == columns {
+                names.extend(value("name"));
+            }
+        }
+        groups.push((name.clone(), what, names));
+    }
+    // The workbook's formulas, in lower case, read once (review before 0.9.0).
+    let formulas: Vec<String> = formula_texts(entries)?
+        .into_iter()
+        .map(|f| f.to_lowercase())
+        .collect();
+    // Tables: renamed where their name holds personal data.
+    let mut taken: Vec<String> = tables.iter().map(|t| t.2.to_lowercase()).collect();
+    let mut renamed: HashMap<String, String> = HashMap::new();
+    let mut edits = PartEdits::new();
+    for (n, (part, range, text)) in tables.iter().enumerate() {
+        let new = match renamed.get(text) {
+            Some(new) => new.clone(),
+            None => {
+                let mut found = engine.findings(text, "")?;
+                let Some(first) = found.first() else {
+                    continue;
+                };
+                let entity = first.entity.as_str().to_owned();
+                let lower = text.to_lowercase();
+                if formulas.iter().any(|f| names_table(f, &lower)) {
+                    return Err(error(format!(
+                        "{part}: a table's name holds {entity}, and a formula names it; veilq does not rewrite formulas"
+                    )));
+                }
+                let (replaced, pseudonyms) = if apply {
+                    let (pieces, p) = engine.replace(text, "", &mut found, &mut out.mapping)?;
+                    (pieces.into_iter().map(|(p, _)| p).collect::<String>(), p)
+                } else {
+                    let s = found
+                        .iter()
+                        .map(|c| c.entity.as_str())
+                        .collect::<Vec<_>>()
+                        .join("_");
+                    (s, vec![None; found.len()])
+                };
+                let seg = Segment {
+                    pieces: Vec::new(),
+                    context: String::new(),
+                    forced: None,
+                    place: Place::Part {
+                        part: part.clone(),
+                        n: n as u64 + 1,
+                    },
+                    rewrite: None,
+                };
+                for (c, pseudonym) in found.iter().zip(pseudonyms) {
+                    out.findings.push(Finding {
+                        entity: c.entity.clone(),
+                        location: location(&seg, text, c),
+                        confidence: c.confidence,
+                        detector: c.detector.clone(),
+                        pseudonym,
+                    });
+                }
+                let new = table_name(&replaced, &taken);
+                taken.push(new.to_lowercase());
+                renamed.insert(text.clone(), new.clone());
+                new
+            }
+        };
+        edits
+            .entry(part.clone())
+            .or_default()
+            .push((range.clone(), xml::escape(&new, true)));
+    }
+    for (part, what, names) in groups {
+        let mut seen: Vec<String> = Vec::new();
+        for text in names {
+            // Read here only to decide; the part's own reading reports it
+            // (#129: a lifted candidate counts once).
+            let mut found: Vec<Candidate> = engine
+                .findings_uncounted(&text, "")?
+                .into_iter()
+                .map(|(c, _)| c)
+                .collect();
+            if found.is_empty() {
+                seen.push(text.to_lowercase());
+                continue;
+            }
+            let entity = found[0].entity.as_str().to_owned();
+            let lower = text.to_lowercase();
+            if formulas.iter().any(|f| names_column(f, &lower)) {
+                return Err(error(format!(
+                    "{part}: {what} holds {entity}, and a formula names it; veilq does not rewrite formulas"
+                )));
+            }
+            // A scan says so too: it fails where the redaction would.
+            let (pieces, _) = engine.replace(&text, "", &mut found, &mut Vec::new())?;
+            let new = pieces
+                .into_iter()
+                .map(|(p, _)| p)
+                .collect::<String>()
+                .to_lowercase();
+            if seen.contains(&new) {
+                return Err(error(format!(
+                    "{part}: {what} holds {entity}, and replaced it would become the same as another; veilq does not rename them apart"
+                )));
+            }
+            seen.push(new);
+        }
+    }
+    Ok(edits)
+}
+
+/// Whether `at` in `formula` starts a name of its own: no letter, digit,
+/// `_`, `.` or `\` of a longer name before it or after `len` bytes.
+fn bounded(formula: &str, at: usize, len: usize) -> bool {
+    let part_of_name = |c: char| c.is_alphanumeric() || matches!(c, '_' | '.' | '\\');
+    !formula[..at].chars().next_back().is_some_and(part_of_name)
+        && !formula[at + len..].chars().next().is_some_and(part_of_name)
+}
+
+/// Whether a formula (in lower case) names the table `table` (in lower
+/// case) as a name of its own: `Tabelle1[Betrag]`, not `Tabelle10[…]`.
+fn names_table(formula: &str, table: &str) -> bool {
+    !table.is_empty()
+        && formula
+            .match_indices(table)
+            .any(|(at, m)| bounded(formula, at, m.len()))
+}
+
+/// Whether a formula (in lower case) names the column or pivot field
+/// `column` (in lower case): in a structured reference (`[Spalte]`,
+/// `[@Spalte]`, with `'` before `'`, `[`, `]` and `#` as Excel writes
+/// them), quoted (`GETPIVOTDATA("Feld", …)`), or as a name of its own (a
+/// calculated field's formula).
+fn names_column(formula: &str, column: &str) -> bool {
+    if column.is_empty() {
+        return false;
+    }
+    let escaped: String = column
+        .chars()
+        .flat_map(|c| {
+            let quote = matches!(c, '\'' | '[' | ']' | '#').then_some('\'');
+            quote.into_iter().chain(std::iter::once(c))
+        })
+        .collect();
+    formula.contains(&format!("[{escaped}]"))
+        || formula.contains(&format!("[@{escaped}]"))
+        || formula.contains(&format!("\"{column}\""))
+        || formula.contains(&format!("'{column}'"))
+        || names_table(formula, column)
+}
+
+/// A table's new name: what Excel allows (letters, digits, `_` and `.`, a
+/// letter or `_` first, no cell reference such as `A1`), and not one the
+/// workbook has.
+fn table_name(replaced: &str, taken: &[String]) -> String {
+    let mut base = String::new();
+    for c in replaced.chars() {
+        let c = if c.is_alphanumeric() || c == '.' {
+            c
+        } else {
+            '_'
+        };
+        if !(c == '_' && base.ends_with('_')) {
+            base.push(c);
+        }
+    }
+    if !base.starts_with(|c: char| c.is_alphabetic() || c == '_') || cell_ref(&base).is_some() {
+        base.insert(0, '_');
+    }
+    let base: String = base.chars().take(240).collect();
+    let mut name = base.clone();
+    let mut k = 2;
+    while taken.contains(&name.to_lowercase()) {
+        name = format!("{base}_{k}");
+        k += 1;
+    }
+    name
 }
 
 /// Whether a formula (or a pivot cache's source sheet) names `sheet`.
@@ -1214,15 +1701,9 @@ impl Workbook {
         }
         // Everything outside the cells: headers and footers, data
         // validations and their prompts, hyperlinks' tooltips (ADR-0063).
-        let data = sheet_data(&tokens);
-        for seg in segments(name, s, None)? {
-            let inside = seg.pieces.iter().filter_map(|p| p.raw.as_ref()).any(|r| {
-                data.as_ref()
-                    .is_some_and(|d| d.start <= r.start && r.end <= d.end)
-            });
-            if !inside {
-                edit_segment(engine, &seg, apply, out, &mut edits)?;
-            }
+        // The cells were read above: their tokens are left out (#158).
+        for seg in segments_of(name, s, &tokens, None, sheet_data(&tokens))? {
+            edit_segment(engine, &seg, apply, out, &mut edits)?;
         }
         Ok(apply_edits(s, edits))
     }
@@ -1365,11 +1846,11 @@ fn sheet_data(tokens: &[Token]) -> Option<Range<usize>> {
     None
 }
 
-/// Per pivot cache's records part, its fields' names, from the definition
+/// Per pivot cache's records part, its fields' names and the definition
 /// that points to it.
 fn pivot_fields(
     entries: &[(String, Vec<u8>, CompressionMethod)],
-) -> Result<HashMap<String, Vec<String>>, Error> {
+) -> Result<HashMap<String, (Vec<String>, String)>, Error> {
     let mut out = HashMap::new();
     for (name, data, _) in entries {
         let Some(file) = name.strip_prefix("xl/pivotCache/") else {
@@ -1416,7 +1897,7 @@ fn pivot_fields(
                         Some(abs) => abs.to_owned(),
                         None => format!("xl/pivotCache/{target}"),
                     };
-                    out.insert(path, fields.clone());
+                    out.insert(path, (fields.clone(), name.clone()));
                 }
             }
         }
@@ -1819,6 +2300,299 @@ mod tests {
         assert!(rec_out.contains(r#"<x v="0"/><s v="&lt;"#), "{rec_out}");
         assert!(rec_out.contains(r#"<n v="12"/>"#), "{rec_out}");
         assert!(!rec_out.contains("57381942656"), "{rec_out}");
+    }
+
+    /// A workbook with sheet `Daten` showing `cell`, and a table over it
+    /// whose columns are `columns` (#156).
+    fn table(columns: &[&str], cell: &str) -> Vec<u8> {
+        let wb = r#"<workbook xmlns:r="r"><sheets><sheet name="Daten" sheetId="1" r:id="rId1"/></sheets></workbook>"#;
+        let sheet = format!(
+            r#"<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Hallo</t></is></c></row><row r="3">{cell}</row></sheetData></worksheet>"#
+        );
+        let cols: String = columns
+            .iter()
+            .enumerate()
+            .map(|(i, c)| format!(r#"<tableColumn id="{}" name="{c}"/>"#, i + 1))
+            .collect();
+        let t = format!(
+            r#"<table id="1" name="Tabelle1" displayName="Tabelle1" ref="A1:B2"><tableColumns count="{}">{cols}</tableColumns></table>"#,
+            columns.len()
+        );
+        zip(&[
+            ("xl/workbook.xml", wb.as_bytes()),
+            ("xl/_rels/workbook.xml.rels", WB_RELS.as_bytes()),
+            ("xl/worksheets/sheet1.xml", sheet.as_bytes()),
+            ("xl/tables/table1.xml", t.as_bytes()),
+        ])
+    }
+
+    #[test]
+    fn a_table_column_named_after_a_person_that_a_formula_uses_is_an_error() {
+        let formula = r#"<c r="A3"><f>Tabelle1[@[Herr Kai Lindqvist]]</f><v>0</v></c>"#;
+        let e = process(
+            &default_engine(),
+            &table(&["Herr Kai Lindqvist", "Betrag"], formula),
+            true,
+        )
+        .err()
+        .unwrap();
+        // The sheet's formula, read first, holds the name itself.
+        assert!(e.to_string().contains("a formula holds PERSON"), "{e}");
+        assert!(!e.to_string().contains("Lindqvist"), "{e}");
+        // A table's calculated column names it where no reader finds it.
+        let t = r#"<table id="1" name="Tabelle1" displayName="Tabelle1" ref="A1:B2"><tableColumns count="2"><tableColumn id="1" name="Herr Kai Lindqvist"/><tableColumn id="2" name="Betrag"><calculatedColumnFormula>Tabelle1[[#This Row],[Herr Kai Lindqvist]]*2</calculatedColumnFormula></tableColumn></tableColumns></table>"#;
+        let e = process(
+            &default_engine(),
+            &workbook("", &[("xl/tables/table1.xml", t)]),
+            true,
+        )
+        .err()
+        .unwrap();
+        assert!(e.to_string().contains("a formula names it"), "{e}");
+    }
+
+    #[test]
+    fn two_table_columns_that_would_become_one_are_an_error() {
+        let e = process(
+            &default_engine(),
+            &table(&["Herr Kai Lindqvist", "Herr Ole Faber"], ""),
+            true,
+        )
+        .err()
+        .unwrap();
+        assert!(e.to_string().contains("would become the same"), "{e}");
+        // One such column, no formula: replaced as any attribute.
+        let r = process(
+            &default_engine(),
+            &table(&["Herr Kai Lindqvist", "Betrag"], ""),
+            true,
+        )
+        .unwrap();
+        let t = unzip(&r.output, "xl/tables/table1.xml");
+        assert!(
+            !t.contains("Lindqvist") && t.contains(r#"name="Betrag""#),
+            "{t}"
+        );
+    }
+
+    #[test]
+    fn a_table_named_after_a_person_gets_a_name_excel_allows() {
+        let wb = r#"<workbook xmlns:r="r"><sheets><sheet name="Daten" sheetId="1" r:id="rId1"/></sheets></workbook>"#;
+        let t = r#"<table id="1" name="Akte Herr Ole Faber" displayName="Akte Herr Ole Faber" ref="A1:A2"><tableColumns count="1"><tableColumn id="1" name="Betrag"/></tableColumns></table>"#;
+        let input = zip(&[
+            ("xl/workbook.xml", wb.as_bytes()),
+            ("xl/_rels/workbook.xml.rels", WB_RELS.as_bytes()),
+            ("xl/worksheets/sheet1.xml", SHEET.as_bytes()),
+            ("xl/tables/table1.xml", t.as_bytes()),
+        ]);
+        let r = process(&default_engine(), &input, true).unwrap();
+        let out = unzip(&r.output, "xl/tables/table1.xml");
+        assert!(
+            out.contains(r#"name="Akte_Herr_PERSON_" displayName="Akte_Herr_PERSON_""#),
+            "{out}"
+        );
+        assert!(r.findings.iter().any(|f| f.entity.as_str() == "PERSON"));
+    }
+
+    /// A workbook whose sheet shows `cell` and holds the parts `more`.
+    fn workbook(cell: &str, more: &[(&str, &str)]) -> Vec<u8> {
+        let wb = r#"<workbook xmlns:r="r"><sheets><sheet name="Daten" sheetId="1" r:id="rId1"/></sheets></workbook>"#;
+        let sheet = format!(
+            r#"<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Akte</t></is></c></row><row r="2">{cell}</row></sheetData></worksheet>"#
+        );
+        let mut parts = vec![
+            ("xl/workbook.xml", wb.as_bytes()),
+            ("xl/_rels/workbook.xml.rels", WB_RELS.as_bytes()),
+            ("xl/worksheets/sheet1.xml", sheet.as_bytes()),
+        ];
+        parts.extend(more.iter().map(|(n, s)| (*n, s.as_bytes())));
+        zip(&parts)
+    }
+
+    #[test]
+    fn a_table_named_after_a_name_the_cells_hold_is_renamed() {
+        // C1: the table is read after the cells, whose names it then knows
+        // (ADR-0047).
+        let t = r#"<table id="1" name="Lindqvist" displayName="Lindqvist" ref="A1:A2"><tableColumns count="1"><tableColumn id="1" name="Akte"/></tableColumns></table>"#;
+        let input = workbook(
+            r#"<c r="A2" t="inlineStr"><is><t>Herr Kai Lindqvist</t></is></c>"#,
+            &[("xl/tables/table1.xml", t)],
+        );
+        let (bytes, _) = default_engine()
+            .run_bytes(&input, crate::Format::Xlsx, true)
+            .unwrap();
+        let out = unzip(&bytes, "xl/tables/table1.xml");
+        assert!(!out.contains("Lindqvist"), "{out}");
+    }
+
+    #[test]
+    fn a_pivot_cache_over_a_table_names_it() {
+        // C2: the cache would point to a table that is no more.
+        let t = r#"<table id="1" name="Faber" displayName="Faber" ref="A1:A2"><tableColumns count="1"><tableColumn id="1" name="Akte"/></tableColumns></table>"#;
+        let def = r#"<pivotCacheDefinition><cacheSource type="worksheet"><worksheetSource name="Faber"/></cacheSource><cacheFields count="1"><cacheField name="Akte"><sharedItems/></cacheField></cacheFields></pivotCacheDefinition>"#;
+        let input = workbook(
+            r#"<c r="A2" t="inlineStr"><is><t>Herr Ole Faber</t></is></c>"#,
+            &[
+                ("xl/tables/table1.xml", t),
+                ("xl/pivotCache/pivotCacheDefinition1.xml", def),
+            ],
+        );
+        let e = default_engine()
+            .run_bytes(&input, crate::Format::Xlsx, true)
+            .err()
+            .unwrap();
+        assert!(e.to_string().contains("a formula names it"), "{e}");
+    }
+
+    #[test]
+    fn formulas_name_a_table_or_column_as_a_name_of_its_own() {
+        // C5, C6.
+        assert!(names_table("sum(tabelle1[betrag])", "tabelle1"));
+        assert!(!names_table("sum(tabelle10[betrag])", "tabelle1"));
+        assert!(!names_table("sum(xtabelle1[betrag])", "tabelle1"));
+        assert!(names_column(
+            "tabelle1[@[kai lindqvist''s akte]]",
+            "kai lindqvist's akte"
+        ));
+        assert!(names_column("tabelle1[@betrag]", "betrag"));
+        assert!(names_column("getpivotdata(\"ole faber\",a1)", "ole faber"));
+        assert!(!names_column("tabelle1[@betrag2]", "betrag"));
+    }
+
+    #[test]
+    fn a_scan_fails_where_the_redaction_would() {
+        // C8.
+        let e = process(
+            &default_engine(),
+            &table(&["Herr Kai Lindqvist", "Herr Ole Faber"], ""),
+            false,
+        )
+        .err()
+        .unwrap();
+        assert!(e.to_string().contains("would become the same"), "{e}");
+    }
+
+    #[test]
+    fn a_feature_outside_the_workbook_part_is_read() {
+        // C4: only Excel's calculation features are left unread.
+        let doc = format!(
+            r#"<w:document {W}><w:body><w:p><w:r><w:t>Hallo</w:t></w:r></w:p></w:body></w:document>"#
+        );
+        let item = r#"<root><feature name="Herr Ole Faber"/></root>"#;
+        let input = zip(&[
+            ("word/document.xml", doc.as_bytes()),
+            ("customXml/item1.xml", item.as_bytes()),
+        ]);
+        let r = process(&default_engine(), &input, true).unwrap();
+        let out = unzip(&r.output, "customXml/item1.xml");
+        assert!(!out.contains("Faber"), "{out}");
+    }
+
+    #[test]
+    fn a_pivot_cache_without_findings_stays_byte_for_byte() {
+        // C9.
+        let def = r#"<pivotCacheDefinition><cacheFields count="1"><cacheField name="anzahl"><sharedItems containsSemiMixedTypes='0' containsNumber='1' minValue='2' maxValue='12'/></cacheField></cacheFields></pivotCacheDefinition>"#;
+        let r = process(
+            &default_engine(),
+            &workbook("", &[("xl/pivotCache/pivotCacheDefinition1.xml", def)]),
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            unzip(&r.output, "xl/pivotCache/pivotCacheDefinition1.xml"),
+            def
+        );
+    }
+
+    #[test]
+    fn a_tables_display_name_is_no_persons() {
+        // Every table's `displayName` was replaced as a person's, and Excel
+        // no longer opened the file.
+        let r = process(&default_engine(), &table(&["Betrag"], ""), true).unwrap();
+        assert!(r.findings.is_empty(), "{:?}", r.findings);
+    }
+
+    #[test]
+    fn a_tables_new_name() {
+        assert_eq!(table_name("<PERSON>", &[]), "_PERSON_");
+        assert_eq!(
+            table_name("Akte <PERSON>", &["akte_person_".into()]),
+            "Akte_PERSON__2"
+        );
+        assert_eq!(table_name("4 <PERSON>", &[]), "_4_PERSON_");
+        assert_eq!(table_name("AB12", &[]), "_AB12");
+    }
+
+    #[test]
+    fn fonts_and_calculation_features_are_not_read() {
+        // A theme's font names were taken for persons and its panose for a
+        // phone number, a calculation feature's name for a person: Excel
+        // no longer opened the file.
+        let wb = r#"<workbook xmlns:r="r" xmlns:xcalcf="x"><sheets><sheet name="Daten" sheetId="1" r:id="rId1"/></sheets><extLst><ext><xcalcf:calcFeatures><xcalcf:feature name="microsoft.com:Single"/></xcalcf:calcFeatures></ext></extLst></workbook>"#;
+        let theme = r#"<a:theme xmlns:a="a" name="Office"><a:fontScheme name="Office"><a:majorFont><a:latin typeface="Aptos Display" panose="02110004020202020204"/><a:font script="Thaa" typeface="MV Boli"/><a:font script="Sinh" typeface="Iskoola Pota"/></a:majorFont></a:fontScheme></a:theme>"#;
+        let input = zip(&[
+            ("xl/workbook.xml", wb.as_bytes()),
+            ("xl/_rels/workbook.xml.rels", WB_RELS.as_bytes()),
+            ("xl/worksheets/sheet1.xml", SHEET.as_bytes()),
+            ("xl/theme/theme1.xml", theme.as_bytes()),
+        ]);
+        let r = process(&default_engine(), &input, true).unwrap();
+        assert!(r.findings.is_empty(), "{:?}", r.findings);
+        let mut a = ZipArchive::new(Cursor::new(&r.output)).unwrap();
+        let mut out = String::new();
+        a.by_name("xl/theme/theme1.xml")
+            .unwrap()
+            .read_to_string(&mut out)
+            .unwrap();
+        assert_eq!(out, theme);
+    }
+
+    #[test]
+    fn a_pivot_field_whose_numbers_become_text_says_so() {
+        // #157: tax ids stored as numbers.
+        let wb = r#"<workbook xmlns:r="r"><sheets><sheet name="Daten" sheetId="1" r:id="rId1"/></sheets></workbook>"#;
+        let def = r#"<pivotCacheDefinition r:id="rId1"><cacheSource type="worksheet"><worksheetSource ref="A1:B3" sheet="Daten"/></cacheSource><cacheFields count="2"><cacheField name="Steuer-ID" numFmtId="0"><sharedItems containsSemiMixedTypes="0" containsString="0" containsNumber="1" containsInteger="1" minValue="57381942656" maxValue="57381942656"/></cacheField><cacheField name="anzahl" numFmtId="0"><sharedItems containsSemiMixedTypes="0" containsString="0" containsNumber="1" containsInteger="1" minValue="2" maxValue="12"/></cacheField></cacheFields></pivotCacheDefinition>"#;
+        let def_rels = r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheRecords" Target="pivotCacheRecords1.xml"/></Relationships>"#;
+        let run = |second: &str| {
+            let rec = format!(
+                r#"<pivotCacheRecords count="2"><r><n v="57381942656"/><n v="2"/></r><r><n v="{second}"/><n v="12"/></r></pivotCacheRecords>"#
+            );
+            let input = zip(&[
+                ("xl/workbook.xml", wb.as_bytes()),
+                ("xl/_rels/workbook.xml.rels", WB_RELS.as_bytes()),
+                ("xl/worksheets/sheet1.xml", SHEET.as_bytes()),
+                ("xl/pivotCache/pivotCacheDefinition1.xml", def.as_bytes()),
+                (
+                    "xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels",
+                    def_rels.as_bytes(),
+                ),
+                ("xl/pivotCache/pivotCacheRecords1.xml", rec.as_bytes()),
+            ]);
+            let r = process(&default_engine(), &input, true).unwrap();
+            let rec_out = unzip(&r.output, "xl/pivotCache/pivotCacheRecords1.xml");
+            assert!(rec_out.contains(r#"<r><s v="&lt;"#), "{rec_out}");
+            unzip(&r.output, "xl/pivotCache/pivotCacheDefinition1.xml")
+        };
+        // No number left: it says it holds none (Excel rejects the file
+        // that says it holds numbers and has none).
+        let def_out = run("57381942656");
+        assert!(
+            def_out.contains(r#"<cacheField name="Steuer-ID" numFmtId="0"><sharedItems/>"#),
+            "{def_out}"
+        );
+        // A number left: mixed types.
+        let def_out = run("4");
+        assert!(
+            def_out.contains(
+                r#"<cacheField name="Steuer-ID" numFmtId="0"><sharedItems containsNumber="1" containsInteger="1" containsMixedTypes="1"/>"#
+            ),
+            "{def_out}"
+        );
+        // A field that kept its numbers keeps its flags.
+        assert!(
+            def_out.contains(r#"containsString="0" containsNumber="1" containsInteger="1" minValue="2" maxValue="12"/>"#),
+            "{def_out}"
+        );
     }
 
     #[test]

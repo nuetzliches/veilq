@@ -86,13 +86,22 @@ fn apart(a: &str, b: &str) -> f32 {
 
 /// How far a pixel's channels lie from the background's for it to be ink.
 const INK: u8 = 60;
+/// The same beside a line the edge cuts (ADR-0074): pale text (`#C8C8C8`
+/// on white, 55 off) is ink, a panel a few shades off the background (12
+/// to 17 in a dark theme) is none.
+const EDGE_INK: u8 = 24;
 
 /// Whether `p` is ink on `background`: a channel more than [`INK`] off. A
 /// surface in another shade of the background is none (ADR-0072).
 pub(crate) fn is_ink(p: image::Rgb<u8>, background: image::Rgb<u8>) -> bool {
+    ink_by(p, background, INK)
+}
+
+/// Whether `p` is ink on `background`: a channel more than `limit` off.
+fn ink_by(p: image::Rgb<u8>, background: image::Rgb<u8>, limit: u8) -> bool {
     p.0.iter()
         .zip(background.0)
-        .any(|(p, b)| p.abs_diff(b) > INK)
+        .any(|(p, b)| p.abs_diff(b) > limit)
 }
 
 /// `r` widened to the left and right over the ink in its rows, across gaps
@@ -104,7 +113,7 @@ fn over_ink(img: &RgbImage, r: Rect, background: image::Rgb<u8>) -> Rect {
     let rows = r.y..r.bottom().min(img.height());
     let ink = |x: u32| {
         rows.clone()
-            .any(|y| is_ink(*img.get_pixel(x, y), background))
+            .any(|y| ink_by(*img.get_pixel(x, y), background, EDGE_INK))
     };
     let mut right = r.right().min(w);
     let mut x = right;
@@ -1264,6 +1273,28 @@ mod tests {
                 h: 8,
             },
             background,
+        );
+        assert_eq!((r.x, r.right()), (10, 30));
+    }
+
+    #[test]
+    fn a_cut_lines_box_grows_over_pale_letters() {
+        // Pale text (`#C8C8C8` on white, 55 off): the end of a name that
+        // stayed visible beside the fill (review before 0.9.0).
+        let white = image::Rgb([255, 255, 255]);
+        let mut img = RgbImage::from_pixel(100, 10, white);
+        for x in (10..20).chain(24..30) {
+            img.put_pixel(x, 5, image::Rgb([200, 200, 200]));
+        }
+        let r = over_ink(
+            &img,
+            Rect {
+                x: 12,
+                y: 2,
+                w: 6,
+                h: 8,
+            },
+            white,
         );
         assert_eq!((r.x, r.right()), (10, 30));
     }
