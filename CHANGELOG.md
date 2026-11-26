@@ -6,6 +6,14 @@ Notable changes per release. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The fill over a line cut by a picture's edge no longer runs across a
+  second window beside it (ADR-0074, point 1 withdrawn): it grows over
+  ink 60 off the background again, as in ADR-0072. 0.9.0 had lowered the
+  threshold to 24, and a dark window's panels 30 to 41 off counted as ink.
+  Pale text cut by the edge stays a limit.
+
 ## [0.9.0] - 2026-11-26
 
 ### Removed

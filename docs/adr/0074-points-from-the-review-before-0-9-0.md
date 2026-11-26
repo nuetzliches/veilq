@@ -43,6 +43,13 @@ cells all the same, and only in a workbook that has one.
 1. **A cut line grows over ink 24 off** (`EDGE_INK`): pale text is ink, a
    panel a few shades off the background (12 to 17 in the reported dark
    theme) is none. Elsewhere ink stays 60 off (`INK`).
+   **Withdrawn after 0.9.0 (2026-11-26):** the 12 to 17 came from the
+   corpus's one drawn settings window, not from the reported screenshot,
+   whose second window's panels lay 30 to 41 off the first's background;
+   with 24 they were ink again and the fill ran across the picture, as
+   before ADR-0072. A cut line grows over ink 60 off again; pale text cut
+   by the edge is the limit that stays. No threshold separates both
+   cases; the corpus that would show it is #169.
 2. **`worksheetSource name` is a formula's text** (`formula_texts`).
 3. **A name is matched as a name** (`names_table`, `names_column`): a
    table only where no letter, digit, `_`, `.` or `\` stands beside it; a
