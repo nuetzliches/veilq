@@ -1,4 +1,4 @@
-# devstack stack file. Reference: https://github.com/nuetzliches/devstack/blob/v0.50.0/docs/stack-file.md
+# devstack stack file. Reference: https://github.com/nuetzliches/devstack/blob/v0.54.0/docs/stack-file.md
 # Validate after every edit: `devstack check --compose`.
 #
 # Two services, both native: the web UI's dev server against the in-browser
@@ -16,7 +16,7 @@ version = 1
 [stack]
 name     = "veilq"
 requires = "0.48.0"   # shortcut
-reviewed = "0.50.0"   # the devstack this file was last brought up to date with
+reviewed = "0.54.0"   # the devstack this file was last brought up to date with
 
 # The UI against src/api/mock.ts: for working on the UI, no Rust build.
 [services.ui]
@@ -25,11 +25,14 @@ cwd        = "ui"
 run        = "npx vite --mode mock --host 127.0.0.1 --port {port} --strictPort"
 port       = 4761
 health     = { http = "/", timeout = "90s" }
-restart_on = ["ui/vite.config.ts", "ui/package.json", "ui/tsconfig*.json", "ui/env.d.ts"]
+# The lockfile too: a pull with new packages restarts the dev server, and the
+# restart runs `prepare` (`npm ci`) first.
+restart_on = ["ui/vite.config.ts", "ui/package.json", "ui/package-lock.json", "ui/tsconfig*.json", "ui/env.d.ts"]
 tunnel     = false
 # A lane's copy has no node_modules (ignored files are not copied); `link`
 # makes the copy's available in the lane's worktree too (stop the lane before
-# `git worktree remove`).
+# `git worktree remove`). The main tree runs it in place when the lockfile
+# changed, and stops `veilq` meanwhile: both name the same `outputs`.
 prepare    = { run = "npm ci", inputs = ["ui/package-lock.json"], outputs = ["ui/node_modules"], link = ["ui/node_modules"] }
 
 # `veilq ui` with the UI embedded (build.rs takes ui/dist). It prints its URL
