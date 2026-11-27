@@ -10,7 +10,8 @@
         "y": 142,
         "width": 101,
         "height": 7
-      }
+      },
+      "value": "DE38808002720000001201"
     },
     {
       "entity": "PERSON",
@@ -20,7 +21,8 @@
         "y": 206,
         "width": 67,
         "height": 8
-      }
+      },
+      "value": "Tobias Schröder"
     }
   ]
 }

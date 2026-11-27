@@ -10,7 +10,8 @@
         "y": 45,
         "width": 75,
         "height": 17
-      }
+      },
+      "value": "Felix Vogt"
     },
     {
       "entity": "EMAIL_ADDRESS",
@@ -20,7 +21,8 @@
         "y": 74,
         "width": 121,
         "height": 14
-      }
+      },
+      "value": "fvogt@example.net"
     }
   ]
 }

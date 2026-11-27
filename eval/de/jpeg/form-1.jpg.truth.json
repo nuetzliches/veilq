@@ -20,7 +20,8 @@
         "y": 107,
         "width": 65,
         "height": 10
-      }
+      },
+      "value": "Mira Becker"
     },
     {
       "entity": "DATE_OF_BIRTH",
@@ -30,7 +31,8 @@
         "y": 144,
         "width": 52,
         "height": 9
-      }
+      },
+      "value": "17.5.1978"
     },
     {
       "entity": "ADDRESS",
@@ -40,7 +42,8 @@
         "y": 177,
         "width": 167,
         "height": 12
-      }
+      },
+      "value": "Goethestraße 86, 10115 Berlin"
     },
     {
       "entity": "PHONE_NUMBER",
@@ -50,7 +53,8 @@
         "y": 212,
         "width": 76,
         "height": 9
-      }
+      },
+      "value": "0511-5557061"
     },
     {
       "entity": "EMAIL_ADDRESS",
@@ -60,7 +64,8 @@
         "y": 245,
         "width": 128,
         "height": 13
-      }
+      },
+      "value": "mbecker@example.org"
     },
     {
       "entity": "IBAN_CODE",
@@ -70,7 +75,8 @@
         "y": 280,
         "width": 164,
         "height": 9
-      }
+      },
+      "value": "DE52 7991 9030 0635 5059 05"
     },
     {
       "entity": "TAX_ID",
@@ -80,7 +86,8 @@
         "y": 314,
         "width": 83,
         "height": 9
-      }
+      },
+      "value": "60 658 252 135"
     },
     {
       "entity": "LICENSE_PLATE",
@@ -90,7 +97,8 @@
         "y": 348,
         "width": 49,
         "height": 9
-      }
+      },
+      "value": "OS-L 379"
     }
   ]
 }

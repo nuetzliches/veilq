@@ -10,7 +10,8 @@
         "y": 49,
         "width": 86,
         "height": 11
-      }
+      },
+      "value": "Paul Sommer"
     },
     {
       "entity": "EMAIL_ADDRESS",
@@ -20,7 +21,8 @@
         "y": 73,
         "width": 160,
         "height": 12
-      }
+      },
+      "value": "paul.sommer49@example.com"
     },
     {
       "entity": "PHONE_NUMBER",
@@ -30,7 +32,8 @@
         "y": 126,
         "width": 103,
         "height": 11
-      }
+      },
+      "value": "+49 (0)421 555 3262"
     }
   ]
 }

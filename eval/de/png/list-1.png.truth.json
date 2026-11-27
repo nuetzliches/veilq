@@ -10,7 +10,8 @@
         "y": 47,
         "width": 60,
         "height": 9
-      }
+      },
+      "value": "Jan Bergmann"
     },
     {
       "entity": "ADDRESS",
@@ -20,7 +21,8 @@
         "y": 46,
         "width": 75,
         "height": 8
-      }
+      },
+      "value": "Hohenauer Stra ..."
     },
     {
       "entity": "ADDRESS",
@@ -30,7 +32,8 @@
         "y": 47,
         "width": 10,
         "height": 7
-      }
+      },
+      "value": "39"
     },
     {
       "entity": "ADDRESS",
@@ -40,7 +43,8 @@
         "y": 47,
         "width": 25,
         "height": 7
-      }
+      },
+      "value": "28195"
     },
     {
       "entity": "ADDRESS",
@@ -50,7 +54,8 @@
         "y": 47,
         "width": 33,
         "height": 7
-      }
+      },
+      "value": "Bremen"
     },
     {
       "entity": "PERSON",
@@ -60,7 +65,8 @@
         "y": 76,
         "width": 44,
         "height": 10
-      }
+      },
+      "value": "Felix Engel"
     },
     {
       "entity": "PERSON",
@@ -70,7 +76,8 @@
         "y": 76,
         "width": 26,
         "height": 8
-      }
+      },
+      "value": "Albers"
     },
     {
       "entity": "ADDRESS",
@@ -80,7 +87,8 @@
         "y": 76,
         "width": 70,
         "height": 8
-      }
+      },
+      "value": "Birkenhainer Str."
     },
     {
       "entity": "ADDRESS",
@@ -90,7 +98,8 @@
         "y": 77,
         "width": 5,
         "height": 7
-      }
+      },
+      "value": "9"
     },
     {
       "entity": "ADDRESS",
@@ -100,7 +109,8 @@
         "y": 77,
         "width": 24,
         "height": 7
-      }
+      },
+      "value": "60311"
     },
     {
       "entity": "ADDRESS",
@@ -110,7 +120,8 @@
         "y": 76,
         "width": 55,
         "height": 8
-      }
+      },
+      "value": "Frankfurt a ..."
     },
     {
       "entity": "PERSON",
@@ -120,7 +131,8 @@
         "y": 106,
         "width": 70,
         "height": 8
-      }
+      },
+      "value": "Nordwerk GmbH"
     },
     {
       "entity": "PERSON",
@@ -130,7 +142,8 @@
         "y": 106,
         "width": 22,
         "height": 8
-      }
+      },
+      "value": "Kühn"
     },
     {
       "entity": "ADDRESS",
@@ -140,7 +153,8 @@
         "y": 106,
         "width": 60,
         "height": 8
-      }
+      },
+      "value": "Kastanienallee"
     },
     {
       "entity": "ADDRESS",
@@ -150,7 +164,8 @@
         "y": 107,
         "width": 10,
         "height": 7
-      }
+      },
+      "value": "85"
     },
     {
       "entity": "ADDRESS",
@@ -160,7 +175,8 @@
         "y": 107,
         "width": 24,
         "height": 7
-      }
+      },
+      "value": "80331"
     },
     {
       "entity": "ADDRESS",
@@ -170,7 +186,8 @@
         "y": 106,
         "width": 39,
         "height": 8
-      }
+      },
+      "value": "München"
     },
     {
       "entity": "PERSON",
@@ -180,7 +197,8 @@
         "y": 136,
         "width": 52,
         "height": 8
-      }
+      },
+      "value": "Greta Albers"
     },
     {
       "entity": "ADDRESS",
@@ -190,7 +208,8 @@
         "y": 136,
         "width": 70,
         "height": 8
-      }
+      },
+      "value": "Birkenhainer Str."
     },
     {
       "entity": "ADDRESS",
@@ -200,7 +219,8 @@
         "y": 137,
         "width": 9,
         "height": 7
-      }
+      },
+      "value": "31"
     },
     {
       "entity": "ADDRESS",
@@ -210,7 +230,8 @@
         "y": 137,
         "width": 24,
         "height": 7
-      }
+      },
+      "value": "80331"
     },
     {
       "entity": "ADDRESS",
@@ -220,7 +241,8 @@
         "y": 136,
         "width": 39,
         "height": 8
-      }
+      },
+      "value": "München"
     },
     {
       "entity": "PERSON",
@@ -230,7 +252,8 @@
         "y": 166,
         "width": 64,
         "height": 8
-      }
+      },
+      "value": "Lena Hoffmann"
     },
     {
       "entity": "PERSON",
@@ -240,7 +263,8 @@
         "y": 167,
         "width": 36,
         "height": 7
-      }
+      },
+      "value": "Sommer"
     },
     {
       "entity": "ADDRESS",
@@ -250,7 +274,8 @@
         "y": 166,
         "width": 47,
         "height": 8
-      }
+      },
+      "value": "Rosenhöhe"
     },
     {
       "entity": "ADDRESS",
@@ -260,7 +285,8 @@
         "y": 167,
         "width": 9,
         "height": 7
-      }
+      },
+      "value": "71"
     },
     {
       "entity": "ADDRESS",
@@ -270,7 +296,8 @@
         "y": 167,
         "width": 25,
         "height": 7
-      }
+      },
+      "value": "28195"
     },
     {
       "entity": "ADDRESS",
@@ -280,7 +307,8 @@
         "y": 167,
         "width": 33,
         "height": 7
-      }
+      },
+      "value": "Bremen"
     },
     {
       "entity": "PERSON",
@@ -290,7 +318,8 @@
         "y": 196,
         "width": 48,
         "height": 10
-      }
+      },
+      "value": "Malte Engel"
     },
     {
       "entity": "PERSON",
@@ -300,7 +329,8 @@
         "y": 197,
         "width": 36,
         "height": 7
-      }
+      },
+      "value": "Sommer"
     },
     {
       "entity": "ADDRESS",
@@ -310,7 +340,8 @@
         "y": 196,
         "width": 47,
         "height": 8
-      }
+      },
+      "value": "Rosenhöhe"
     },
     {
       "entity": "ADDRESS",
@@ -320,7 +351,8 @@
         "y": 197,
         "width": 10,
         "height": 7
-      }
+      },
+      "value": "15"
     },
     {
       "entity": "ADDRESS",
@@ -330,7 +362,8 @@
         "y": 197,
         "width": 25,
         "height": 7
-      }
+      },
+      "value": "01067"
     },
     {
       "entity": "ADDRESS",
@@ -340,7 +373,8 @@
         "y": 196,
         "width": 35,
         "height": 8
-      }
+      },
+      "value": "Dresden"
     }
   ]
 }

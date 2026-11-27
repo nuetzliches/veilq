@@ -10,7 +10,8 @@
         "y": 83,
         "width": 25,
         "height": 9
-      }
+      },
+      "value": "Clara"
     },
     {
       "entity": "PERSON",
@@ -20,7 +21,8 @@
         "y": 39,
         "width": 74,
         "height": 12
-      }
+      },
+      "value": "Sophie Brandt"
     },
     {
       "entity": "EMAIL_ADDRESS",
@@ -30,7 +32,8 @@
         "y": 58,
         "width": 121,
         "height": 10
-      }
+      },
+      "value": "sophie.brandt@example.com"
     }
   ]
 }

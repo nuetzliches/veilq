@@ -11,7 +11,8 @@
         "y": 466,
         "width": 144,
         "height": 17
-      }
+      },
+      "value": "Felix Hoffmann"
     },
     {
       "entity": "ADDRESS",
@@ -22,7 +23,8 @@
         "y": 512,
         "width": 141,
         "height": 20
-      }
+      },
+      "value": "Rosengasse 79"
     },
     {
       "entity": "ADDRESS",
@@ -33,7 +35,8 @@
         "y": 556,
         "width": 153,
         "height": 17
-      }
+      },
+      "value": "80331 München"
     },
     {
       "entity": "PERSON",
@@ -44,7 +47,8 @@
         "y": 394,
         "width": 88,
         "height": 14
-      }
+      },
+      "value": "Jonas Wagner"
     },
     {
       "entity": "PERSON",
@@ -55,7 +59,8 @@
         "y": 886,
         "width": 121,
         "height": 19
-      }
+      },
+      "value": "Jonas Wagner"
     }
   ]
 }

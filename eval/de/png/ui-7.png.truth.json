@@ -10,7 +10,8 @@
         "y": 68,
         "width": 129,
         "height": 16
-      }
+      },
+      "value": "Wiebke Albers"
     },
     {
       "entity": "EMAIL_ADDRESS",
@@ -20,7 +21,8 @@
         "y": 102,
         "width": 222,
         "height": 17
-      }
+      },
+      "value": "wiebke.albers98@example.org"
     },
     {
       "entity": "PHONE_NUMBER",
@@ -30,7 +32,8 @@
         "y": 176,
         "width": 99,
         "height": 13
-      }
+      },
+      "value": "0351-5554781"
     },
     {
       "entity": "PERSON",
@@ -40,7 +43,8 @@
         "y": 368,
         "width": 48,
         "height": 15
-      }
+      },
+      "value": "Emilia"
     }
   ]
 }

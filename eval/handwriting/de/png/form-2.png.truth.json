@@ -10,7 +10,8 @@
         "y": 116,
         "width": 137,
         "height": 23
-      }
+      },
+      "value": "Friedrich, Felix"
     },
     {
       "entity": "DATE_OF_BIRTH",
@@ -20,7 +21,8 @@
         "y": 191,
         "width": 93,
         "height": 15
-      }
+      },
+      "value": "26.08.2002"
     },
     {
       "entity": "ADDRESS",
@@ -30,7 +32,8 @@
         "y": 256,
         "width": 286,
         "height": 30
-      }
+      },
+      "value": "Rosengasse 76, 01067 Dresden"
     },
     {
       "entity": "PHONE_NUMBER",
@@ -40,7 +43,8 @@
         "y": 330,
         "width": 126,
         "height": 17
-      }
+      },
+      "value": "0351-5552489"
     },
     {
       "entity": "IBAN_CODE",
@@ -50,7 +54,8 @@
         "y": 397,
         "width": 254,
         "height": 17
-      }
+      },
+      "value": "DE36 3949 2576 1857 9294 66"
     }
   ]
 }

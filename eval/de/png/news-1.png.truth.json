@@ -10,7 +10,8 @@
         "y": 54,
         "width": 35,
         "height": 12
-      }
+      },
+      "value": "Greta"
     },
     {
       "entity": "PERSON",
@@ -20,7 +21,8 @@
         "y": 85,
         "width": 44,
         "height": 12
-      }
+      },
+      "value": "Brandt"
     },
     {
       "entity": "PERSON",
@@ -30,7 +32,8 @@
         "y": 54,
         "width": 38,
         "height": 12
-      }
+      },
+      "value": "Seidel"
     }
   ]
 }

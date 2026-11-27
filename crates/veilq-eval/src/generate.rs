@@ -23,6 +23,11 @@ mod visual;
 pub struct Truth {
     pub entity: EntityType,
     pub location: Location,
+    /// The value as drawn, for a picture's region (#175): the text can be
+    /// read back from a span or a cell, not from pixels, and `candidates`
+    /// labels a picture's candidates by it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -434,6 +439,7 @@ impl Text {
                         line,
                         column,
                     },
+                    value: None,
                 }
             })
             .collect();
@@ -966,6 +972,7 @@ fn json_truth(values: &Values, line: impl Fn(&str) -> u64) -> Vec<Truth> {
                 line: line(pointer),
                 column: 1,
             },
+            value: None,
         })
         .collect()
 }
@@ -1134,6 +1141,7 @@ fn customers_csv(r: &mut Rng, de: bool) -> (String, Vec<Truth>) {
                         start: range.start as u64,
                         end: range.end as u64,
                     },
+                    value: None,
                 });
             }
         }
@@ -1397,6 +1405,7 @@ fn segment_truth(part: &str, n: u64, t: &Text) -> Vec<Truth> {
                 line: n,
                 column: t.s[..r.start].chars().count() as u64 + 1,
             },
+            value: None,
         })
         .collect()
 }
@@ -1477,6 +1486,7 @@ fn contract_docx(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
                 line: n,
                 column: 1,
             },
+            value: None,
         });
     }
     let bytes = zip_of(&[
@@ -1513,6 +1523,7 @@ fn customers_xlsx(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
                     start: 0,
                     end: value.len() as u64,
                 },
+                value: None,
             });
         };
     for row in 2..=5u64 {
@@ -1552,6 +1563,7 @@ fn customers_xlsx(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
                 start: at as u64,
                 end: (at + len) as u64,
             },
+            value: None,
         });
     }
     let sst: String = strings
@@ -1625,6 +1637,7 @@ fn callback_eml(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
                     line,
                     column,
                 },
+                value: None,
             });
         }
     }
@@ -1654,6 +1667,7 @@ fn callback_eml(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
                 start: 0,
                 end: len as u64,
             },
+            value: None,
         });
     }
     let csv_b64 = base64::engine::general_purpose::STANDARD.encode(csv);

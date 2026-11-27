@@ -10,7 +10,8 @@
         "y": 112,
         "width": 162,
         "height": 23
-      }
+      },
+      "value": "Schröder, Wiebke"
     },
     {
       "entity": "DATE_OF_BIRTH",
@@ -20,7 +21,8 @@
         "y": 186,
         "width": 81,
         "height": 16
-      }
+      },
+      "value": "06.07.1969"
     },
     {
       "entity": "ADDRESS",
@@ -30,7 +32,8 @@
         "y": 259,
         "width": 280,
         "height": 29
-      }
+      },
+      "value": "Mühlenring 22, 20095 Hamburg"
     },
     {
       "entity": "PHONE_NUMBER",
@@ -40,7 +43,8 @@
         "y": 326,
         "width": 120,
         "height": 17
-      }
+      },
+      "value": "0341 5553840"
     },
     {
       "entity": "IBAN_CODE",
@@ -50,7 +54,8 @@
         "y": 397,
         "width": 257,
         "height": 17
-      }
+      },
+      "value": "DE47 0459 7258 1172 9359 07"
     }
   ]
 }

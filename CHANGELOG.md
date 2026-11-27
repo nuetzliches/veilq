@@ -14,6 +14,10 @@ Notable changes per release. The format follows
   the edge. Eight per corpus form the profile `de/png/ui`, measured over
   the held-out seeds; it shows brands taken for names and cut chrome
   filled as unread text. Detection is unchanged.
+- `veilq-eval candidates --ocr` writes the candidates of pictures too,
+  labelled by the values their truth now holds as drawn (#175): training
+  data for a learned head over weak findings. A value OCR read one letter
+  off in six still counts. Detection is unchanged.
 
 ### Fixed
 

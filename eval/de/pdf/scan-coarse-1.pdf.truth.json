@@ -11,7 +11,8 @@
         "y": 466,
         "width": 89,
         "height": 21
-      }
+      },
+      "value": "Jan Engel"
     },
     {
       "entity": "ADDRESS",
@@ -22,7 +23,8 @@
         "y": 511,
         "width": 143,
         "height": 21
-      }
+      },
+      "value": "Schillerplatz 76"
     },
     {
       "entity": "ADDRESS",
@@ -33,7 +35,8 @@
         "y": 557,
         "width": 139,
         "height": 16
-      }
+      },
+      "value": "28195 Bremen"
     },
     {
       "entity": "PERSON",
@@ -44,7 +47,8 @@
         "y": 394,
         "width": 70,
         "height": 11
-      }
+      },
+      "value": "Malte Kühn"
     },
     {
       "entity": "PERSON",
@@ -55,7 +59,8 @@
         "y": 885,
         "width": 96,
         "height": 15
-      }
+      },
+      "value": "Malte Kühn"
     }
   ]
 }

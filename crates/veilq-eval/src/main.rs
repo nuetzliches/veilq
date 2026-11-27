@@ -122,6 +122,10 @@ enum Command {
         /// Run the installed NER model too (`veilq models fetch ner`).
         #[arg(long)]
         ner: bool,
+        /// Read the pictures too, with the installed OCR (`veilq models fetch
+        /// ocr`), labelled by the values their truth holds (#175).
+        #[arg(long)]
+        ocr: bool,
         /// The JSONL file to write.
         #[arg(long)]
         out: PathBuf,
@@ -212,13 +216,14 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             dir,
             only,
             ner,
+            ocr,
             out,
         } => {
             let mut file = std::io::BufWriter::new(std::fs::File::create(&out)?);
-            let w = candidates::write(&dir, only.as_deref(), ner, &mut file)?;
+            let w = candidates::write(&dir, only.as_deref(), ner, ocr, &mut file)?;
             std::io::Write::flush(&mut file)?;
             println!(
-                "{} candidates ({} personal) from {} documents written to {}; {} skipped (pictures, containers, unreadable truth)",
+                "{} candidates ({} personal) from {} documents written to {}; {} skipped (containers, pictures without --ocr, unreadable truth)",
                 w.candidates,
                 w.personal,
                 w.documents,

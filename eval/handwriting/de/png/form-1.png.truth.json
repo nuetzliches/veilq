@@ -10,7 +10,8 @@
         "y": 117,
         "width": 80,
         "height": 23
-      }
+      },
+      "value": "Kern, Ida"
     },
     {
       "entity": "DATE_OF_BIRTH",
@@ -20,7 +21,8 @@
         "y": 184,
         "width": 102,
         "height": 17
-      }
+      },
+      "value": "8. März 1974"
     },
     {
       "entity": "ADDRESS",
@@ -30,7 +32,8 @@
         "y": 253,
         "width": 269,
         "height": 29
-      }
+      },
+      "value": "Kirchsteig 95, 20095 Hamburg"
     },
     {
       "entity": "PHONE_NUMBER",
@@ -40,7 +43,8 @@
         "y": 328,
         "width": 149,
         "height": 17
-      }
+      },
+      "value": "+49 221 5556297"
     },
     {
       "entity": "IBAN_CODE",
@@ -50,7 +54,8 @@
         "y": 398,
         "width": 264,
         "height": 17
-      }
+      },
+      "value": "DE38 3253 0528 2447 0698 76"
     }
   ]
 }

@@ -11,7 +11,8 @@
         "y": 155,
         "width": 106,
         "height": 16
-      }
+      },
+      "value": "Felix Becker"
     },
     {
       "entity": "ADDRESS",
@@ -22,7 +23,8 @@
         "y": 197,
         "width": 289,
         "height": 20
-      }
+      },
+      "value": "Lindenweg 52a, 20095 Hamburg"
     },
     {
       "entity": "IBAN_CODE",
@@ -33,7 +35,8 @@
         "y": 386,
         "width": 262,
         "height": 15
-      }
+      },
+      "value": "DE40 6276 4823 2229 9337 51"
     },
     {
       "entity": "PERSON",
@@ -44,7 +47,8 @@
         "y": 435,
         "width": 86,
         "height": 20
-      }
+      },
+      "value": "Felix Vogt"
     },
     {
       "entity": "PHONE_NUMBER",
@@ -55,7 +59,8 @@
         "y": 436,
         "width": 140,
         "height": 15
-      }
+      },
+      "value": "+49 89 5556292"
     },
     {
       "entity": "TAX_ID",
@@ -66,7 +71,8 @@
         "y": 526,
         "width": 134,
         "height": 15
-      }
+      },
+      "value": "13 396 316 775"
     },
     {
       "entity": "LICENSE_PLATE",
@@ -77,7 +83,8 @@
         "y": 526,
         "width": 59,
         "height": 19
-      }
+      },
+      "value": "K-J 445"
     }
   ]
 }
