@@ -18,6 +18,10 @@ Notable changes per release. The format follows
   labelled by the values their truth now holds as drawn (#175): training
   data for a learned head over weak findings. A value OCR read one letter
   off in six still counts. Detection is unchanged.
+- Each candidate in `scan --explain --json` and `veilq-eval candidates`
+  carries named measures (ADR-0076, #175): the shape of its text
+  (`text.*`) and, in a picture, its box in shares of the picture
+  (`box.*`). Detection is unchanged.
 
 ### Fixed
 

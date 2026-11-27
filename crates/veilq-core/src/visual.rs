@@ -838,6 +838,7 @@ fn candidates(
         for c in read(&text, "")? {
             let rects = boxes(&p, c.start, c.end, w, h);
             let rects = with_rest(&c, &text[c.start..c.end], rects, &others, w);
+            explain_place(engine, &text, &c, &rects, (w, h));
             out.push((c, rects));
         }
     }
@@ -884,6 +885,7 @@ fn candidates(
                 }
                 let rects = boxes(&one, c.start, c.end, w, h);
                 let rects = with_rest(&c, &text[c.start..c.end], rects, &others, w);
+                explain_place(engine, &text, &c, &rects, (w, h));
                 out.push((c, rects));
             }
         }
@@ -918,6 +920,7 @@ fn candidates(
             };
             for c in read(&two.text, &neighbours(lines, &heads, i))? {
                 let rects = boxes(&two, c.start, c.end, w, h);
+                explain_place(engine, &two.text, &c, &rects, (w, h));
                 out.push((c, rects));
             }
         }
@@ -939,10 +942,31 @@ fn candidates(
         let context = neighbours(lines, &heads, i);
         for c in engine.ocr_findings_read_again(&a.text, &context, "contrast")? {
             let rects = boxes(&one, c.start, c.end, w, h);
+            explain_place(engine, &a.text, &c, &rects, (w, h));
             out.push((c, rects));
         }
     }
     Ok(out)
+}
+
+/// Where a candidate stands in the picture, for `scan --explain` and the
+/// candidates of veilq-eval (#175): the box around its rects.
+fn explain_place(
+    engine: &Engine,
+    text: &str,
+    c: &crate::detect::Candidate,
+    rects: &[Rect],
+    size: (u32, u32),
+) {
+    let (Some(x0), Some(y0)) = (
+        rects.iter().map(|r| r.x).min(),
+        rects.iter().map(|r| r.y).min(),
+    ) else {
+        return;
+    };
+    let x1 = rects.iter().map(|r| r.right()).max().unwrap_or(x0);
+    let y1 = rects.iter().map(|r| r.bottom()).max().unwrap_or(y0);
+    engine.explain_place(text, (c.start, c.end), (x0, y0, x1, y1), size);
 }
 
 /// [`redact_picture`] on `img`, a band of a picture: the findings are
