@@ -217,6 +217,7 @@ impl Explain {
                     raised: d.raised,
                     features: d.features.clone(),
                     lifted: d.lifted,
+                    measures: text_measures(&text[d.candidate.start..d.candidate.end]),
                 })
                 .collect(),
         };
@@ -225,6 +226,66 @@ impl Explain {
             .unwrap_or_else(|e| e.into_inner())
             .push(reading);
     }
+
+    /// Adds where a picture's candidate stands (#175): its box `(x0, y0, x1,
+    /// y1)` in shares of the picture `(w, h)`, to every reading of `text`
+    /// that holds a candidate at `start..end` without a place yet.
+    pub(crate) fn place(
+        &self,
+        text: &str,
+        (start, end): (usize, usize),
+        (x0, y0, x1, y1): (u32, u32, u32, u32),
+        (w, h): (u32, u32),
+    ) {
+        let (w, h) = (w.max(1) as f32, h.max(1) as f32);
+        let mut readings = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        // Every reading of the text: a file is read twice (ADR-0047), and
+        // the same text again holds the candidate at the same place.
+        for c in readings
+            .iter_mut()
+            .filter(|r| r.text == text)
+            .flat_map(|r| r.candidates.iter_mut())
+            .filter(|c| c.start == start && c.end == end && !c.measures.contains_key("box.x"))
+        {
+            c.measures.insert("box.x", x0 as f32 / w);
+            c.measures.insert("box.y", y0 as f32 / h);
+            c.measures.insert("box.w", (x1 - x0) as f32 / w);
+            c.measures.insert("box.h", (y1 - y0) as f32 / h);
+            c.measures.insert("box.below", (h - y1 as f32).max(0.0) / h);
+        }
+    }
+}
+
+/// The shape of a candidate's text as named measures (#175): its length in
+/// characters, its words, the shares of capitals and digits among its
+/// characters, and whether every word starts with a capital.
+pub fn text_measures(value: &str) -> std::collections::BTreeMap<&'static str, f32> {
+    let n = value.chars().count().max(1) as f32;
+    let words: Vec<&str> = value.split_whitespace().collect();
+    std::collections::BTreeMap::from([
+        ("text.len", value.chars().count() as f32),
+        ("text.words", words.len() as f32),
+        (
+            "text.caps",
+            value.chars().filter(|c| c.is_uppercase()).count() as f32 / n,
+        ),
+        (
+            "text.digits",
+            value.chars().filter(|c| c.is_ascii_digit()).count() as f32 / n,
+        ),
+        (
+            "text.title",
+            if !words.is_empty()
+                && words
+                    .iter()
+                    .all(|w| w.chars().next().is_some_and(char::is_uppercase))
+            {
+                1.0
+            } else {
+                0.0
+            },
+        ),
+    ])
 }
 
 /// One text the detector read (a line, a cell, a picture's OCR line, a
@@ -284,6 +345,10 @@ pub struct Explained {
     /// decider (#35).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub lifted: bool,
+    /// Named measures of it for a learned head (#175): its text's shape
+    /// (`text.*`) and, in a picture, its box (`box.*`, shares of the picture).
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub measures: std::collections::BTreeMap<&'static str, f32>,
 }
 
 /// An area of a picture in its pixels: of a still image (`frame` `None`) or
@@ -990,6 +1055,20 @@ impl Engine {
         let mut engine = self.clone();
         engine.explain = Some(explain);
         engine
+    }
+
+    /// Where a picture's candidate stands, for `explain` (#175); nothing
+    /// without one.
+    pub(crate) fn explain_place(
+        &self,
+        text: &str,
+        span: (usize, usize),
+        bounds: (u32, u32, u32, u32),
+        size: (u32, u32),
+    ) {
+        if let Some(explain) = &self.explain {
+            explain.place(text, span, bounds, size);
+        }
     }
 
     pub(crate) fn unverified(&self) -> bool {
@@ -2067,6 +2146,46 @@ mod tests {
 
     fn engine() -> Engine {
         Engine::new(&Policy::default(), None, b"seed", None).unwrap()
+    }
+
+    #[test]
+    fn a_candidate_comes_with_the_shape_of_its_text_and_its_place() {
+        // #175: named measures for a learned head.
+        let m = text_measures("Lena Brandt 42");
+        assert_eq!(m["text.len"], 14.0);
+        assert_eq!(m["text.words"], 3.0);
+        assert_eq!(m["text.title"], 0.0, "42 starts with no capital");
+        assert!((m["text.caps"] - 2.0 / 14.0).abs() < 1e-6);
+        assert!((m["text.digits"] - 2.0 / 14.0).abs() < 1e-6);
+        assert_eq!(text_measures("Lena Brandt")["text.title"], 1.0);
+
+        let explain = Explain::new();
+        let e = engine().with_explain(explain.clone());
+        let text = "Ansprechpartnerin: Frau Lena Brandt";
+        e.scan_str(text, Format::Text).unwrap();
+        // A picture's caller places a candidate it found in a reading.
+        let (start, end) = {
+            let readings = explain.0.lock().unwrap();
+            let c = readings
+                .iter()
+                .flat_map(|r| r.candidates.iter())
+                .find(|c| c.entity == "PERSON")
+                .expect("the name is a candidate");
+            (c.start, c.end)
+        };
+        e.explain_place(text, (start, end), (100, 40, 300, 60), (1000, 200));
+        let readings = explain.take();
+        let c = readings
+            .iter()
+            .flat_map(|r| r.candidates.iter())
+            .find(|c| c.start == start && c.end == end && c.measures.contains_key("box.x"))
+            .expect("placed");
+        assert_eq!(c.measures["box.x"], 0.1);
+        assert_eq!(c.measures["box.y"], 0.2);
+        assert_eq!(c.measures["box.w"], 0.2);
+        assert_eq!(c.measures["box.h"], 0.1);
+        assert_eq!(c.measures["box.below"], 0.7);
+        assert!(c.measures.contains_key("text.len"));
     }
 
     /// The values of `report`'s findings in `input` (by the input's spans).
