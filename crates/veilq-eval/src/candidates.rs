@@ -10,8 +10,10 @@
 //! [`MIN_OVERLAP`] characters). The readings hold no document locations, so
 //! this is the join that holds across formats; on a synthetic corpus a
 //! value that matches by chance is rare. Only documents whose truth values
-//! can be read are written: text, CSV, JSON and NDJSON. Pictures and
-//! containers are skipped and counted.
+//! can be read are written: text, CSV, JSON and NDJSON, and with OCR the
+//! pictures, whose truth holds the value as drawn (#175). A picture's
+//! candidate also matches a value OCR read one letter off in six
+//! ([`near`]). Containers are skipped and counted.
 
 use std::io::Write;
 use std::path::Path;
@@ -88,6 +90,46 @@ pub fn matches(candidate: &str, truth: &str) -> bool {
     shorter >= MIN_OVERLAP && (t.contains(c) || c.contains(t))
 }
 
+/// The characters to change, add or remove, or neighbours to swap, to turn
+/// `a` into `b` (optimal string alignment).
+fn distance(a: &str, b: &str) -> usize {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    let mut d = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+    for (i, row) in d.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for (j, cell) in d[0].iter_mut().enumerate() {
+        *cell = j;
+    }
+    for i in 1..=a.len() {
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            d[i][j] = (d[i - 1][j] + 1)
+                .min(d[i][j - 1] + 1)
+                .min(d[i - 1][j - 1] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
+            }
+        }
+    }
+    d[a.len()][b.len()]
+}
+
+/// Whether a candidate read by OCR is a value of the truth: as [`matches`],
+/// or a word of it read at most one letter off in six (`Wiekbe` for
+/// `Wiebke`), the word at least five letters long.
+pub fn near(candidate: &str, truth: &str) -> bool {
+    if matches(candidate, truth) {
+        return true;
+    }
+    let (c, t) = (candidate.trim().to_lowercase(), truth.to_lowercase());
+    let n = c.chars().count();
+    n >= 5
+        && t.split_whitespace()
+            .chain(std::iter::once(t.trim()))
+            .any(|w| distance(&c, w) <= n / 6)
+}
+
 /// At most `n` characters of `s` from its end (`tail`) or its start.
 fn clip(s: &str, n: usize, tail: bool) -> &str {
     let count = s.chars().count();
@@ -108,32 +150,59 @@ pub fn write(
     dir: &Path,
     only: Option<&str>,
     ner: bool,
+    ocr: bool,
     out: &mut impl Write,
 ) -> anyhow::Result<Written> {
     let explain = Explain::new();
-    let engine = engine_for(ner, false)?.with_explain(explain.clone());
+    let engine = engine_for(ner, ocr)?.with_explain(explain.clone());
     let mut written = Written::default();
     for doc in documents(dir, only)? {
         let name = relative(dir, &doc);
         let format = Format::from_path(&doc)?;
-        if format.is_picture() || format.is_container() {
+        let picture = format.is_picture();
+        // `is_container` holds for every format that is no plain text,
+        // pictures too.
+        if (format.is_container() && !picture) || (picture && !ocr) {
             written.skipped += 1;
             continue;
         }
         let bytes = std::fs::read(&doc)?;
-        let content =
-            String::from_utf8(bytes.clone()).map_err(|_| anyhow::anyhow!("{name}: not UTF-8"))?;
         let truth: TruthFile = serde_json::from_str(&std::fs::read_to_string(truth_path(&doc))?)?;
-        let values: Vec<(String, &str)> = truth
+        // A picture's values come with its truth (a picture's metadata is no
+        // text and has none); a text's are read back from it.
+        let values: Vec<(String, &str)> = if picture {
+            truth
+                .findings
+                .iter()
+                .filter(|t| t.entity.as_str() != "METADATA")
+                .map(|t| {
+                    (
+                        t.value.clone().unwrap_or_else(|| "?".into()),
+                        t.entity.as_str(),
+                    )
+                })
+                .filter(|(v, _)| v != "?")
+                .collect()
+        } else {
+            let content = String::from_utf8(bytes.clone())
+                .map_err(|_| anyhow::anyhow!("{name}: not UTF-8"))?;
+            truth
+                .findings
+                .iter()
+                .map(|t| (value_at(&content, format, &t.location), t.entity.as_str()))
+                .filter(|(v, _)| v != "?")
+                .collect()
+        };
+        let expected = truth
             .findings
             .iter()
-            .map(|t| (value_at(&content, format, &t.location), t.entity.as_str()))
-            .filter(|(v, _)| v != "?")
-            .collect();
-        if values.len() < truth.findings.len() {
+            .filter(|t| !(picture && t.entity.as_str() == "METADATA"))
+            .count();
+        if values.len() < expected {
             written.skipped += 1;
             continue;
         }
+        let same = if picture { near } else { matches };
         explain.take();
         engine
             .run_bytes(&bytes, format, false)
@@ -143,7 +212,7 @@ pub fn write(
             for c in &reading.candidates {
                 let truth_entity = values
                     .iter()
-                    .find(|(v, _)| matches(&c.value, v))
+                    .find(|(v, _)| same(&c.value, v))
                     .map(|(_, e)| *e);
                 let line = Line {
                     file: &name,
@@ -191,6 +260,34 @@ mod tests {
     }
 
     #[test]
+    fn a_value_read_by_ocr_matches_one_letter_off_in_six() {
+        assert!(near("Wiekbe", "Wiebke Albers"), "two letters swapped");
+        assert!(near("Smartphone von Wiebke", "Wiebke"));
+        assert!(!near("Bereit", "Wiebke Albers"));
+        assert!(!near("Jan", "Jon Kern"), "too short to forgive a letter");
+        assert!(!near("Corvex", "Carvax"), "two letters off in six");
+    }
+
+    #[test]
+    fn a_pictures_truth_holds_its_values() {
+        let dir = std::env::temp_dir().join(format!("veilq-truth-values-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        crate::generate::write(&dir, 1).unwrap();
+        let truth: TruthFile = serde_json::from_str(
+            &std::fs::read_to_string(dir.join("de/png/ui-1.png.truth.json")).unwrap(),
+        )
+        .unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(!truth.findings.is_empty());
+        assert!(
+            truth
+                .findings
+                .iter()
+                .all(|t| t.value.as_deref().is_some_and(|v| !v.is_empty()))
+        );
+    }
+
+    #[test]
     fn clipping_keeps_whole_characters() {
         assert_eq!(clip("Grüße aus Köln", 4, true), "Köln");
         assert_eq!(clip("Grüße aus Köln", 5, false), "Grüße");
@@ -203,7 +300,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         crate::generate::write(&dir, 3).unwrap();
         let mut out = Vec::new();
-        let written = write(&dir, Some("de/"), false, &mut out).unwrap();
+        let written = write(&dir, Some("de/"), false, false, &mut out).unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(written.documents > 0 && written.skipped > 0);
         let lines: Vec<serde_json::Value> = String::from_utf8(out)

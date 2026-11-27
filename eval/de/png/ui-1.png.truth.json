@@ -10,7 +10,8 @@
         "y": 78,
         "width": 123,
         "height": 18
-      }
+      },
+      "value": "Moritz Kühn"
     },
     {
       "entity": "EMAIL_ADDRESS",
@@ -20,7 +21,8 @@
         "y": 117,
         "width": 194,
         "height": 19
-      }
+      },
+      "value": "mkuehn@example.com"
     }
   ]
 }

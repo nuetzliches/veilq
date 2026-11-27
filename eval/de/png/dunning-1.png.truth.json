@@ -10,7 +10,8 @@
         "y": 15,
         "width": 27,
         "height": 10
-      }
+      },
+      "value": "Lange"
     },
     {
       "entity": "COURT_FILE_NUMBER",
@@ -20,7 +21,8 @@
         "y": 134,
         "width": 88,
         "height": 12
-      }
+      },
+      "value": "22373394249"
     },
     {
       "entity": "PERSON",
@@ -30,7 +32,8 @@
         "y": 164,
         "width": 75,
         "height": 15
-      }
+      },
+      "value": "Lena Lange"
     },
     {
       "entity": "ADDRESS",
@@ -40,7 +43,8 @@
         "y": 194,
         "width": 219,
         "height": 15
-      }
+      },
+      "value": "Mühlenring 103, 30159 Hannover"
     }
   ]
 }

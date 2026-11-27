@@ -10,7 +10,8 @@
         "y": 49,
         "width": 87,
         "height": 11
-      }
+      },
+      "value": "Frieda Brandt"
     },
     {
       "entity": "EMAIL_ADDRESS",
@@ -20,7 +21,8 @@
         "y": 73,
         "width": 113,
         "height": 12
-      }
+      },
+      "value": "fbrandt@example.net"
     }
   ]
 }

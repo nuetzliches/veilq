@@ -10,7 +10,8 @@
         "y": 78,
         "width": 125,
         "height": 18
-      }
+      },
+      "value": "Lena Brandt"
     },
     {
       "entity": "EMAIL_ADDRESS",
@@ -20,7 +21,8 @@
         "y": 117,
         "width": 241,
         "height": 19
-      }
+      },
+      "value": "lena.brandt62@example.com"
     }
   ]
 }

@@ -11,7 +11,8 @@
         "y": 466,
         "width": 120,
         "height": 21
-      }
+      },
+      "value": "Tobias Engel"
     },
     {
       "entity": "ADDRESS",
@@ -22,7 +23,8 @@
         "y": 511,
         "width": 127,
         "height": 21
-      }
+      },
+      "value": "Mühlenring 8"
     },
     {
       "entity": "ADDRESS",
@@ -33,7 +35,8 @@
         "y": 556,
         "width": 153,
         "height": 17
-      }
+      },
+      "value": "80331 München"
     },
     {
       "entity": "PERSON",
@@ -44,7 +47,8 @@
         "y": 394,
         "width": 66,
         "height": 11
-      }
+      },
+      "value": "Greta Kern"
     },
     {
       "entity": "PERSON",
@@ -55,7 +59,8 @@
         "y": 886,
         "width": 92,
         "height": 14
-      }
+      },
+      "value": "Greta Kern"
     }
   ]
 }

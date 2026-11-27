@@ -150,6 +150,7 @@ impl Canvas {
                 width: bw,
                 height: bh,
             },
+            value: Some(s.to_owned()),
         });
         end
     }
@@ -304,6 +305,7 @@ pub(super) fn form_jpeg(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
             width: w,
             height: h,
         },
+        value: None,
     }];
     truth.extend(c.truth);
     (with_exif(&jpeg(&c.img)), truth)
@@ -597,6 +599,7 @@ pub(super) fn ui_png(r: &mut Rng) -> (Vec<u8>, Vec<Truth>) {
                     width,
                     height: y1 - y0,
                 },
+                value: t.value,
             })
         })
         .collect();

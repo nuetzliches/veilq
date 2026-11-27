@@ -10,7 +10,8 @@
         "y": 394,
         "width": 16,
         "height": 6
-      }
+      },
+      "value": "Ida"
     },
     {
       "entity": "PERSON",
@@ -20,7 +21,8 @@
         "y": 29,
         "width": 66,
         "height": 9
-      }
+      },
+      "value": "Emilia Peters"
     },
     {
       "entity": "EMAIL_ADDRESS",
@@ -30,7 +32,8 @@
         "y": 50,
         "width": 95,
         "height": 10
-      }
+      },
+      "value": "epeters@example.com"
     }
   ]
 }

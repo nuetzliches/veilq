@@ -10,7 +10,8 @@
         "y": 115,
         "width": 143,
         "height": 20
-      }
+      },
+      "value": "Sommer, Greta"
     },
     {
       "entity": "DATE_OF_BIRTH",
@@ -20,7 +21,8 @@
         "y": 185,
         "width": 92,
         "height": 17
-      }
+      },
+      "value": "8. Mai 1958"
     },
     {
       "entity": "ADDRESS",
@@ -30,7 +32,8 @@
         "y": 254,
         "width": 316,
         "height": 22
-      }
+      },
+      "value": "Bahnhofstraße 80, 80331 München"
     },
     {
       "entity": "PHONE_NUMBER",
@@ -40,7 +43,8 @@
         "y": 324,
         "width": 144,
         "height": 17
-      }
+      },
+      "value": "+49 40 5552546"
     },
     {
       "entity": "IBAN_CODE",
@@ -50,7 +54,8 @@
         "y": 396,
         "width": 258,
         "height": 17
-      }
+      },
+      "value": "DE14 6663 8446 8034 5367 66"
     }
   ]
 }

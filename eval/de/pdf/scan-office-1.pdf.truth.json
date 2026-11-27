@@ -11,7 +11,8 @@
         "y": 466,
         "width": 120,
         "height": 21
-      }
+      },
+      "value": "Clara Krüger"
     },
     {
       "entity": "ADDRESS",
@@ -22,7 +23,8 @@
         "y": 511,
         "width": 158,
         "height": 17
-      }
+      },
+      "value": "Goethestraße 15"
     },
     {
       "entity": "ADDRESS",
@@ -33,7 +35,8 @@
         "y": 557,
         "width": 158,
         "height": 16
-      }
+      },
+      "value": "30159 Hannover"
     },
     {
       "entity": "PERSON",
@@ -44,7 +47,8 @@
         "y": 394,
         "width": 78,
         "height": 13
-      }
+      },
+      "value": "Jonas Peters"
     },
     {
       "entity": "PERSON",
@@ -55,7 +59,8 @@
         "y": 886,
         "width": 107,
         "height": 18
-      }
+      },
+      "value": "Jonas Peters"
     }
   ]
 }

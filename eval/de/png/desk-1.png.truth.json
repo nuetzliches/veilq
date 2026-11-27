@@ -10,7 +10,8 @@
         "y": 16,
         "width": 59,
         "height": 10
-      }
+      },
+      "value": "Kern, Wiebke"
     },
     {
       "entity": "PERSON",
@@ -20,7 +21,8 @@
         "y": 248,
         "width": 56,
         "height": 9
-      }
+      },
+      "value": "Becker, Malte"
     },
     {
       "entity": "PERSON",
@@ -30,7 +32,8 @@
         "y": 52,
         "width": 61,
         "height": 10
-      }
+      },
+      "value": "Becker, Malte"
     },
     {
       "entity": "DATE_OF_BIRTH",
@@ -40,7 +43,8 @@
         "y": 72,
         "width": 52,
         "height": 7
-      }
+      },
+      "value": "28. März 1961"
     },
     {
       "entity": "PHONE_NUMBER",
@@ -50,7 +54,8 @@
         "y": 72,
         "width": 72,
         "height": 8
-      }
+      },
+      "value": "+49 (0)40 555 9856"
     },
     {
       "entity": "PERSON",
@@ -60,7 +65,8 @@
         "y": 52,
         "width": 63,
         "height": 10
-      }
+      },
+      "value": "Brandt, Frieda"
     },
     {
       "entity": "PERSON",
@@ -70,7 +76,8 @@
         "y": 318,
         "width": 46,
         "height": 8
-      }
+      },
+      "value": "Malte Haas"
     },
     {
       "entity": "PERSON",
@@ -80,7 +87,8 @@
         "y": 396,
         "width": 53,
         "height": 8
-      }
+      },
+      "value": "Peters Emilia"
     }
   ]
 }

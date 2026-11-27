@@ -10,7 +10,8 @@
         "y": 45,
         "width": 68,
         "height": 10
-      }
+      },
+      "value": "Bergmann, Len"
     },
     {
       "entity": "PERSON",
@@ -20,7 +21,8 @@
         "y": 99,
         "width": 82,
         "height": 12
-      }
+      },
+      "value": "Lena Bergmann"
     },
     {
       "entity": "PERSON",
@@ -30,7 +32,8 @@
         "y": 135,
         "width": 50,
         "height": 12
-      }
+      },
+      "value": "Felix·Vogt"
     },
     {
       "entity": "PERSON",
@@ -40,7 +43,8 @@
         "y": 225,
         "width": 22,
         "height": 9
-      }
+      },
+      "value": "Felix"
     },
     {
       "entity": "PERSON",
@@ -50,7 +54,8 @@
         "y": 242,
         "width": 33,
         "height": 9
-      }
+      },
+      "value": "Brandt"
     }
   ]
 }

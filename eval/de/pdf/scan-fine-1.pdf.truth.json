@@ -11,7 +11,8 @@
         "y": 466,
         "width": 87,
         "height": 20
-      }
+      },
+      "value": "Jan Kühn"
     },
     {
       "entity": "ADDRESS",
@@ -22,7 +23,8 @@
         "y": 510,
         "width": 142,
         "height": 18
-      }
+      },
+      "value": "Deichstraße 52"
     },
     {
       "entity": "ADDRESS",
@@ -33,7 +35,8 @@
         "y": 556,
         "width": 159,
         "height": 17
-      }
+      },
+      "value": "30159 Hannover"
     },
     {
       "entity": "PERSON",
@@ -44,7 +47,8 @@
         "y": 393,
         "width": 73,
         "height": 13
-      }
+      },
+      "value": "Jan Friedrich"
     },
     {
       "entity": "PERSON",
@@ -55,7 +59,8 @@
         "y": 885,
         "width": 108,
         "height": 19
-      }
+      },
+      "value": "Jan Friedrich"
     }
   ]
 }
