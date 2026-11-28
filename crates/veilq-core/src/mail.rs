@@ -574,6 +574,7 @@ fn finding(
         detector: c.detector.clone(),
         pseudonym,
         likely_false: false,
+        dropped: false,
     }
 }
 
@@ -679,9 +680,9 @@ fn leaf(
             let (bytes, run) = engine
                 .run_bytes(data, f, apply)
                 .map_err(|e| error(format!("{label}: {e}")))?;
-            relabel(run.report.findings, label, out);
+            out.review_reasons.extend(run.report.review_reasons.clone());
+            relabel(run.report.into_all_findings(), label, out);
             out.mapping.extend(run.mapping);
-            out.review_reasons.extend(run.report.review_reasons);
             return Ok(apply.then_some((bytes, false)));
         }
         let text = decode_charset(data, ps.get("charset").map(String::as_str))?;
@@ -706,8 +707,8 @@ fn leaf(
         let (bytes, run) = engine
             .run_bytes(data, f, apply)
             .map_err(|e| error(format!("{label}: {e}")))?;
-        relabel(run.report.findings, label, out);
-        out.review_reasons.extend(run.report.review_reasons);
+        out.review_reasons.extend(run.report.review_reasons.clone());
+        relabel(run.report.into_all_findings(), label, out);
         return Ok(apply.then_some((bytes, false)));
     }
     if picture == Some(Format::Pdf) {

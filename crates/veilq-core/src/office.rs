@@ -293,13 +293,13 @@ pub fn process(engine: &Engine, input: &[u8], apply: bool) -> Result<Outcome, Er
             let (bytes, run) = engine
                 .run_bytes(data, f, apply)
                 .map_err(|e| error(format!("{name}: {e}")))?;
-            for mut finding in run.report.findings {
+            out.review_reasons.extend(run.report.review_reasons.clone());
+            for mut finding in run.report.into_all_findings() {
                 if let Location::Region { part, .. } = &mut finding.location {
                     *part = Some(name.clone());
                 }
                 out.findings.push(finding);
             }
-            out.review_reasons.extend(run.report.review_reasons);
             if apply {
                 new_data.insert(name.clone(), bytes);
             }
@@ -876,6 +876,7 @@ pub(crate) fn edit_segment(
             detector: c.detector.clone(),
             pseudonym,
             likely_false: false,
+            dropped: false,
         });
     }
     Ok(found)
@@ -1180,6 +1181,7 @@ fn table_names(
                         detector: c.detector.clone(),
                         pseudonym,
                         likely_false: false,
+                        dropped: false,
                     });
                 }
                 let new = table_name(&replaced, &taken);
@@ -1506,6 +1508,7 @@ impl Workbook {
                     detector: c.detector.clone(),
                     pseudonym,
                     likely_false: false,
+                    dropped: false,
                 });
             }
             for shown in self.sheets.values_mut() {
@@ -1810,6 +1813,7 @@ impl Workbook {
                         detector: c.detector.clone(),
                         pseudonym: p.clone(),
                         likely_false: false,
+                        dropped: false,
                     });
                 }
             }

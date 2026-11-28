@@ -117,3 +117,4 @@ keep it to about a page.
 | [0075](0075-screenshots-of-app-windows-are-drawn-with-spread.md) | Screenshots of app windows are drawn with spread | Accepted |
 | [0076](0076-the-learned-heads-data-values-in-a-pictures-truth-and-measures-per-candidate.md) | The learned head's data: values in a picture's truth and measures per candidate | Accepted |
 | [0077](0077-the-learned-decider-marks-weak-findings-in-pictures.md) | The learned decider marks weak findings in pictures | Accepted |
+| [0078](0078-marked-findings-may-be-dropped-per-class-by-the-policy.md) | Marked findings may be dropped per class, by the policy | Accepted |

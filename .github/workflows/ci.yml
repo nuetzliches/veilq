@@ -124,6 +124,11 @@ jobs:
       # (ADR-0053).
       - name: gate (redaction)
         run: target/release/veilq-eval check eval --ner --ocr --redact --gate eval/gate-ner.toml --held-out ${{ matrix.seeds }} --list 20
+      # The redaction again with every class the learned decider may drop
+      # dropped (ADR-0078): the gate holds for what is still filled. While
+      # no class may drop, it checks nothing.
+      - name: gate (dropped)
+        run: target/release/veilq-eval check eval --ner --ocr --redact --drop --gate eval/gate-ner.toml --held-out ${{ matrix.seeds }} --list 20
       # The forms filled in by hand (#59, ADR-0060), a track of their own
       # with a gate of their own.
       # Without the recogniser the track passes too: it must be installed.

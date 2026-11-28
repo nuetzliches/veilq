@@ -846,6 +846,7 @@ impl Engine {
                     detector: c.detector.clone(),
                     pseudonym,
                     likely_false: false,
+                    dropped: false,
                 });
             }
             if output.is_some() {
@@ -1333,10 +1334,20 @@ impl Engine {
         // A threshold raised for this run lets through what the policy
         // would have found (ADR-0046).
         reasons.extend(self.detector.raised_thresholds());
-        // The findings the learned decider marked (#175): still filled.
-        let marked = findings.iter().filter(|f| f.likely_false).count();
+        // The findings the learned decider marked (#175): still filled, or
+        // left unfilled by the policy's `[decider] drop`. A part's reasons
+        // (a picture in a document) give way to the count over the whole.
+        let marked = findings
+            .iter()
+            .filter(|f| f.likely_false && !f.dropped)
+            .count();
+        let dropped = findings.iter().filter(|f| f.dropped).count();
+        reasons.retain(|r| !crate::decider::is_doubt_reason(r));
         if marked > 0 {
             reasons.push(crate::decider::marked_reason(marked));
+        }
+        if dropped > 0 {
+            reasons.push(crate::decider::dropped_reason(dropped));
         }
         let mut report = Report::new(findings);
         report.review_required = !reasons.is_empty();
@@ -2344,6 +2355,7 @@ mod tests {
             detector: crate::finding::MARK_DETECTOR.into(),
             pseudonym: None,
             likely_false: false,
+            dropped: false,
         };
         // A PDF of two pages: the area on page 3 lies on none (#34).
         let err = e.every_area_marked(&[mark(Some(1))]).unwrap_err();
@@ -2823,6 +2835,59 @@ mod tests {
     /// A head that lifts every candidate it is asked about.
     const LIFTS_ALL: &str = r#"{"version": 1, "manifest": {"name": "all", "trained_on": "a test"},
         "features": [], "base": 8.0, "lift_at": 0.5, "trees": [{"nodes": [{"value": 0.0}]}]}"#;
+
+    #[test]
+    fn a_report_lists_dropped_findings_apart_and_counts_doubts_once() {
+        let finding = |x: u32, likely_false: bool, dropped: bool| Finding {
+            entity: EntityType::new("PERSON").unwrap(),
+            location: Location::Region {
+                part: Some("word/media/image1.png".into()),
+                frame: None,
+                x,
+                y: 0,
+                width: 10,
+                height: 10,
+            },
+            confidence: 0.8,
+            detector: "names:file".into(),
+            pseudonym: None,
+            likely_false,
+            dropped,
+        };
+        // A document with a picture whose own report said so already.
+        let reasons = vec![
+            crate::decider::marked_reason(1),
+            crate::decider::dropped_reason(1),
+        ];
+        let report = engine().report(
+            vec![
+                finding(0, false, false),
+                finding(20, true, false),
+                finding(40, true, false),
+                finding(60, true, true),
+            ],
+            reasons,
+        );
+        assert_eq!(report.findings.len(), 3);
+        assert_eq!(report.dropped.len(), 1);
+        let doubts: Vec<&String> = report
+            .review_reasons
+            .iter()
+            .filter(|r| crate::decider::is_doubt_reason(r))
+            .collect();
+        assert_eq!(
+            doubts,
+            vec![
+                &crate::decider::marked_reason(2),
+                &crate::decider::dropped_reason(1)
+            ]
+        );
+        // A container takes a part's report whole, the dropped ones marked.
+        let all = report.into_all_findings();
+        assert_eq!(all.iter().filter(|f| f.dropped).count(), 1);
+        let json = serde_json::to_string(&Report::new(all)).unwrap();
+        assert!(json.contains("\"dropped\":[") && !json.contains("\"dropped\":true"));
+    }
 
     #[test]
     fn the_decider_lifts_below_the_threshold_and_says_so() {

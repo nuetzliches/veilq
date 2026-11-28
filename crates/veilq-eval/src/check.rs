@@ -122,8 +122,23 @@ pub struct Evaluation {
     /// Per profile ([`profile`]): a kind of document in one language and
     /// format, the letters, the scans of a fax, a news page.
     pub per_profile: BTreeMap<String, ProfileStat>,
+    /// Per class of the learned decider (a weak detector, ADR-0078): its
+    /// marked findings and what dropping them alone would give.
+    pub per_class: BTreeMap<String, ClassStat>,
     pub misses: Vec<Item>,
     pub false_positives: Vec<Item>,
+}
+
+/// What dropping one class's marked findings would give (ADR-0078).
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct ClassStat {
+    /// Findings of the class the learned decider marked.
+    pub marked: usize,
+    /// Of them, findings no truth explains.
+    pub false_marked: usize,
+    /// Truths no longer covered were they dropped: must be 0 before the
+    /// class may drop.
+    pub truths_lost: usize,
 }
 
 /// The profile of a document in the corpus (#161): its path without the
@@ -483,9 +498,17 @@ pub fn evaluate(
     ner: bool,
     ocr: bool,
     redact: bool,
+    drop: bool,
     apart: &std::collections::BTreeSet<String>,
 ) -> anyhow::Result<(Evaluation, usize)> {
-    let engine = engine_for(ner, ocr)?;
+    let mut engine = engine_for(ner, ocr)?;
+    // Every class the head veilq brings may drop, dropped (ADR-0078): the
+    // findings measured are those still filled.
+    if drop {
+        let mut policy = engine.policy().clone();
+        policy.decider.drop = drop_classes()?;
+        engine = engine.with_policy(&policy)?;
+    }
     let mut eval = Evaluation::default();
     let mut findings_total = 0;
     for doc in documents(dir, only)? {
@@ -528,10 +551,25 @@ pub fn evaluate(
         // (#175): measured before the head may drop anything.
         let kept: Vec<_> = found.iter().filter(|f| !f.likely_false).cloned().collect();
         let (if_dropped, _, falses_if_dropped) = doc.score(&kept);
+        // Per class, what dropping its marked findings alone would give
+        // (ADR-0078): the measure a class must pass before it may drop.
+        let covered = stats.values().map(|s| s.covered).sum::<usize>();
+        for class in veilq_core::decider::WEAK_DETECTORS {
+            let kept: Vec<_> = found
+                .iter()
+                .filter(|f| !(f.likely_false && f.detector == class))
+                .cloned()
+                .collect();
+            let (s, _, f) = doc.score(&kept);
+            let c = eval.per_class.entry(class.to_owned()).or_default();
+            c.marked += found.len() - kept.len();
+            c.false_marked += falses.len() - f.len();
+            c.truths_lost += covered - s.values().map(|s| s.covered).sum::<usize>();
+        }
         let p = eval.per_profile.entry(kind).or_default();
         p.files += 1;
         p.truth += stats.values().map(|s| s.truth).sum::<usize>();
-        p.covered += stats.values().map(|s| s.covered).sum::<usize>();
+        p.covered += covered;
         p.findings += found.len();
         p.false_positives += falses.len();
         p.marked += found.len() - kept.len();
@@ -550,6 +588,12 @@ pub fn evaluate(
         }
     }
     Ok((eval, findings_total))
+}
+
+/// The classes the head veilq brings may drop (ADR-0078).
+pub fn drop_classes() -> anyhow::Result<Vec<String>> {
+    let head = veilq_core::decider::Decider::from_json(veilq_core::decider::DEMOTE_HEAD)?;
+    Ok(head.drop_classes().into_iter().map(str::to_owned).collect())
 }
 
 /// One document of the corpus with its truth, scored against findings.

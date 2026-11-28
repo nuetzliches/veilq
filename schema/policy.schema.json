@@ -119,6 +119,13 @@
           "description": "`true` (the default): the head veilq brings marks a weak finding in a\npicture (a name the NER model read or the file's names repeat) as\nlikely no personal data (#175). A marked finding stays filled; the\nreport says so per finding and among its review reasons. `false`\nmarks none. Off with `enabled = false` too.",
           "type": "boolean"
         },
+        "drop": {
+          "description": "The classes of marked findings to leave unfilled (#175 step 5,\nADR-0078): weak detectors (`ner`, `names:file`) the head veilq\nbrings carries a drop cut for. Empty by default: nothing is dropped.\nA dropped finding is listed in the report's `dropped`, not under\n`findings`. Any other class is an error.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "enabled": {
           "default": true,
           "description": "`true` (the default): where a learned decider is installed, it may\nlift a candidate below its threshold into the findings, and the\nreport says how many it lifted. It never drops what a rule keeps.\n`false` leaves every decision to the thresholds and rules, as\n`--no-decider` does for one run.",
