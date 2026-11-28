@@ -211,6 +211,7 @@ mod tests {
                 covered,
                 findings: covered + fp,
                 false_positives: fp,
+                ..ProfileStat::default()
             },
         );
         e

@@ -12,6 +12,8 @@ export interface Finding {
   confidence: number;
   detector: string;
   pseudonym?: string;
+  /** The learned decider marked it as likely no personal data (#175); still filled. */
+  likely_false?: boolean;
 }
 
 export interface Report {

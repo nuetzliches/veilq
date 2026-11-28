@@ -57,7 +57,7 @@ watch(
         <li
           v-for="(f, i) in findings"
           :key="i"
-          :class="{ hot: hovered === i, sel: selected === i }"
+          :class="{ hot: hovered === i, sel: selected === i, doubt: f.likely_false }"
           @mouseenter="emit('hover', i)"
           @mouseleave="emit('hover', null)"
         >
@@ -72,6 +72,7 @@ watch(
               <strong>{{ entityLabel(f.entity) }}</strong>
               <span>{{ describeLocation(f.location) }}</span>
               <em v-if="!shown[i]">{{ t('findings.notShown') }}</em>
+              <small v-if="f.likely_false" :title="t('findings.likelyFalseTitle')">{{ t('findings.likelyFalse') }}</small>
             </span>
             <span class="sure" :title="t('findings.confidenceTitle', { detector: f.detector })">
               {{ Math.round(f.confidence * 100) }} %
@@ -183,6 +184,14 @@ li.sel {
   color: var(--warn-text);
   font-size: 12px;
   font-style: normal;
+}
+.what small {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+li.doubt strong {
+  color: var(--text-muted);
 }
 .what span {
   color: var(--text-muted);

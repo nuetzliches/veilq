@@ -331,19 +331,33 @@ fn print_table(label: &str, eval: &check::Evaluation, findings: usize, list: usi
         t.false_positives,
         eval.precision(findings)
     );
+    // The last three columns (#175): the findings the learned decider
+    // marked, and recall and precision were they dropped.
     println!(
-        "{:<24} {:>6} {:>8} {:>8} {:>9} {:>5} {:>9}",
-        "profile", "files", "truth", "recall", "precision", "fp", "fp/file"
+        "{:<24} {:>6} {:>8} {:>8} {:>9} {:>5} {:>9} {:>7} {:>8} {:>9}",
+        "profile",
+        "files",
+        "truth",
+        "recall",
+        "precision",
+        "fp",
+        "fp/file",
+        "marked",
+        "recall-d",
+        "precision-d"
     );
     for (name, p) in &eval.per_profile {
         println!(
-            "{name:<24} {:>6} {:>8} {:>8.3} {:>9.3} {:>5} {:>9.2}",
+            "{name:<24} {:>6} {:>8} {:>8.3} {:>9.3} {:>5} {:>9.2} {:>7} {:>8.3} {:>9.3}",
             p.files,
             p.truth,
             p.recall(),
             p.precision(),
             p.false_positives,
-            p.false_per_file()
+            p.false_per_file(),
+            p.marked,
+            p.recall_if_dropped(),
+            p.precision_if_dropped()
         );
     }
     for m in eval.misses.iter().take(list) {

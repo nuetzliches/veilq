@@ -227,17 +227,15 @@ impl Explain {
             .push(reading);
     }
 
-    /// Adds where a picture's candidate stands (#175): its box `(x0, y0, x1,
-    /// y1)` in shares of the picture `(w, h)`, to every reading of `text`
-    /// that holds a candidate at `start..end` without a place yet.
-    pub(crate) fn place(
+    /// Adds measures of a picture's candidate (#175: its box, how often its
+    /// value is read) to every reading of `text` that holds a candidate at
+    /// `start..end`; a measure it has already stays.
+    pub(crate) fn measure(
         &self,
         text: &str,
         (start, end): (usize, usize),
-        (x0, y0, x1, y1): (u32, u32, u32, u32),
-        (w, h): (u32, u32),
+        measures: &crate::decider::Measures,
     ) {
-        let (w, h) = (w.max(1) as f32, h.max(1) as f32);
         let mut readings = self.0.lock().unwrap_or_else(|e| e.into_inner());
         // Every reading of the text: a file is read twice (ADR-0047), and
         // the same text again holds the candidate at the same place.
@@ -245,15 +243,30 @@ impl Explain {
             .iter_mut()
             .filter(|r| r.text == text)
             .flat_map(|r| r.candidates.iter_mut())
-            .filter(|c| c.start == start && c.end == end && !c.measures.contains_key("box.x"))
+            .filter(|c| c.start == start && c.end == end)
         {
-            c.measures.insert("box.x", x0 as f32 / w);
-            c.measures.insert("box.y", y0 as f32 / h);
-            c.measures.insert("box.w", (x1 - x0) as f32 / w);
-            c.measures.insert("box.h", (y1 - y0) as f32 / h);
-            c.measures.insert("box.below", (h - y1 as f32).max(0.0) / h);
+            for (k, v) in measures {
+                c.measures.entry(k).or_insert(*v);
+            }
         }
     }
+}
+
+/// Where a picture's candidate stands as named measures (#175): its box
+/// `(x0, y0, x1, y1)` in shares of the picture `(w, h)`, and the share of
+/// the picture below it.
+pub(crate) fn box_measures(
+    (x0, y0, x1, y1): (u32, u32, u32, u32),
+    (w, h): (u32, u32),
+) -> crate::decider::Measures {
+    let (w, h) = (w.max(1) as f32, h.max(1) as f32);
+    crate::decider::Measures::from([
+        ("box.x", x0 as f32 / w),
+        ("box.y", y0 as f32 / h),
+        ("box.w", (x1 - x0) as f32 / w),
+        ("box.h", (y1 - y0) as f32 / h),
+        ("box.below", (h - y1 as f32).max(0.0) / h),
+    ])
 }
 
 /// The shape of a candidate's text as named measures (#175): its length in
@@ -401,6 +414,8 @@ pub struct Engine {
     /// How many candidates the learned decider lifted in this run (#35),
     /// shared by the clones that read its parts; `None` outside a run.
     lifted: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
+    /// The head that marks weak findings in pictures (#175).
+    demoter: Option<std::sync::Arc<crate::decider::Decider>>,
     #[cfg(feature = "ocr")]
     ocr: Option<std::sync::Arc<crate::ocr::Ocr>>,
     #[cfg(feature = "ocr")]
@@ -445,6 +460,7 @@ impl Engine {
             names: None,
             picture_marks: std::sync::Arc::default(),
             lifted: None,
+            demoter: None,
             #[cfg(feature = "ocr")]
             ocr: None,
             #[cfg(feature = "ocr")]
@@ -829,6 +845,7 @@ impl Engine {
                     confidence: c.confidence,
                     detector: c.detector.clone(),
                     pseudonym,
+                    likely_false: false,
                 });
             }
             if output.is_some() {
@@ -1057,17 +1074,16 @@ impl Engine {
         engine
     }
 
-    /// Where a picture's candidate stands, for `explain` (#175); nothing
+    /// Measures of a picture's candidate, for `explain` (#175); nothing
     /// without one.
-    pub(crate) fn explain_place(
+    pub(crate) fn explain_measures(
         &self,
         text: &str,
         span: (usize, usize),
-        bounds: (u32, u32, u32, u32),
-        size: (u32, u32),
+        measures: &crate::decider::Measures,
     ) {
         if let Some(explain) = &self.explain {
-            explain.place(text, span, bounds, size);
+            explain.measure(text, span, measures);
         }
     }
 
@@ -1125,12 +1141,32 @@ impl Engine {
         engine
     }
 
-    /// This engine without its learned decider when `off` (`--no-decider`);
-    /// with `false` as it was.
+    /// This engine with a head that marks weak findings in pictures as
+    /// likely no personal data (#175, [`crate::decider::DEMOTE_HEAD`]). It
+    /// marks only while the policy leaves it on (`[decider] enabled` and
+    /// `demote`); a marked finding stays filled.
+    pub fn with_demoter(&self, head: std::sync::Arc<crate::decider::Decider>) -> Self {
+        let mut engine = self.clone();
+        engine.demoter = head.marks_findings().then_some(head);
+        engine
+    }
+
+    /// The head that marks weak findings, when one is loaded and the policy
+    /// leaves it on.
+    pub(crate) fn demoter(&self) -> Option<&crate::decider::Decider> {
+        let policy = &self.detector.policy().decider;
+        self.demoter
+            .as_deref()
+            .filter(|_| policy.enabled && policy.demote)
+    }
+
+    /// This engine without its learned decider when `off` (`--no-decider`):
+    /// it neither lifts nor marks; with `false` as it was.
     pub fn without_decider(&self, off: bool) -> Self {
         let mut engine = self.clone();
         if off {
             engine.detector.set_decider(None);
+            engine.demoter = None;
         }
         engine
     }
@@ -1297,6 +1333,11 @@ impl Engine {
         // A threshold raised for this run lets through what the policy
         // would have found (ADR-0046).
         reasons.extend(self.detector.raised_thresholds());
+        // The findings the learned decider marked (#175): still filled.
+        let marked = findings.iter().filter(|f| f.likely_false).count();
+        if marked > 0 {
+            reasons.push(crate::decider::marked_reason(marked));
+        }
         let mut report = Report::new(findings);
         report.review_required = !reasons.is_empty();
         report.review_reasons = reasons;
@@ -2173,7 +2214,11 @@ mod tests {
                 .expect("the name is a candidate");
             (c.start, c.end)
         };
-        e.explain_place(text, (start, end), (100, 40, 300, 60), (1000, 200));
+        e.explain_measures(
+            text,
+            (start, end),
+            &box_measures((100, 40, 300, 60), (1000, 200)),
+        );
         let readings = explain.take();
         let c = readings
             .iter()
@@ -2298,6 +2343,7 @@ mod tests {
             confidence: 1.0,
             detector: crate::finding::MARK_DETECTOR.into(),
             pseudonym: None,
+            likely_false: false,
         };
         // A PDF of two pages: the area on page 3 lies on none (#34).
         let err = e.every_area_marked(&[mark(Some(1))]).unwrap_err();

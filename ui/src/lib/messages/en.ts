@@ -74,6 +74,9 @@ export const en = {
   'findings.confidenceTitle': 'How sure veilq is (found by {detector})',
   'findings.showTitle': 'Show it in both panes (N: next, P: previous)',
   'findings.notShown': 'Not in the preview',
+  'findings.likelyFalse': 'Likely no personal data',
+  'findings.likelyFalseTitle':
+    'The learned decider takes this finding for likely false. It stays filled; please check it.',
   'findings.notShownTitle': 'The panes cannot show this place: it is in a picture inside the document, on a page past the preview, or in a frame of a GIF. Check it in the saved file.',
   'pane.zoomLevelTitle': 'Back to the starting size',
   'findings.explain': 'What veilq read',
