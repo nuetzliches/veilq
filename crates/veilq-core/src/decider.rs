@@ -49,6 +49,23 @@ pub fn marked_reason(n: usize) -> String {
     )
 }
 
+/// Said in the report's review reasons when findings were dropped (#175
+/// step 5): they are not filled.
+pub fn dropped_reason(n: usize) -> String {
+    format!(
+        "the learned decider left {n} finding{} unfilled as likely no personal data, by the policy's `[decider] drop`: check {} under `dropped`",
+        if n == 1 { "" } else { "s" },
+        if n == 1 { "it" } else { "them" },
+    )
+}
+
+/// Whether a review reason is [`marked_reason`]'s or [`dropped_reason`]'s:
+/// a container counts them over its parts once.
+pub(crate) fn is_doubt_reason(reason: &str) -> bool {
+    reason.starts_with("the learned decider marked ")
+        || reason.starts_with("the learned decider left ")
+}
+
 /// The head veilq brings that marks weak findings in pictures (#175):
 /// trained in veilq-train on synthetic pictures of veilq-eval's corpus
 /// only, measured on held-out seeds (ADR-0077).
@@ -109,7 +126,26 @@ struct HeadFile {
     /// personal data: a head that marks (#175).
     #[serde(default)]
     mark_below: Option<f32>,
+    /// Per class (a weak detector, [`WEAK_DETECTORS`]), the stricter score
+    /// below which a marked finding may be dropped where the policy names
+    /// the class (`[decider] drop`, #175 step 5, ADR-0078). A class enters
+    /// only by the owner's approval.
+    #[serde(default)]
+    drop_below: std::collections::BTreeMap<String, f32>,
     trees: Vec<Tree>,
+}
+
+/// What a head that marks says of a finding (#175), from least to most
+/// doubt: of several readings of one value, the least counts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Doubt {
+    /// Not marked: as the policy decided.
+    None,
+    /// Likely no personal data; filled all the same.
+    Marked,
+    /// Below its class's drop cut, and the policy drops the class: not
+    /// filled, listed in the report's `dropped`.
+    Dropped,
 }
 
 /// A loaded, checked head.
@@ -122,7 +158,9 @@ impl Decider {
     /// Reads a head; an error when it is not one this veilq can evaluate:
     /// another version, a feature or a child out of range, a node that
     /// points back (no tree may loop), not exactly one of `lift_at` and
-    /// `mark_below`, or one outside (0, 1).
+    /// `mark_below`, or one outside (0, 1); a `drop_below` without
+    /// `mark_below`, for a class that is no weak detector, or above
+    /// `mark_below`.
     pub fn from_json(json: &str) -> Result<Self, Error> {
         let bad = |m: String| Error::Format(format!("decider head: {m}"));
         let head: HeadFile = serde_json::from_str(json).map_err(|e| bad(e.to_string()))?;
@@ -139,6 +177,21 @@ impl Decider {
         };
         if !(at > 0.0 && at < 1.0) {
             return Err(bad(format!("{name} {at} is not between 0 and 1")));
+        }
+        for (class, below) in &head.drop_below {
+            if !WEAK_DETECTORS.contains(&class.as_str()) {
+                return Err(bad(format!(
+                    "drop_below for {class}, which is no weak detector"
+                )));
+            }
+            match head.mark_below {
+                Some(mark) if *below > 0.0 && *below <= mark => {}
+                _ => {
+                    return Err(bad(format!(
+                        "drop_below {below} for {class} is not between 0 and mark_below"
+                    )));
+                }
+            }
         }
         if head.trees.is_empty() {
             return Err(bad("no trees".into()));
@@ -218,11 +271,41 @@ impl Decider {
     /// Whether a weak finding ([`weak`]) is marked as likely no personal
     /// data. A head that lifts marks nothing.
     pub fn marks(&self, c: &Candidate, threshold: f32, measures: &Measures) -> bool {
-        weak(c)
+        self.doubt(c, threshold, measures, &[]) != Doubt::None
+    }
+
+    /// What the head says of a finding: marked below `mark_below`, dropped
+    /// below its class's `drop_below` where `drop` (the policy's classes)
+    /// names the class. Only a weak finding is ever marked or dropped.
+    pub fn doubt(
+        &self,
+        c: &Candidate,
+        threshold: f32,
+        measures: &Measures,
+        drop: &[String],
+    ) -> Doubt {
+        let Some(mark) = self.head.mark_below.filter(|_| weak(c)) else {
+            return Doubt::None;
+        };
+        let score = self.score_with(c, threshold, &[], measures);
+        let dropped = drop.contains(&c.detector)
             && self
                 .head
-                .mark_below
-                .is_some_and(|below| self.score_with(c, threshold, &[], measures) < below)
+                .drop_below
+                .get(&c.detector)
+                .is_some_and(|below| score < *below);
+        if dropped {
+            Doubt::Dropped
+        } else if score < mark {
+            Doubt::Marked
+        } else {
+            Doubt::None
+        }
+    }
+
+    /// The classes this head may drop: those it carries a drop cut for.
+    pub fn drop_classes(&self) -> Vec<&str> {
+        self.head.drop_below.keys().map(String::as_str).collect()
     }
 }
 
@@ -375,6 +458,66 @@ pub(crate) mod tests {
         let lifting = Decider::from_json(BESIDE_NAME).unwrap();
         assert!(!lifting.marks_findings());
         assert!(!lifting.marks(&name("ner"), 0.7, &short));
+    }
+
+    #[test]
+    fn a_class_drops_below_its_cut_only_where_the_policy_names_it() {
+        let d = Decider::from_json(&SHORT_NAMES.replace(
+            r#""mark_below": 0.5,"#,
+            r#""mark_below": 0.5, "drop_below": {"names:file": 0.4},"#,
+        ))
+        .unwrap();
+        assert_eq!(d.drop_classes(), vec!["names:file"]);
+        let name = |detector: &str| Candidate {
+            start: 0,
+            end: 4,
+            entity: EntityType::new("PERSON").unwrap(),
+            confidence: 0.9,
+            detector: detector.into(),
+        };
+        let short = Measures::from([("text.len", 4.0)]);
+        let drop = ["names:file".to_owned()];
+        assert_eq!(
+            d.doubt(&name("names:file"), 0.7, &short, &drop),
+            Doubt::Dropped
+        );
+        assert_eq!(
+            d.doubt(&name("names:file"), 0.7, &short, &[]),
+            Doubt::Marked
+        );
+        // A class without a cut is marked only, even where the policy names it.
+        let ner = ["ner".to_owned()];
+        assert_eq!(d.doubt(&name("ner"), 0.7, &short, &ner), Doubt::Marked);
+        let long = Measures::from([("text.len", 11.0)]);
+        assert_eq!(d.doubt(&name("names:file"), 0.7, &long, &drop), Doubt::None);
+        assert!(Doubt::None < Doubt::Marked && Doubt::Marked < Doubt::Dropped);
+        // The head veilq brings drops no class yet.
+        assert!(
+            Decider::from_json(DEMOTE_HEAD)
+                .unwrap()
+                .drop_classes()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_drop_cut_that_cannot_be_used_is_an_error() {
+        for drop in [
+            r#"{"names:file": 0.6}"#,
+            r#"{"pattern:de.iban": 0.1}"#,
+            r#"{"names:file": 0.0}"#,
+        ] {
+            let json = SHORT_NAMES.replace(
+                r#""mark_below": 0.5,"#,
+                &format!(r#""mark_below": 0.5, "drop_below": {drop},"#),
+            );
+            assert!(Decider::from_json(&json).is_err(), "{drop} loaded");
+        }
+        let lifting = BESIDE_NAME.replace(
+            r#""lift_at": 0.5,"#,
+            r#""lift_at": 0.5, "drop_below": {"ner": 0.1},"#,
+        );
+        assert!(Decider::from_json(&lifting).is_err());
     }
 
     #[test]

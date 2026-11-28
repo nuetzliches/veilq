@@ -152,7 +152,7 @@ pub fn run(
         veilq_core::patch::switch_off(off)?;
         let mut all = Evaluation::default();
         for d in dirs {
-            let (e, _) = check::evaluate(d, only, ner, ocr, redact, &Default::default())?;
+            let (e, _) = check::evaluate(d, only, ner, ocr, redact, false, &Default::default())?;
             merge(&mut all, e);
         }
         Ok(all)

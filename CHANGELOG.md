@@ -31,6 +31,16 @@ Notable changes per release. The format follows
   apart. `[decider] demote = false` or `--no-decider` switch it off.
   `veilq-eval check` reports per profile how many were marked and recall
   and precision were they dropped.
+- Marked findings may be left unfilled per class, by the policy (ADR-0078,
+  #175): `[decider] drop = ["names:file"]` names the weak detectors whose
+  findings below the head's stricter drop cut stay unfilled. They are listed
+  in the report's new `dropped`, not under `findings`, with a review
+  reason; `scan` and SARIF (as a note) name them, the UI lists them apart
+  with a button to fill one after all. A verify round fills a value it no
+  longer drops. The head veilq brings drops no class yet: a class enters by
+  the owner's approval after measurement, and naming any other is an error.
+  `veilq-eval check` reports per class what dropping it alone would give,
+  and `--drop` checks with every allowed class dropped (CI runs it).
 
 ### Fixed
 

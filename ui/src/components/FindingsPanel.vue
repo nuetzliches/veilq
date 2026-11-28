@@ -21,6 +21,10 @@ const props = defineProps<{
   busy?: boolean;
   /** Per finding, whether it can be released by a mark (#34): a box in text. */
   releasable?: boolean[];
+  /** Findings the learned decider left unfilled by the policy's `[decider] drop` (ADR-0078). */
+  dropped?: Finding[];
+  /** Per dropped finding, whether a mark can fill it after all. */
+  fillable?: boolean[];
 }>();
 const emit = defineEmits<{
   hover: [index: number | null];
@@ -28,6 +32,7 @@ const emit = defineEmits<{
   close: [];
   explain: [];
   release: [index: number];
+  fill: [index: number];
 }>();
 
 const list = ref<HTMLElement | null>(null);
@@ -86,6 +91,29 @@ watch(
         </li>
       </ol>
       <p v-else class="none">{{ busy ? t('output.redacting') : t('output.nothingFound') }}</p>
+      <section v-if="dropped?.length" class="dropped" :aria-label="t('findings.droppedTitle')">
+        <h3>{{ t('findings.droppedTitle') }}</h3>
+        <ul class="list">
+          <li v-for="(f, i) in dropped" :key="i">
+            <div class="row">
+              <span class="what">
+                <strong>{{ entityLabel(f.entity) }}</strong>
+                <span>{{ describeLocation(f.location) }}</span>
+                <small>{{ t('findings.dropped') }}</small>
+              </span>
+              <button
+                v-if="fillable?.[i]"
+                class="small"
+                :disabled="busy"
+                :title="t('findings.fillTitle')"
+                @click="emit('fill', i)"
+              >
+                {{ t('findings.fill') }}
+              </button>
+            </div>
+          </li>
+        </ul>
+      </section>
       <ExplainList v-if="readings" :readings="readings" />
       <p v-else class="more">
         <button class="small" :disabled="busy" :title="t('findings.explainTitle')" @click="emit('explain')">
@@ -204,6 +232,13 @@ li.doubt strong {
   color: var(--text-muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+.dropped h3 {
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-1);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 600;
 }
 .release {
   margin: 0;

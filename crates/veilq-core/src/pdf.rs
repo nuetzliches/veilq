@@ -139,6 +139,7 @@ pub fn redact(
             detector: "metadata".into(),
             pseudonym: None,
             likely_false: false,
+            dropped: false,
         });
     }
     let mut output = if apply {

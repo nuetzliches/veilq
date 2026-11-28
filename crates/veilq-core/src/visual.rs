@@ -465,6 +465,7 @@ fn marked(engine: &Engine, img: &RgbaImage, frame: Option<u64>, out: &mut Outcom
             detector: MARK_DETECTOR.into(),
             pseudonym: None,
             likely_false: false,
+            dropped: false,
         });
         filled.push(r);
     }
@@ -608,6 +609,7 @@ fn regions(
             detector: region.detector.into(),
             pseudonym: None,
             likely_false: false,
+            dropped: false,
         });
         filled.push(rect);
     }
@@ -820,7 +822,7 @@ fn candidates(
     w: u32,
     h: u32,
     again: bool,
-) -> Result<Vec<(crate::detect::Candidate, Vec<Rect>, bool)>, Error> {
+) -> Result<Vec<(crate::detect::Candidate, Vec<Rect>, crate::decider::Doubt)>, Error> {
     let read = |text: &str, context: &str| {
         if again {
             engine.ocr_findings_again(text, context)
@@ -972,13 +974,16 @@ fn candidates(
 /// in the picture's readings (`file.repeats`). The measures go to `scan
 /// --explain` and veilq-eval's candidates too, so a head is trained on what
 /// veilq measures here. A value is marked only where every reading of it is
-/// a weak finding the head marks.
+/// a weak finding the head marks, and dropped (left unfilled, by the
+/// policy's `[decider] drop`, ADR-0078) only where every reading is
+/// dropped.
 fn likely_false(
     engine: &Engine,
     out: &[(crate::detect::Candidate, Vec<Rect>)],
     read_in: &[Option<std::sync::Arc<str>>],
     size: (u32, u32),
-) -> Vec<bool> {
+) -> Vec<crate::decider::Doubt> {
+    use crate::decider::Doubt;
     let key = |c: &crate::detect::Candidate, text: &str| text[c.start..c.end].trim().to_lowercase();
     let mut repeats: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for ((c, _), text) in out.iter().zip(read_in) {
@@ -987,7 +992,8 @@ fn likely_false(
         }
     }
     let head = engine.demoter();
-    let mut every: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
+    let drop = &engine.policy().decider.drop;
+    let mut every: std::collections::HashMap<String, Doubt> = std::collections::HashMap::new();
     for ((c, rects), text) in out.iter().zip(read_in) {
         let Some(text) = text else { continue };
         let (Some(x0), Some(y0)) = (
@@ -1005,14 +1011,16 @@ fn likely_false(
         engine.explain_measures(text, (c.start, c.end), &m);
         // The threshold as `scan --explain` records it, rounded.
         let threshold = crate::detect::round(engine.threshold(&c.entity));
-        let marked = head.is_some_and(|h| h.marks(c, threshold, &m));
-        *every.entry(k).or_insert(true) &= marked;
+        let doubt = head.map_or(Doubt::None, |h| h.doubt(c, threshold, &m, drop));
+        let e = every.entry(k).or_insert(doubt);
+        *e = (*e).min(doubt);
     }
     out.iter()
         .zip(read_in)
         .map(|((c, _), text)| {
             text.as_ref()
-                .is_some_and(|t| every.get(&key(c, t)).copied().unwrap_or(false))
+                .and_then(|t| every.get(&key(c, t)).copied())
+                .unwrap_or(Doubt::None)
         })
         .collect()
 }
@@ -1037,8 +1045,12 @@ fn settle(
     band: Band,
     regions: &[Rect],
 ) -> Result<Option<Vec<Rect>>, Error> {
+    use crate::decider::Doubt;
     let (w, h) = img.dimensions();
     let mut filled: Vec<Rect> = Vec::new();
+    // Findings left unfilled by the policy's `[decider] drop`, over the
+    // rounds (ADR-0078).
+    let mut aside: Vec<(Rect, Finding)> = Vec::new();
     for round in 1..=ROUNDS {
         let before = out.findings.len();
         let rgb = DynamicImage::ImageRgba8(img.clone()).to_rgb8();
@@ -1076,7 +1088,7 @@ fn settle(
             .collect();
         let candidates = candidates(engine, &read, w, h, round > 1)?;
         let mut new: Vec<Rect> = Vec::new();
-        for (c, rects, marked) in candidates {
+        for (c, rects, doubt) in candidates {
             let rects: Vec<Rect> = rects.into_iter().map(|r| to_ink(&rgb, r)).collect();
             // Found twice (page and line), inside a box already filled, or
             // inside a region.
@@ -1101,6 +1113,33 @@ fn settle(
             }) {
                 continue;
             }
+            let finding = |r: &Rect| Finding {
+                entity: c.entity.clone(),
+                location: Location::Region {
+                    part: None,
+                    frame,
+                    x: r.x,
+                    y: r.y + band.top,
+                    width: r.w,
+                    height: r.h,
+                },
+                confidence: c.confidence,
+                detector: c.detector.clone(),
+                pseudonym: None,
+                likely_false: doubt != Doubt::None,
+                dropped: doubt == Doubt::Dropped,
+            };
+            // Left unfilled by the policy's `[decider] drop` (ADR-0078):
+            // set aside, and judged again in each verify round, which fills
+            // it if it is no longer dropped.
+            if doubt == Doubt::Dropped {
+                for r in &rects {
+                    if !covered(r, aside.iter().map(|(a, _)| a)) {
+                        aside.push((*r, finding(r)));
+                    }
+                }
+                continue;
+            }
             if matches!(
                 engine.action_for(&c),
                 crate::Action::Pseudonymize | crate::Action::Fake
@@ -1116,21 +1155,7 @@ fn settle(
                 .iter()
                 .filter(|r| !covered(r, filled.iter().chain(regions).chain(&new)))
             {
-                out.findings.push(Finding {
-                    entity: c.entity.clone(),
-                    location: Location::Region {
-                        part: None,
-                        frame,
-                        x: r.x,
-                        y: r.y + band.top,
-                        width: r.w,
-                        height: r.h,
-                    },
-                    confidence: c.confidence,
-                    detector: c.detector.clone(),
-                    pseudonym: None,
-                    likely_false: marked,
-                });
+                out.findings.push(finding(r));
             }
             new.extend(rects);
         }
@@ -1145,6 +1170,8 @@ fn settle(
         // picture is read again to verify it.
         let regions_open = round == 1 && !regions.is_empty();
         if (new.is_empty() && !regions_open) || !apply {
+            let all: Vec<Rect> = filled.iter().chain(&new).copied().collect();
+            set_aside(out, aside, &all);
             return Ok(Some(filled));
         }
         let last = round == ROUNDS;
@@ -1173,7 +1200,19 @@ fn settle(
             ));
         }
     }
+    set_aside(out, aside, &filled);
     Ok(Some(filled))
+}
+
+/// The findings set aside as dropped (ADR-0078) into the outcome, but for
+/// those a later round filled after all.
+fn set_aside(out: &mut Outcome, aside: Vec<(Rect, Finding)>, filled: &[Rect]) {
+    out.findings.extend(
+        aside
+            .into_iter()
+            .filter(|(r, _)| !covered(r, filled.iter()))
+            .map(|(_, f)| f),
+    );
 }
 
 /// `r` grown up and down while its top or bottom row cuts ink: a hand's
@@ -1270,6 +1309,7 @@ fn unread(
                     detector: if cut { CUT_DETECTOR } else { UNREAD_DETECTOR }.into(),
                     pseudonym: None,
                     likely_false: false,
+                    dropped: false,
                 });
                 boxes.push(grown(&l.rect, w, h));
             }
@@ -1763,6 +1803,7 @@ pub fn image(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Ou
             detector: "metadata".into(),
             pseudonym: None,
             likely_false: false,
+            dropped: false,
         });
     }
     redact_picture(
@@ -2505,12 +2546,13 @@ mod tests {
 
     #[test]
     fn a_weak_finding_the_head_marks_is_marked_and_still_found() {
+        use crate::decider::Doubt;
         // A head that marks a weak name of six letters or fewer (#175).
         let head = crate::decider::tests::SHORT_NAMES.replace("4.5", "6.5");
         let head = std::sync::Arc::new(crate::decider::Decider::from_json(&head).unwrap());
         let lines = [line("Herr Jonas Brandt", 200, 0), line("Brandt", 100, 200)];
-        let marks = |policy: &str| {
-            let engine = Engine::new(&crate::Policy::parse(policy).unwrap(), None, b"test", None)
+        let doubts = |policy: &crate::Policy, head: &std::sync::Arc<crate::decider::Decider>| {
+            let engine = Engine::new(policy, None, b"test", None)
                 .unwrap()
                 .with_names()
                 .with_demoter(head.clone());
@@ -2518,19 +2560,96 @@ mod tests {
                 .unwrap()
                 .into_iter()
                 .filter(|(c, _, _)| c.entity.as_str() == "PERSON")
-                .map(|(c, _, m)| (c.detector, m))
+                .map(|(c, _, d)| (c.detector, d))
                 .collect::<Vec<_>>()
         };
-        let on = marks("version = 1\n");
+        let on = doubts(&crate::Policy::default(), &head);
         // The file's name repeated alone is weak and short: marked, and still
         // a candidate; the name with its cue is a pattern's: never marked.
-        assert!(on.iter().any(|(d, m)| d == "names:file" && *m), "{on:?}");
-        assert!(on.iter().all(|(d, m)| !m || d == "names:file"), "{on:?}");
-        assert!(on.iter().any(|(_, m)| !m), "{on:?}");
+        assert!(
+            on.iter()
+                .any(|(d, m)| d == "names:file" && *m == Doubt::Marked),
+            "{on:?}"
+        );
+        assert!(
+            on.iter()
+                .all(|(d, m)| *m == Doubt::None || d == "names:file"),
+            "{on:?}"
+        );
+        assert!(on.iter().any(|(_, m)| *m == Doubt::None), "{on:?}");
         // Off in the policy: nothing is marked.
-        let off = marks("version = 1\n[decider]\ndemote = false\n");
-        assert!(off.iter().all(|(_, m)| !m), "{off:?}");
+        let off = crate::Policy::parse("version = 1\n[decider]\ndemote = false\n").unwrap();
+        let off = doubts(&off, &head);
+        assert!(off.iter().all(|(_, m)| *m == Doubt::None), "{off:?}");
         assert_eq!(on.len(), off.len());
+
+        // A head with a drop cut for the class (ADR-0078): dropped only
+        // where the policy names the class.
+        let dropping = crate::decider::tests::SHORT_NAMES
+            .replace("4.5", "6.5")
+            .replace(
+                r#""mark_below": 0.5,"#,
+                r#""mark_below": 0.5, "drop_below": {"names:file": 0.4},"#,
+            );
+        let dropping = std::sync::Arc::new(crate::decider::Decider::from_json(&dropping).unwrap());
+        let marked = doubts(&crate::Policy::default(), &dropping);
+        assert!(
+            marked.iter().all(|(_, m)| *m != Doubt::Dropped),
+            "{marked:?}"
+        );
+        let mut policy = crate::Policy::default();
+        policy.decider.drop = vec!["names:file".into()];
+        let dropped = doubts(&policy, &dropping);
+        assert!(
+            dropped
+                .iter()
+                .any(|(d, m)| d == "names:file" && *m == Doubt::Dropped),
+            "{dropped:?}"
+        );
+        assert!(
+            dropped
+                .iter()
+                .all(|(d, m)| *m != Doubt::Dropped || d == "names:file"),
+            "{dropped:?}"
+        );
+    }
+
+    #[test]
+    fn a_dropped_finding_a_later_round_filled_is_not_listed_as_dropped() {
+        let rect = |x| Rect {
+            x,
+            y: 10,
+            w: 40,
+            h: 12,
+        };
+        let finding = |r: &Rect| Finding {
+            entity: crate::EntityType::new("PERSON").unwrap(),
+            location: Location::Region {
+                part: None,
+                frame: None,
+                x: r.x,
+                y: r.y,
+                width: r.w,
+                height: r.h,
+            },
+            confidence: 0.8,
+            detector: "names:file".into(),
+            pseudonym: None,
+            likely_false: true,
+            dropped: true,
+        };
+        let aside = vec![
+            (rect(0), finding(&rect(0))),
+            (rect(100), finding(&rect(100))),
+        ];
+        let mut out = Outcome::default();
+        set_aside(&mut out, aside, &[rect(100)]);
+        assert_eq!(out.findings.len(), 1);
+        assert!(matches!(
+            out.findings[0].location,
+            Location::Region { x: 0, .. }
+        ));
+        assert!(out.findings[0].dropped);
     }
 
     #[test]
@@ -2636,6 +2755,7 @@ mod tests {
             detector: "ner".into(),
             pseudonym: None,
             likely_false: false,
+            dropped: false,
         };
         assert_eq!(place(&f), "97x24 at 142,228 (frame or page 3)");
         let e = Error::Unsettled {

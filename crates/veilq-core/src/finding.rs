@@ -129,6 +129,12 @@ pub struct Finding {
     /// ADR-0077); it is filled all the same. Absent when not marked.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub likely_false: bool,
+    /// Left unfilled by the policy's `[decider] drop` (#175 step 5). Never
+    /// written: it travels with the finding through a container's parts,
+    /// and the report lists such a finding under `dropped`.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub dropped: bool,
 }
 
 /// What a run found and how far its result can be trusted.
@@ -149,17 +155,38 @@ pub struct Report {
     /// `general` first. A coarse label, nothing about who ran it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub purposes: Vec<String>,
+    /// Findings the learned decider left unfilled by the policy's
+    /// `[decider] drop` (#175 step 5, ADR-0078): likely no personal data,
+    /// not under `findings`, which hold what was filled.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dropped: Vec<Finding>,
 }
 
 impl Report {
+    /// A report of `findings`; those marked dropped go to `dropped`.
     pub fn new(findings: Vec<Finding>) -> Self {
+        let (dropped, findings) = findings.into_iter().partition(|f| f.dropped);
         Self {
             version: REPORT_VERSION,
             findings,
             review_required: false,
             review_reasons: Vec::new(),
             purposes: Vec::new(),
+            dropped,
         }
+    }
+
+    /// Every finding of the report, the dropped ones marked so: for a
+    /// container that takes a part's report into its own.
+    pub fn into_all_findings(self) -> Vec<Finding> {
+        self.findings
+            .into_iter()
+            .chain(
+                self.dropped
+                    .into_iter()
+                    .map(|f| Finding { dropped: true, ..f }),
+            )
+            .collect()
     }
 
     /// The JSON schema of the report, as `schema/report.schema.json` holds it.
@@ -209,6 +236,7 @@ mod tests {
             detector: "pattern".into(),
             pseudonym: None,
             likely_false: false,
+            dropped: false,
         }]);
         let text = serde_json::to_string(&report).unwrap();
         assert_eq!(serde_json::from_str::<Report>(&text).unwrap(), report);

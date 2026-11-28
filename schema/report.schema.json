@@ -198,6 +198,13 @@
   "additionalProperties": false,
   "description": "What a run found and how far its result can be trusted.",
   "properties": {
+    "dropped": {
+      "description": "Findings the learned decider left unfilled by the policy's\n`[decider] drop` (#175 step 5, ADR-0078): likely no personal data,\nnot under `findings`, which hold what was filled.",
+      "items": {
+        "$ref": "#/$defs/Finding"
+      },
+      "type": "array"
+    },
     "findings": {
       "items": {
         "$ref": "#/$defs/Finding"

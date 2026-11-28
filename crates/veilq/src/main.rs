@@ -228,7 +228,8 @@ struct InputArgs {
     /// rules'. Where one is installed, it may lift a candidate below its
     /// threshold into the findings and never drops one; the head veilq
     /// brings marks weak findings in pictures as likely no personal data
-    /// and leaves them filled (#175).
+    /// and leaves them filled (#175), unless the policy's `[decider] drop`
+    /// names their class (ADR-0078).
     #[arg(long)]
     no_decider: bool,
 }
@@ -803,7 +804,8 @@ fn scan(
         }
     } else {
         for (path, report) in &results {
-            for f in &report.findings {
+            let dropped = report.dropped.iter().map(|f| (f, true));
+            for (f, dropped) in report.findings.iter().map(|f| (f, false)).chain(dropped) {
                 writeln!(
                     stdout,
                     "{path}:{}: {} ({}, {:.2}{})",
@@ -811,7 +813,9 @@ fn scan(
                     f.entity.as_str(),
                     f.detector,
                     f.confidence,
-                    if f.likely_false {
+                    if dropped {
+                        ", not filled: likely no personal data"
+                    } else if f.likely_false {
                         ", likely no personal data"
                     } else {
                         ""

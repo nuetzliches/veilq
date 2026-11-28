@@ -60,32 +60,45 @@ pub fn sarif(results: &[(String, Report)]) -> Value {
     let items: Vec<Value> = results
         .iter()
         .flat_map(|(path, report)| {
-            report.findings.iter().map(move |f| {
-                // A cell's row stands in for its line: close for CSV, where a
-                // record is one line unless a field holds a line break.
-                let (line, column) = match &f.location {
-                    Location::Span { line, column, .. } => (*line, *column),
-                    Location::Cell { row, .. } => (*row, 1),
-                    Location::Region { .. } => (1, 1),
-                };
-                json!({
-                    "ruleId": f.entity.as_str(),
-                    // A finding the learned decider marked (#175) stays an
-                    // error: it is filled all the same.
-                    "level": "error",
-                    "message": { "text": format!(
-                        "{} at {} (detector {}, confidence {:.2}{})",
-                        f.entity.as_str(), describe(&f.location), f.detector, f.confidence,
-                        if f.likely_false { ", likely no personal data" } else { "" }
-                    ) },
-                    "locations": [{
-                        "physicalLocation": {
-                            "artifactLocation": { "uri": path.replace('\\', "/") },
-                            "region": { "startLine": line, "startColumn": column },
-                        }
-                    }],
+            let dropped = report.dropped.iter().map(|f| (f, true));
+            report
+                .findings
+                .iter()
+                .map(|f| (f, false))
+                .chain(dropped)
+                .map(move |(f, dropped)| {
+                    // A cell's row stands in for its line: close for CSV, where a
+                    // record is one line unless a field holds a line break.
+                    let (line, column) = match &f.location {
+                        Location::Span { line, column, .. } => (*line, *column),
+                        Location::Cell { row, .. } => (*row, 1),
+                        Location::Region { .. } => (1, 1),
+                    };
+                    json!({
+                        "ruleId": f.entity.as_str(),
+                        // A finding the learned decider marked (#175) stays an
+                        // error: it is filled all the same. One it left
+                        // unfilled by the policy (ADR-0078) is a note.
+                        "level": if dropped { "note" } else { "error" },
+                        "message": { "text": format!(
+                            "{} at {} (detector {}, confidence {:.2}{})",
+                            f.entity.as_str(), describe(&f.location), f.detector, f.confidence,
+                            if dropped {
+                                ", not filled: likely no personal data"
+                            } else if f.likely_false {
+                                ", likely no personal data"
+                            } else {
+                                ""
+                            }
+                        ) },
+                        "locations": [{
+                            "physicalLocation": {
+                                "artifactLocation": { "uri": path.replace('\\', "/") },
+                                "region": { "startLine": line, "startColumn": column },
+                            }
+                        }],
+                    })
                 })
-            })
         })
         .collect();
     json!({

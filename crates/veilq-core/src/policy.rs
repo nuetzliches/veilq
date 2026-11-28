@@ -113,6 +113,13 @@ pub struct DeciderPolicy {
     /// marks none. Off with `enabled = false` too.
     #[serde(default = "default_true")]
     pub demote: bool,
+    /// The classes of marked findings to leave unfilled (#175 step 5,
+    /// ADR-0078): weak detectors (`ner`, `names:file`) the head veilq
+    /// brings carries a drop cut for. Empty by default: nothing is dropped.
+    /// A dropped finding is listed in the report's `dropped`, not under
+    /// `findings`. Any other class is an error.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drop: Vec<String>,
 }
 
 impl Default for DeciderPolicy {
@@ -120,6 +127,7 @@ impl Default for DeciderPolicy {
         Self {
             enabled: true,
             demote: true,
+            drop: Vec::new(),
         }
     }
 }
@@ -646,6 +654,27 @@ impl Policy {
         for p in &self.purposes {
             crate::purpose::purpose(p)?;
         }
+        // Only a class the bundled head may drop (#175 step 5): fail closed.
+        if !self.decider.drop.is_empty() {
+            let head = crate::decider::Decider::from_json(crate::decider::DEMOTE_HEAD)
+                .map_err(|e| e.to_string())?;
+            let may = head.drop_classes();
+            if let Some(class) = self
+                .decider
+                .drop
+                .iter()
+                .find(|c| !may.contains(&c.as_str()))
+            {
+                return Err(format!(
+                    "`decider.drop` names `{class}`, which the learned decider may not drop (it may drop: {})",
+                    if may.is_empty() {
+                        "none yet".to_owned()
+                    } else {
+                        may.join(", ")
+                    }
+                ));
+            }
+        }
         if self.cases.excerpt_days > MAX_EXCERPT_DAYS {
             return Err(format!(
                 "`cases.excerpt_days` must be at most {MAX_EXCERPT_DAYS}, got {}",
@@ -949,6 +978,18 @@ values = ["Muster GmbH"]
         let policy = Policy::parse(text).unwrap();
         let again = Policy::parse(&policy.to_toml().unwrap()).unwrap();
         assert_eq!(policy, again);
+    }
+
+    #[test]
+    fn a_class_to_drop_the_head_may_not_drop_is_an_error() {
+        // The head veilq brings drops no class yet (ADR-0078): fail closed.
+        for class in ["names:file", "ner", "pattern:de.iban"] {
+            let text = format!("version = 1\n[decider]\ndrop = [\"{class}\"]\n");
+            let e = Policy::parse(&text).unwrap_err();
+            assert!(e.contains("may not drop"), "{class}: {e}");
+        }
+        let empty = Policy::parse("version = 1\n[decider]\ndrop = []\n").unwrap();
+        assert!(empty.decider.drop.is_empty());
     }
 
     #[test]

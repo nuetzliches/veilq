@@ -569,6 +569,26 @@ function release(i: number) {
   if (span) void addMark({ kind: 'extra', value: byteSlice(r.input, span).trim(), entity: f.entity });
 }
 
+/** The findings the learned decider left unfilled by the policy (ADR-0078). */
+const dropped = computed(() => result.value?.report.dropped ?? []);
+
+/** Per dropped finding, whether a mark can fill it: a box on a still image or a PDF page. */
+const fillable = computed(() =>
+  dropped.value.map(
+    (f) => areaOutput.value && !gifOutput.value && f.location.kind === 'region' && f.location.part === undefined,
+  ),
+);
+
+/** A dropped finding marked as personal after all: its area is filled as a miss (#34). */
+function fill(i: number) {
+  const f = dropped.value[i];
+  if (!f || f.location.kind !== 'region') return;
+  const l = f.location;
+  const area: Area = { x: l.x, y: l.y, width: l.width, height: l.height };
+  if (l.frame !== undefined) area.frame = l.frame;
+  void addMark({ kind: 'missed_area', area, entity: f.entity });
+}
+
 /** The marks of this document taken back: it runs as the policy alone has it; the cases stay. */
 function clearMarks() {
   marks.value = [];
@@ -1206,11 +1226,14 @@ onBeforeUnmount(() => {
       :readings="explained ? (result?.explain ?? null) : null"
       :busy="busy"
       :releasable="releasable"
+      :dropped="dropped"
+      :fillable="fillable"
       @hover="hovered = $event"
       @select="select"
       @close="panel = false"
       @explain="runExplained"
       @release="release"
+      @fill="fill"
     />
 
     <div v-if="dragging" class="drop" @dragleave.self="dragging = false">

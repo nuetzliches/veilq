@@ -71,6 +71,12 @@ enum Command {
         /// it is read again until a round finds nothing new.
         #[arg(long)]
         redact: bool,
+        /// Drop every class the learned decider may drop (ADR-0078), as a
+        /// policy naming them all in `[decider] drop` would: the gate holds
+        /// for what is still filled. With no such class yet, nothing is
+        /// checked.
+        #[arg(long)]
+        drop: bool,
         /// How many misses and false positives to list.
         #[arg(long, default_value_t = 40)]
         list: usize,
@@ -242,8 +248,13 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             ner,
             ocr,
             redact,
+            drop,
             jobs,
         } => {
+            if drop && check::drop_classes()?.is_empty() {
+                println!("the learned decider may drop no class yet: nothing to check with --drop");
+                return Ok(true);
+            }
             let gate_path = gate.unwrap_or_else(|| dir.join("gate.toml"));
             let gate: check::Gate = toml::from_str(&std::fs::read_to_string(&gate_path)?)
                 .map_err(|e| anyhow::anyhow!("{}: {e}", gate_path.display()))?;
@@ -267,7 +278,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                         .iter()
                         .map(|(_, d)| {
                             s.spawn(|| {
-                                check::evaluate(d, only.as_deref(), ner, ocr, redact, &apart)
+                                check::evaluate(d, only.as_deref(), ner, ocr, redact, drop, &apart)
                             })
                         })
                         .collect();
@@ -359,6 +370,20 @@ fn print_table(label: &str, eval: &check::Evaluation, findings: usize, list: usi
             p.recall_if_dropped(),
             p.precision_if_dropped()
         );
+    }
+    // Per class of the learned decider (ADR-0078): what dropping its marked
+    // findings alone would give.
+    if eval.per_class.values().any(|c| c.marked > 0) {
+        println!(
+            "{:<24} {:>7} {:>8} {:>12}",
+            "class", "marked", "of them fp", "truths lost"
+        );
+        for (class, c) in &eval.per_class {
+            println!(
+                "{class:<24} {:>7} {:>8} {:>12}",
+                c.marked, c.false_marked, c.truths_lost
+            );
+        }
     }
     for m in eval.misses.iter().take(list) {
         println!(

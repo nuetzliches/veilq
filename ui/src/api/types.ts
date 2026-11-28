@@ -21,6 +21,8 @@ export interface Report {
   findings: Finding[];
   review_required: boolean;
   review_reasons?: string[];
+  /** Left unfilled by the policy's `[decider] drop` as likely no personal data (ADR-0078). */
+  dropped?: Finding[];
 }
 
 export interface Info {
