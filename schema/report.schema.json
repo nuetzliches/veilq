@@ -20,6 +20,10 @@
         "entity": {
           "$ref": "#/$defs/EntityType"
         },
+        "likely_false": {
+          "description": "The learned decider marked it as likely no personal data (#175,\nADR-0077); it is filled all the same. Absent when not marked.",
+          "type": "boolean"
+        },
         "location": {
           "$ref": "#/$defs/Location"
         },

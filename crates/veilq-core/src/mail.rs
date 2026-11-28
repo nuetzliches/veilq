@@ -573,6 +573,7 @@ fn finding(
         confidence: c.confidence,
         detector: c.detector.clone(),
         pseudonym,
+        likely_false: false,
     }
 }
 

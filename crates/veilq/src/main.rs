@@ -226,7 +226,9 @@ struct InputArgs {
     /// No learned decider for this run (#35), as `[decider] enabled =
     /// false` in the policy: every decision is the thresholds' and the
     /// rules'. Where one is installed, it may lift a candidate below its
-    /// threshold into the findings and never drops one.
+    /// threshold into the findings and never drops one; the head veilq
+    /// brings marks weak findings in pictures as likely no personal data
+    /// and leaves them filled (#175).
     #[arg(long)]
     no_decider: bool,
 }
@@ -573,6 +575,10 @@ fn engine(policy: &Policy, action: Option<Action>) -> anyhow::Result<Engine> {
             None => ocr,
         };
         engine = engine.with_ocr(std::sync::Arc::new(ocr));
+        // The head that marks weak findings in pictures (#175): veilq
+        // brings it.
+        let head = veilq_core::decider::Decider::from_json(veilq_core::decider::DEMOTE_HEAD)?;
+        engine = engine.with_demoter(std::sync::Arc::new(head));
     }
     #[cfg(feature = "ocr")]
     if let Some((model, runtime)) = models::face_files(&dir) {
@@ -800,11 +806,16 @@ fn scan(
             for f in &report.findings {
                 writeln!(
                     stdout,
-                    "{path}:{}: {} ({}, {:.2})",
+                    "{path}:{}: {} ({}, {:.2}{})",
                     sarif::describe(&f.location),
                     f.entity.as_str(),
                     f.detector,
-                    f.confidence
+                    f.confidence,
+                    if f.likely_false {
+                        ", likely no personal data"
+                    } else {
+                        ""
+                    }
                 )?;
             }
         }

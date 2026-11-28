@@ -875,6 +875,7 @@ pub(crate) fn edit_segment(
             confidence: c.confidence,
             detector: c.detector.clone(),
             pseudonym,
+            likely_false: false,
         });
     }
     Ok(found)
@@ -1178,6 +1179,7 @@ fn table_names(
                         confidence: c.confidence,
                         detector: c.detector.clone(),
                         pseudonym,
+                        likely_false: false,
                     });
                 }
                 let new = table_name(&replaced, &taken);
@@ -1503,6 +1505,7 @@ impl Workbook {
                     confidence: c.confidence,
                     detector: c.detector.clone(),
                     pseudonym,
+                    likely_false: false,
                 });
             }
             for shown in self.sheets.values_mut() {
@@ -1806,6 +1809,7 @@ impl Workbook {
                         confidence: c.confidence,
                         detector: c.detector.clone(),
                         pseudonym: p.clone(),
+                        likely_false: false,
                     });
                 }
             }

@@ -106,11 +106,21 @@ pub struct DeciderPolicy {
     /// `--no-decider` does for one run.
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// `true` (the default): the head veilq brings marks a weak finding in a
+    /// picture (a name the NER model read or the file's names repeat) as
+    /// likely no personal data (#175). A marked finding stays filled; the
+    /// report says so per finding and among its review reasons. `false`
+    /// marks none. Off with `enabled = false` too.
+    #[serde(default = "default_true")]
+    pub demote: bool,
 }
 
 impl Default for DeciderPolicy {
     fn default() -> Self {
-        Self { enabled: true }
+        Self {
+            enabled: true,
+            demote: true,
+        }
     }
 }
 

@@ -464,6 +464,7 @@ fn marked(engine: &Engine, img: &RgbaImage, frame: Option<u64>, out: &mut Outcom
             confidence: 1.0,
             detector: MARK_DETECTOR.into(),
             pseudonym: None,
+            likely_false: false,
         });
         filled.push(r);
     }
@@ -606,6 +607,7 @@ fn regions(
             confidence,
             detector: region.detector.into(),
             pseudonym: None,
+            likely_false: false,
         });
         filled.push(rect);
     }
@@ -810,13 +812,15 @@ fn same_row(a: &Rect, b: &Rect) -> bool {
 /// text that may hold a word processor's formatting marks (`Sven·Heid`,
 /// read as `Sven-Heid`) is read a second time with them as spaces: a
 /// joined name is not one word, and a finding of either reading is filled.
+/// Each comes with whether the learned decider marks it as likely no
+/// personal data ([`likely_false`]).
 fn candidates(
     engine: &Engine,
     lines: &[Line],
     w: u32,
     h: u32,
     again: bool,
-) -> Result<Vec<(crate::detect::Candidate, Vec<Rect>)>, Error> {
+) -> Result<Vec<(crate::detect::Candidate, Vec<Rect>, bool)>, Error> {
     let read = |text: &str, context: &str| {
         if again {
             engine.ocr_findings_again(text, context)
@@ -834,12 +838,16 @@ fn candidates(
     let p = page(&first);
     let others: Vec<Rect> = first.iter().map(|l| l.rect).collect();
     let mut out = Vec::new();
+    // The text each candidate was read in; `None` for one no detector read
+    // (a weak neighbour).
+    let mut read_in: Vec<Option<std::sync::Arc<str>>> = Vec::new();
     for text in std::iter::once(p.text.clone()).chain(unmarked(&p.text)) {
+        let text: std::sync::Arc<str> = text.into();
         for c in read(&text, "")? {
             let rects = boxes(&p, c.start, c.end, w, h);
             let rects = with_rest(&c, &text[c.start..c.end], rects, &others, w);
-            explain_place(engine, &text, &c, &rects, (w, h));
             out.push((c, rects));
+            read_in.push(Some(text.clone()));
         }
     }
     // A line read badly read again in black and white (ADR-0067) stands in
@@ -858,9 +866,10 @@ fn candidates(
         };
         let context = neighbours(lines, &heads, i);
         for text in std::iter::once(line.text.clone()).chain(unmarked(&line.text)) {
+            let text: std::sync::Arc<str> = text.into();
             for c in read(&text, &context)? {
                 if c.entity.as_str() == "PERSON"
-                    && text == line.text
+                    && *text == *line.text
                     && !text[c.end..].chars().any(char::is_alphanumeric)
                 {
                     ends_in_name[i] = true;
@@ -881,12 +890,13 @@ fn candidates(
                             detector: NEIGHBOUR_DETECTOR.into(),
                         };
                         out.push((n, rects));
+                        read_in.push(None);
                     }
                 }
                 let rects = boxes(&one, c.start, c.end, w, h);
                 let rects = with_rest(&c, &text[c.start..c.end], rects, &others, w);
-                explain_place(engine, &text, &c, &rects, (w, h));
                 out.push((c, rects));
+                read_in.push(Some(text.clone()));
             }
         }
     }
@@ -918,10 +928,11 @@ fn candidates(
                     .chain(l.chars.iter().map(|(s, e, r)| (base + s, base + e, *r)))
                     .collect(),
             };
-            for c in read(&two.text, &neighbours(lines, &heads, i))? {
+            let text: std::sync::Arc<str> = two.text.as_str().into();
+            for c in read(&text, &neighbours(lines, &heads, i))? {
                 let rects = boxes(&two, c.start, c.end, w, h);
-                explain_place(engine, &two.text, &c, &rects, (w, h));
                 out.push((c, rects));
+                read_in.push(Some(text.clone()));
             }
         }
     }
@@ -940,33 +951,70 @@ fn candidates(
             chars: a.chars.clone(),
         };
         let context = neighbours(lines, &heads, i);
-        for c in engine.ocr_findings_read_again(&a.text, &context, "contrast")? {
+        let text: std::sync::Arc<str> = a.text.as_str().into();
+        for c in engine.ocr_findings_read_again(&text, &context, "contrast")? {
             let rects = boxes(&one, c.start, c.end, w, h);
-            explain_place(engine, &a.text, &c, &rects, (w, h));
             out.push((c, rects));
+            read_in.push(Some(text.clone()));
         }
     }
-    Ok(out)
+    let marks = likely_false(engine, &out, &read_in, (w, h));
+    Ok(out
+        .into_iter()
+        .zip(marks)
+        .map(|((c, rects), m)| (c, rects, m))
+        .collect())
 }
 
-/// Where a candidate stands in the picture, for `scan --explain` and the
-/// candidates of veilq-eval (#175): the box around its rects.
-fn explain_place(
+/// Which of a picture's candidates the learned decider marks as likely no
+/// personal data (#175, ADR-0077), from their measures: the shape of the
+/// value, the box around its rects, and how often the value is a candidate
+/// in the picture's readings (`file.repeats`). The measures go to `scan
+/// --explain` and veilq-eval's candidates too, so a head is trained on what
+/// veilq measures here. A value is marked only where every reading of it is
+/// a weak finding the head marks.
+fn likely_false(
     engine: &Engine,
-    text: &str,
-    c: &crate::detect::Candidate,
-    rects: &[Rect],
+    out: &[(crate::detect::Candidate, Vec<Rect>)],
+    read_in: &[Option<std::sync::Arc<str>>],
     size: (u32, u32),
-) {
-    let (Some(x0), Some(y0)) = (
-        rects.iter().map(|r| r.x).min(),
-        rects.iter().map(|r| r.y).min(),
-    ) else {
-        return;
-    };
-    let x1 = rects.iter().map(|r| r.right()).max().unwrap_or(x0);
-    let y1 = rects.iter().map(|r| r.bottom()).max().unwrap_or(y0);
-    engine.explain_place(text, (c.start, c.end), (x0, y0, x1, y1), size);
+) -> Vec<bool> {
+    let key = |c: &crate::detect::Candidate, text: &str| text[c.start..c.end].trim().to_lowercase();
+    let mut repeats: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for ((c, _), text) in out.iter().zip(read_in) {
+        if let Some(text) = text {
+            *repeats.entry(key(c, text)).or_default() += 1;
+        }
+    }
+    let head = engine.demoter();
+    let mut every: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
+    for ((c, rects), text) in out.iter().zip(read_in) {
+        let Some(text) = text else { continue };
+        let (Some(x0), Some(y0)) = (
+            rects.iter().map(|r| r.x).min(),
+            rects.iter().map(|r| r.y).min(),
+        ) else {
+            continue;
+        };
+        let x1 = rects.iter().map(|r| r.right()).max().unwrap_or(x0);
+        let y1 = rects.iter().map(|r| r.bottom()).max().unwrap_or(y0);
+        let k = key(c, text);
+        let mut m = crate::engine::text_measures(&text[c.start..c.end]);
+        m.extend(crate::engine::box_measures((x0, y0, x1, y1), size));
+        m.insert("file.repeats", repeats[&k] as f32);
+        engine.explain_measures(text, (c.start, c.end), &m);
+        // The threshold as `scan --explain` records it, rounded.
+        let threshold = crate::detect::round(engine.threshold(&c.entity));
+        let marked = head.is_some_and(|h| h.marks(c, threshold, &m));
+        *every.entry(k).or_insert(true) &= marked;
+    }
+    out.iter()
+        .zip(read_in)
+        .map(|((c, _), text)| {
+            text.as_ref()
+                .is_some_and(|t| every.get(&key(c, t)).copied().unwrap_or(false))
+        })
+        .collect()
 }
 
 /// [`redact_picture`] on `img`, a band of a picture: the findings are
@@ -1028,7 +1076,7 @@ fn settle(
             .collect();
         let candidates = candidates(engine, &read, w, h, round > 1)?;
         let mut new: Vec<Rect> = Vec::new();
-        for (c, rects) in candidates {
+        for (c, rects, marked) in candidates {
             let rects: Vec<Rect> = rects.into_iter().map(|r| to_ink(&rgb, r)).collect();
             // Found twice (page and line), inside a box already filled, or
             // inside a region.
@@ -1081,6 +1129,7 @@ fn settle(
                     confidence: c.confidence,
                     detector: c.detector.clone(),
                     pseudonym: None,
+                    likely_false: marked,
                 });
             }
             new.extend(rects);
@@ -1220,6 +1269,7 @@ fn unread(
                     confidence: 1.0,
                     detector: if cut { CUT_DETECTOR } else { UNREAD_DETECTOR }.into(),
                     pseudonym: None,
+                    likely_false: false,
                 });
                 boxes.push(grown(&l.rect, w, h));
             }
@@ -1712,6 +1762,7 @@ pub fn image(engine: &Engine, ocr: &Ocr, bytes: &[u8], apply: bool) -> Result<Ou
             confidence: 1.0,
             detector: "metadata".into(),
             pseudonym: None,
+            likely_false: false,
         });
     }
     redact_picture(
@@ -2161,7 +2212,7 @@ mod tests {
             candidates(&engine, &lines, 2000, 100, false)
                 .unwrap()
                 .into_iter()
-                .map(|(c, _)| {
+                .map(|(c, _, _)| {
                     (
                         c.entity.as_str().to_owned(),
                         text[c.start..c.end].to_owned(),
@@ -2213,8 +2264,8 @@ mod tests {
         let found: Vec<Rect> = candidates(&engine, &lines, 2000, 300, false)
             .unwrap()
             .into_iter()
-            .filter(|(c, _)| c.entity.as_str() == "ADDRESS")
-            .flat_map(|(_, rects)| rects)
+            .filter(|(c, _, _)| c.entity.as_str() == "ADDRESS")
+            .flat_map(|(_, rects, _)| rects)
             .collect();
         // Both lines of the block, nothing of the window.
         assert!(found.iter().any(|r| r.y < 110 && r.x >= 590), "{found:?}");
@@ -2250,8 +2301,8 @@ mod tests {
         let found: Vec<Rect> = candidates(&engine, &lines, 1000, 200, false)
             .unwrap()
             .into_iter()
-            .filter(|(c, _)| c.entity.as_str() == "PERSON")
-            .flat_map(|(_, rects)| rects)
+            .filter(|(c, _, _)| c.entity.as_str() == "PERSON")
+            .flat_map(|(_, rects, _)| rects)
             .collect();
         // The surname at the start of the line below, in the same card.
         assert!(
@@ -2291,8 +2342,8 @@ mod tests {
             candidates(&engine, &[first, again.clone()], 1000, 100, false)
                 .unwrap()
                 .into_iter()
-                .filter(|(c, _)| c.entity.as_str() == "PERSON")
-                .map(|(c, _)| c.detector)
+                .filter(|(c, _, _)| c.entity.as_str() == "PERSON")
+                .map(|(c, _, _)| c.detector)
                 .collect()
         };
         // Read badly at the given name or elsewhere: the other reading's
@@ -2328,8 +2379,8 @@ mod tests {
             let mut got: Vec<String> = candidates(&engine, &[l], 1000, 100, false)
                 .unwrap()
                 .into_iter()
-                .filter(|(c, _)| c.detector == NEIGHBOUR_DETECTOR)
-                .map(|(c, _)| text[c.start..c.end].to_owned())
+                .filter(|(c, _, _)| c.detector == NEIGHBOUR_DETECTOR)
+                .map(|(c, _, _)| text[c.start..c.end].to_owned())
                 .collect();
             got.sort();
             got.dedup();
@@ -2369,8 +2420,8 @@ mod tests {
             candidates(&engine, lines, 2000, 300, false)
                 .unwrap()
                 .into_iter()
-                .filter(|(c, _)| c.entity.as_str() == "IBAN_CODE")
-                .flat_map(|(_, rects)| rects)
+                .filter(|(c, _, _)| c.entity.as_str() == "IBAN_CODE")
+                .flat_map(|(_, rects, _)| rects)
                 .collect()
         };
         assert!(ibans(std::slice::from_ref(&misread)).is_empty());
@@ -2413,8 +2464,8 @@ mod tests {
             candidates(&engine, lines, 2000, 300, false)
                 .unwrap()
                 .into_iter()
-                .filter(|(c, _)| c.entity.as_str() == "IBAN_CODE")
-                .flat_map(|(_, rects)| rects)
+                .filter(|(c, _, _)| c.entity.as_str() == "IBAN_CODE")
+                .flat_map(|(_, rects, _)| rects)
                 .collect()
         };
         let short = [
@@ -2453,6 +2504,36 @@ mod tests {
     }
 
     #[test]
+    fn a_weak_finding_the_head_marks_is_marked_and_still_found() {
+        // A head that marks a weak name of six letters or fewer (#175).
+        let head = crate::decider::tests::SHORT_NAMES.replace("4.5", "6.5");
+        let head = std::sync::Arc::new(crate::decider::Decider::from_json(&head).unwrap());
+        let lines = [line("Herr Jonas Brandt", 200, 0), line("Brandt", 100, 200)];
+        let marks = |policy: &str| {
+            let engine = Engine::new(&crate::Policy::parse(policy).unwrap(), None, b"test", None)
+                .unwrap()
+                .with_names()
+                .with_demoter(head.clone());
+            candidates(&engine, &lines, 1000, 300, false)
+                .unwrap()
+                .into_iter()
+                .filter(|(c, _, _)| c.entity.as_str() == "PERSON")
+                .map(|(c, _, m)| (c.detector, m))
+                .collect::<Vec<_>>()
+        };
+        let on = marks("version = 1\n");
+        // The file's name repeated alone is weak and short: marked, and still
+        // a candidate; the name with its cue is a pattern's: never marked.
+        assert!(on.iter().any(|(d, m)| d == "names:file" && *m), "{on:?}");
+        assert!(on.iter().all(|(d, m)| !m || d == "names:file"), "{on:?}");
+        assert!(on.iter().any(|(_, m)| !m), "{on:?}");
+        // Off in the policy: nothing is marked.
+        let off = marks("version = 1\n[decider]\ndemote = false\n");
+        assert!(off.iter().all(|(_, m)| !m), "{off:?}");
+        assert_eq!(on.len(), off.len());
+    }
+
+    #[test]
     fn a_name_in_a_tab_and_a_cut_sidebar_is_the_name_of_the_record() {
         // An application's record: the name in its header with a cue, the
         // same name in a tab cut short and in a sidebar the window cuts on
@@ -2468,8 +2549,8 @@ mod tests {
         let found: Vec<Rect> = candidates(&engine, &lines, 2000, 300, false)
             .unwrap()
             .into_iter()
-            .filter(|(c, _)| c.entity.as_str() == "PERSON")
-            .flat_map(|(_, rects)| rects)
+            .filter(|(c, _, _)| c.entity.as_str() == "PERSON")
+            .flat_map(|(_, rects, _)| rects)
             .collect();
         for (y, x) in [(0, 600), (200, 0)] {
             assert!(
@@ -2500,8 +2581,8 @@ mod tests {
             candidates(&engine, &lines, 1000, 200, false)
                 .unwrap()
                 .into_iter()
-                .filter(|(c, _)| c.entity.as_str() == "PERSON")
-                .flat_map(|(_, rects)| rects)
+                .filter(|(c, _, _)| c.entity.as_str() == "PERSON")
+                .flat_map(|(_, rects, _)| rects)
                 .collect()
         };
         let found = people("purposes = [\"legal\"]");
@@ -2554,6 +2635,7 @@ mod tests {
             confidence: 0.8,
             detector: "ner".into(),
             pseudonym: None,
+            likely_false: false,
         };
         assert_eq!(place(&f), "97x24 at 142,228 (frame or page 3)");
         let e = Error::Unsettled {

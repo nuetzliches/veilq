@@ -139,6 +139,7 @@ pub fn mark(engine: &Engine, body: &str) -> Result<Marked, Error> {
             confidence: 1.0,
             detector: "marker".into(),
             pseudonym: None,
+            likely_false: false,
         });
     }
     let mut reasons = redacted.report.review_reasons;

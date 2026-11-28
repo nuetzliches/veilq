@@ -70,10 +70,13 @@ pub fn sarif(results: &[(String, Report)]) -> Value {
                 };
                 json!({
                     "ruleId": f.entity.as_str(),
+                    // A finding the learned decider marked (#175) stays an
+                    // error: it is filled all the same.
                     "level": "error",
                     "message": { "text": format!(
-                        "{} at {} (detector {}, confidence {:.2})",
-                        f.entity.as_str(), describe(&f.location), f.detector, f.confidence
+                        "{} at {} (detector {}, confidence {:.2}{})",
+                        f.entity.as_str(), describe(&f.location), f.detector, f.confidence,
+                        if f.likely_false { ", likely no personal data" } else { "" }
                     ) },
                     "locations": [{
                         "physicalLocation": {

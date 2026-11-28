@@ -125,6 +125,10 @@ pub struct Finding {
     /// The keyed pseudonym (ADR-0001), only when the action is `pseudonymize`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pseudonym: Option<String>,
+    /// The learned decider marked it as likely no personal data (#175,
+    /// ADR-0077); it is filled all the same. Absent when not marked.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub likely_false: bool,
 }
 
 /// What a run found and how far its result can be trusted.
@@ -204,6 +208,7 @@ mod tests {
             confidence: 1.0,
             detector: "pattern".into(),
             pseudonym: None,
+            likely_false: false,
         }]);
         let text = serde_json::to_string(&report).unwrap();
         assert_eq!(serde_json::from_str::<Report>(&text).unwrap(), report);

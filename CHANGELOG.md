@@ -22,6 +22,15 @@ Notable changes per release. The format follows
   carries named measures (ADR-0076, #175): the shape of its text
   (`text.*`) and, in a picture, its box in shares of the picture
   (`box.*`). Detection is unchanged.
+- The learned decider marks weak findings in pictures as likely no
+  personal data (ADR-0077, #175): a name the NER model read or the file's
+  names repeat, scored by a small tree ensemble veilq brings, trained on
+  the synthetic corpus only. A marked finding stays filled; the report
+  says `likely_false` on it and names how many among its review reasons,
+  `scan` adds "likely no personal data" to its line, and the UI shows it
+  apart. `[decider] demote = false` or `--no-decider` switch it off.
+  `veilq-eval check` reports per profile how many were marked and recall
+  and precision were they dropped.
 
 ### Fixed
 

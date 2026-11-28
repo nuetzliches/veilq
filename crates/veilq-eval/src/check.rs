@@ -60,9 +60,35 @@ pub struct ProfileStat {
     pub covered: usize,
     pub findings: usize,
     pub false_positives: usize,
+    /// Findings the learned decider marked as likely no personal data
+    /// (#175).
+    pub marked: usize,
+    /// Truths still covered, and findings still false, were the marked
+    /// findings dropped.
+    pub covered_if_dropped: usize,
+    pub false_if_dropped: usize,
 }
 
 impl ProfileStat {
+    /// [`recall`](Self::recall) were the marked findings dropped.
+    pub fn recall_if_dropped(&self) -> f64 {
+        if self.truth == 0 {
+            1.0
+        } else {
+            self.covered_if_dropped as f64 / self.truth as f64
+        }
+    }
+
+    /// [`precision`](Self::precision) were the marked findings dropped.
+    pub fn precision_if_dropped(&self) -> f64 {
+        let findings = self.findings - self.marked;
+        if findings == 0 {
+            1.0
+        } else {
+            1.0 - self.false_if_dropped as f64 / findings as f64
+        }
+    }
+
     pub fn recall(&self) -> f64 {
         if self.truth == 0 {
             1.0
@@ -392,7 +418,11 @@ pub fn engine_for(ner: bool, ocr: bool) -> anyhow::Result<Engine> {
             })?;
         let library = veilq_core::models::pdf_library(&dir)
             .ok_or_else(|| anyhow::anyhow!("PDFium is not installed in {}", dir.display()))?;
+        // The head veilq brings that marks weak findings in pictures (#175);
+        // the check reports what dropping its marks would give.
+        let head = veilq_core::decider::Decider::from_json(veilq_core::decider::DEMOTE_HEAD)?;
         Ok(engine
+            .with_demoter(std::sync::Arc::new(head))
             .with_ocr(std::sync::Arc::new(ocr))
             .with_faces(std::sync::Arc::new(faces))
             .with_signatures(std::sync::Arc::new(signatures))
@@ -486,8 +516,69 @@ pub fn evaluate(
             findings_total += found.len();
             eval.files += 1;
         }
+        let doc = Document {
+            name: &name,
+            truth: &truth,
+            content: &content,
+            format,
+            json_document,
+        };
+        let (stats, misses, falses) = doc.score(&found);
+        // What dropping the findings the learned decider marked would give
+        // (#175): measured before the head may drop anything.
+        let kept: Vec<_> = found.iter().filter(|f| !f.likely_false).cloned().collect();
+        let (if_dropped, _, falses_if_dropped) = doc.score(&kept);
+        let p = eval.per_profile.entry(kind).or_default();
+        p.files += 1;
+        p.truth += stats.values().map(|s| s.truth).sum::<usize>();
+        p.covered += stats.values().map(|s| s.covered).sum::<usize>();
+        p.findings += found.len();
+        p.false_positives += falses.len();
+        p.marked += found.len() - kept.len();
+        p.covered_if_dropped += if_dropped.values().map(|s| s.covered).sum::<usize>();
+        p.false_if_dropped += falses_if_dropped.len();
+        eval.misses.extend(misses);
+        eval.false_positives.extend(falses);
+        if shared {
+            for (k, s) in stats {
+                let a = eval.per_entity.entry(k).or_default();
+                a.truth += s.truth;
+                a.covered += s.covered;
+                a.typed += s.typed;
+                a.false_positives += s.false_positives;
+            }
+        }
+    }
+    Ok((eval, findings_total))
+}
+
+/// One document of the corpus with its truth, scored against findings.
+struct Document<'a> {
+    name: &'a str,
+    truth: &'a TruthFile,
+    content: &'a str,
+    format: Format,
+    json_document: bool,
+}
+
+impl Document<'_> {
+    /// Per type, what of the truth `found` covers and how many findings no
+    /// truth explains; the truths it misses and the findings it explains
+    /// not.
+    fn score(
+        &self,
+        found: &[veilq_core::Finding],
+    ) -> (BTreeMap<String, Stat>, Vec<Item>, Vec<Item>) {
+        let (name, truth, content, format, json_document) = (
+            self.name,
+            self.truth,
+            self.content,
+            self.format,
+            self.json_document,
+        );
         let mut stats: BTreeMap<String, Stat> = BTreeMap::new();
-        let false_before = eval.false_positives.len();
+        let mut misses = Vec::new();
+        let mut falses = Vec::new();
         let found_places: Vec<_> = found
             .iter()
             .map(|f| place(&f.location, json_document))
@@ -515,8 +606,8 @@ pub fn evaluate(
                         stat.typed += 1;
                     }
                 } else {
-                    eval.misses.push(Item {
-                        file: name.clone(),
+                    misses.push(Item {
+                        file: name.to_owned(),
                         entity: t.entity.as_str().to_owned(),
                         location: describe(&t.location),
                         value: format!("{:.0} % covered", share * 100.0),
@@ -527,7 +618,7 @@ pub fn evaluate(
             }
             let mut here: Vec<(u64, u64, &str)> = found_places
                 .iter()
-                .zip(&found)
+                .zip(found)
                 .filter(|((k, _), _)| *k == key)
                 .map(|((_, r), f)| (r.0, r.1, f.entity.as_str()))
                 .collect();
@@ -547,11 +638,11 @@ pub fn evaluate(
                     stat.typed += 1;
                 }
             } else {
-                eval.misses.push(Item {
-                    file: name.clone(),
+                misses.push(Item {
+                    file: name.to_owned(),
                     entity: t.entity.as_str().to_owned(),
                     location: describe(&t.location),
-                    value: value_at(&content, format, &t.location),
+                    value: value_at(content, format, &t.location),
                     detector: None,
                 });
             }
@@ -572,32 +663,17 @@ pub fn evaluate(
                     .entry(f.entity.as_str().to_owned())
                     .or_default()
                     .false_positives += 1;
-                eval.false_positives.push(Item {
-                    file: name.clone(),
+                falses.push(Item {
+                    file: name.to_owned(),
                     entity: f.entity.as_str().to_owned(),
                     location: describe(&f.location),
-                    value: value_at(&content, format, &f.location),
+                    value: value_at(content, format, &f.location),
                     detector: Some(f.detector.clone()),
                 });
             }
         }
-        let p = eval.per_profile.entry(kind).or_default();
-        p.files += 1;
-        p.truth += stats.values().map(|s| s.truth).sum::<usize>();
-        p.covered += stats.values().map(|s| s.covered).sum::<usize>();
-        p.findings += found.len();
-        p.false_positives += eval.false_positives.len() - false_before;
-        if shared {
-            for (k, s) in stats {
-                let a = eval.per_entity.entry(k).or_default();
-                a.truth += s.truth;
-                a.covered += s.covered;
-                a.typed += s.typed;
-                a.false_positives += s.false_positives;
-            }
-        }
+        (stats, misses, falses)
     }
-    Ok((eval, findings_total))
 }
 
 /// The text a location names, for the report of a synthetic corpus.
@@ -732,6 +808,7 @@ mod tests {
                 covered: 2,
                 findings: 4,
                 false_positives: 2,
+                ..ProfileStat::default()
             },
         );
         let failures = judge(&eval, 4, &gate);

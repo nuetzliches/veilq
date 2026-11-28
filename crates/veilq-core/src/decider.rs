@@ -1,19 +1,24 @@
 //! The learned decider (#35): a tree ensemble over a candidate's named
 //! features, after the policy has decided.
 //!
-//! Its power is narrow by the approved review card: it never drops what a
+//! Its power is narrow by the approved review cards: it never drops what a
 //! rule keeps, and it touches neither the allow and deny lists nor a
-//! checksum. It may only **lift** a candidate below its threshold: lifted,
-//! the candidate is a finding, and the report names how many were lifted
-//! among its review reasons. Without a head, or switched off (`--no-decider`,
-//! `[decider] enabled = false`), every decision is the policy's.
+//! checksum. A head of one kind may only **lift** a candidate below its
+//! threshold: lifted, the candidate is a finding, and the report names how
+//! many were lifted among its review reasons. A head of the other kind only
+//! **marks** a weak finding in a picture as likely no personal data (#175,
+//! ADR-0077): it stays filled, and the report says so per finding and among
+//! its review reasons. Without a head, or switched off (`--no-decider`,
+//! `[decider] enabled = false`, `[decider] demote = false`), every decision
+//! is the policy's.
 //!
 //! A head is JSON: a manifest, the names of its features, and trees whose
-//! leaves add up to a score (before a logistic function). Feature names are
-//! `confidence`, `margin` (confidence minus threshold), `rule=<feature>`
-//! ([`crate::detect::FEATURES`]), `entity=<TYPE>` and `detector=<id>`; a name
-//! the candidate does not have is 0 when it has a `=`, missing otherwise (an
-//! encoder's dimension, which comes with the encoder).
+//! leaves add up to a score (before a logistic function), with either
+//! `lift_at` or `mark_below`. Feature names are `confidence`, `margin`
+//! (confidence minus threshold), `rule=<feature>` ([`crate::detect::FEATURES`]),
+//! `entity=<TYPE>`, `detector=<id>` and a candidate's named measures
+//! ([`Measures`]); a name the candidate does not have is 0 when it has a
+//! `=`, missing otherwise.
 
 use serde::Deserialize;
 
@@ -32,6 +37,22 @@ pub fn lifted_reason(n: usize) -> String {
         if n == 1 { "it" } else { "them" },
     )
 }
+
+/// Said in the report's review reasons when the decider marked findings
+/// as likely no personal data (#175).
+pub fn marked_reason(n: usize) -> String {
+    format!(
+        "the learned decider marked {n} finding{} as likely no personal data; {} still filled: check {}",
+        if n == 1 { "" } else { "s" },
+        if n == 1 { "it is" } else { "they are" },
+        if n == 1 { "it" } else { "them" },
+    )
+}
+
+/// The head veilq brings that marks weak findings in pictures (#175):
+/// trained in veilq-train on synthetic pictures of veilq-eval's corpus
+/// only, measured on held-out seeds (ADR-0077).
+pub const DEMOTE_HEAD: &str = include_str!("../assets/demote-v0.json");
 
 /// What a head is and how it was made.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -81,8 +102,13 @@ struct HeadFile {
     /// Added to the trees' sum before the logistic function.
     base: f32,
     /// The score at or above which a candidate below its threshold is
-    /// lifted.
-    lift_at: f32,
+    /// lifted: a head that lifts.
+    #[serde(default)]
+    lift_at: Option<f32>,
+    /// The score below which a weak finding is marked as likely no
+    /// personal data: a head that marks (#175).
+    #[serde(default)]
+    mark_below: Option<f32>,
     trees: Vec<Tree>,
 }
 
@@ -95,7 +121,8 @@ pub struct Decider {
 impl Decider {
     /// Reads a head; an error when it is not one this veilq can evaluate:
     /// another version, a feature or a child out of range, a node that
-    /// points back (no tree may loop), a lift threshold outside (0, 1).
+    /// points back (no tree may loop), not exactly one of `lift_at` and
+    /// `mark_below`, or one outside (0, 1).
     pub fn from_json(json: &str) -> Result<Self, Error> {
         let bad = |m: String| Error::Format(format!("decider head: {m}"));
         let head: HeadFile = serde_json::from_str(json).map_err(|e| bad(e.to_string()))?;
@@ -105,11 +132,13 @@ impl Decider {
                 head.version
             )));
         }
-        if !(head.lift_at > 0.0 && head.lift_at < 1.0) {
-            return Err(bad(format!(
-                "lift_at {} is not between 0 and 1",
-                head.lift_at
-            )));
+        let (name, at) = match (head.lift_at, head.mark_below) {
+            (Some(at), None) => ("lift_at", at),
+            (None, Some(at)) => ("mark_below", at),
+            _ => return Err(bad("not exactly one of lift_at and mark_below".into())),
+        };
+        if !(at > 0.0 && at < 1.0) {
+            return Err(bad(format!("{name} {at} is not between 0 and 1")));
         }
         if head.trees.is_empty() {
             return Err(bad("no trees".into()));
@@ -147,27 +176,73 @@ impl Decider {
         &self.head.manifest
     }
 
+    /// Whether this head marks weak findings (`mark_below`) rather than
+    /// lifting candidates.
+    pub fn marks_findings(&self) -> bool {
+        self.head.mark_below.is_some()
+    }
+
     /// The score of a candidate, between 0 and 1: how sure the head is
     /// that it is personal data.
     pub fn score(&self, c: &Candidate, threshold: f32, rules: &[&str]) -> f32 {
+        self.score_with(c, threshold, rules, &Measures::new())
+    }
+
+    /// [`score`](Self::score) with the candidate's named measures.
+    pub fn score_with(
+        &self,
+        c: &Candidate,
+        threshold: f32,
+        rules: &[&str],
+        measures: &Measures,
+    ) -> f32 {
         let x: Vec<f32> = self
             .head
             .features
             .iter()
-            .map(|name| value(name, c, threshold, rules))
+            .map(|name| value(name, c, threshold, rules, measures))
             .collect();
         let sum: f32 = self.head.trees.iter().map(|t| leaf(t, &x)).sum::<f32>() + self.head.base;
         1.0 / (1.0 + (-sum).exp())
     }
 
     /// Whether a candidate below its threshold is lifted into the findings.
-    /// The caller asks only for those (the card's first point).
+    /// The caller asks only for those (the card's first point). A head that
+    /// marks lifts nothing.
     pub fn lifts(&self, c: &Candidate, threshold: f32, rules: &[&str]) -> bool {
-        self.score(c, threshold, rules) >= self.head.lift_at
+        self.head
+            .lift_at
+            .is_some_and(|at| self.score(c, threshold, rules) >= at)
+    }
+
+    /// Whether a weak finding ([`weak`]) is marked as likely no personal
+    /// data. A head that lifts marks nothing.
+    pub fn marks(&self, c: &Candidate, threshold: f32, measures: &Measures) -> bool {
+        weak(c)
+            && self
+                .head
+                .mark_below
+                .is_some_and(|below| self.score_with(c, threshold, &[], measures) < below)
     }
 }
 
-fn value(name: &str, c: &Candidate, threshold: f32, rules: &[&str]) -> f32 {
+/// A candidate's named measures: its text's shape
+/// ([`crate::engine::text_measures`]), its box in a picture (`box.*`), and
+/// how often its value is a finding in the same reading (`file.repeats`).
+pub type Measures = std::collections::BTreeMap<&'static str, f32>;
+
+/// The detectors whose findings a head may mark (#175, the card's first
+/// point): a name the NER model read, or one the file's names repeat.
+/// Patterns, the policy's lists and unread areas never are.
+pub const WEAK_DETECTORS: [&str; 2] = ["ner", "names:file"];
+
+/// Whether a finding is one a head may mark: a person's name from a weak
+/// detector.
+pub fn weak(c: &Candidate) -> bool {
+    c.entity.as_str() == "PERSON" && WEAK_DETECTORS.contains(&c.detector.as_str())
+}
+
+fn value(name: &str, c: &Candidate, threshold: f32, rules: &[&str], measures: &Measures) -> f32 {
     match name {
         "confidence" => c.confidence,
         "margin" => c.confidence - threshold,
@@ -176,7 +251,7 @@ fn value(name: &str, c: &Candidate, threshold: f32, rules: &[&str]) -> f32 {
             Some(("entity", e)) => one(c.entity.as_str() == e),
             Some(("detector", d)) => one(c.detector == d),
             Some(_) => 0.0,
-            None => f32::NAN,
+            None => measures.get(name).copied().unwrap_or(f32::NAN),
         },
     }
 }
@@ -261,11 +336,73 @@ pub(crate) mod tests {
         assert!(d.lifts(&date(0.3), 0.7, &[]));
     }
 
+    /// A head that marks a weak finding of four letters or fewer: one tree
+    /// on `text.len`.
+    pub(crate) const SHORT_NAMES: &str = r#"{
+        "version": 1,
+        "manifest": {"name": "test", "trained_on": "a test"},
+        "features": ["text.len"],
+        "base": 4.0,
+        "mark_below": 0.5,
+        "trees": [{"nodes": [
+            {"feature": 0, "threshold": 4.5, "left": 1, "right": 2},
+            {"value": -8.0},
+            {"value": 0.0}
+        ]}]
+    }"#;
+
+    #[test]
+    fn a_head_that_marks_marks_weak_findings_only_and_lifts_nothing() {
+        let d = Decider::from_json(SHORT_NAMES).unwrap();
+        assert!(d.marks_findings());
+        let name = |detector: &str| Candidate {
+            start: 0,
+            end: 4,
+            entity: EntityType::new("PERSON").unwrap(),
+            confidence: 0.9,
+            detector: detector.into(),
+        };
+        let short = Measures::from([("text.len", 4.0)]);
+        let long = Measures::from([("text.len", 11.0)]);
+        assert!(d.marks(&name("ner"), 0.7, &short));
+        assert!(d.marks(&name("names:file"), 0.7, &short));
+        assert!(!d.marks(&name("ner"), 0.7, &long));
+        // A pattern's finding, or another type, is never marked.
+        assert!(!d.marks(&name("pattern:de.salutation"), 0.7, &short));
+        assert!(!d.marks(&date(0.9), 0.7, &short));
+        assert!(!d.lifts(&name("ner"), 0.95, &[]));
+        // A head that lifts marks nothing.
+        let lifting = Decider::from_json(BESIDE_NAME).unwrap();
+        assert!(!lifting.marks_findings());
+        assert!(!lifting.marks(&name("ner"), 0.7, &short));
+    }
+
+    #[test]
+    fn the_head_veilq_brings_marks_and_reads_what_veilq_measures() {
+        let d = Decider::from_json(DEMOTE_HEAD).unwrap();
+        assert!(d.marks_findings());
+        for f in &d.head.features {
+            let measured = crate::engine::text_measures("Lena Brandt").contains_key(f.as_str())
+                || f.starts_with("box.")
+                || matches!(
+                    f.as_str(),
+                    "confidence"
+                        | "margin"
+                        | "file.repeats"
+                        | "detector=ner"
+                        | "detector=names:file"
+                );
+            assert!(measured, "the head reads {f}, which veilq does not measure");
+        }
+    }
+
     #[test]
     fn a_head_that_cannot_be_evaluated_is_an_error() {
         for (from, to) in [
             (r#""version": 1"#, r#""version": 2"#),
             (r#""lift_at": 0.5"#, r#""lift_at": 1.5"#),
+            (r#""lift_at": 0.5"#, r#""lift_at": 0.5, "mark_below": 0.5"#),
+            (r#""lift_at": 0.5,"#, ""),
             (r#""feature": 0"#, r#""feature": 7"#),
             (r#""left": 1"#, r#""left": 0"#),
             (r#""right": 2"#, r#""right": 9"#),

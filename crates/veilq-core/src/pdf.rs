@@ -138,6 +138,7 @@ pub fn redact(
             confidence: 1.0,
             detector: "metadata".into(),
             pseudonym: None,
+            likely_false: false,
         });
     }
     let mut output = if apply {
